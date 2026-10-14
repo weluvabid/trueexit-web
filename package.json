@@ -13,8 +13,10 @@
   },
   "dependencies": {
     "@astrojs/svelte": "^9.0.1",
+    "@tailwindcss/vite": "^4.3.3",
     "astro": "^7.3.8",
     "svelte": "^5.57.2",
+    "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3"
   }
 }
