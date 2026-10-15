@@ -4,9 +4,11 @@ import { env } from 'cloudflare:workers';
 import {
   getApiBaseUrl,
   getCurrentUser,
+  getWorkspaceDashboard,
   getWorkspaces,
   TrueExitApiError,
-  type TrueExitWorkspace
+  type TrueExitWorkspace,
+  type WorkspaceDashboard
 } from '../lib/server/trueexit-api';
 
 export const prerender = false;
@@ -18,6 +20,9 @@ let workspaces: TrueExitWorkspace[] = [];
 let selectedWorkspace: TrueExitWorkspace | null = null;
 let loadError: string | null = null;
 let apiRequestId: string | null = null;
+let dashboardError: string | null = null;
+let dashboardRequestId: string | null = null;
+let dashboard: WorkspaceDashboard | null = null;
 let personalWorkspaceId: string | null = null;
 
 try {
@@ -38,23 +43,48 @@ try {
     selectedWorkspace =
       workspaces.find((workspace) => workspace.id === personalWorkspaceId) ?? null;
   }
+
+  if (selectedWorkspace) {
+    try {
+      dashboard = await getWorkspaceDashboard(baseUrl, auth.accessToken, selectedWorkspace.id);
+    } catch (error) {
+      dashboardError = error instanceof Error ? error.message : 'Unable to load dashboard data.';
+      if (error instanceof TrueExitApiError) dashboardRequestId = error.requestId;
+    }
+  }
 } catch (error) {
   loadError = error instanceof Error ? error.message : 'Unable to load workspace context.';
   if (error instanceof TrueExitApiError) apiRequestId = error.requestId;
 }
+
+const formatTimestamp = (value: string | null) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${date.toISOString().replace('T', ' ').slice(0, 16)} UTC`;
+};
+
+const activityLabel = (eventType: string) => {
+  const labels: Record<string, string> = {
+    evidence_verified: 'Evidence verified',
+    evidence_rejected: 'Evidence rejected',
+    submission_received: 'Submission received',
+    submission_rejected: 'Submission rejected'
+  };
+  return labels[eventType] ?? eventType.replaceAll('_', ' ');
+};
 ---
 
-<AppShell title="Workspace">
+<AppShell title="Overview">
   <section aria-labelledby="page-title" class="mx-auto w-full max-w-5xl">
     <div class="mb-8 flex flex-wrap items-start justify-between gap-4">
       <div class="space-y-2">
-        <p class="text-sm font-medium text-muted-foreground">Account</p>
+        <p class="text-sm font-medium text-muted-foreground">Workspace</p>
         <h1 id="page-title" class="text-2xl font-semibold tracking-tight sm:text-3xl">
-          Your workspace
+          Overview
         </h1>
         <p class="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-          Signed in as {auth.user.email}. Workspace access is loaded from TrueExit, not inferred
-          from your identity-provider account.
+          A current snapshot of monitor activity and evidence in your selected workspace.
         </p>
       </div>
       <a
@@ -88,50 +118,10 @@ try {
           workspace. We won’t create one automatically.
         </p>
       </div>
-    ) : selectedWorkspace ? (
-      <div class="rounded-xl border bg-card p-5 shadow-sm sm:p-8">
-        <p class="text-sm text-muted-foreground">Current workspace</p>
-        <h2 class="mt-1 text-xl font-semibold tracking-tight">{selectedWorkspace.name}</h2>
-        <div class="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-          {selectedWorkspace.personal && (
-            <span class="rounded-full border px-2.5 py-1">Personal</span>
-          )}
-          {selectedWorkspace.account_owner && (
-            <span class="rounded-full border px-2.5 py-1">Account owner</span>
-          )}
-          {selectedWorkspace.role && (
-            <span class="rounded-full border px-2.5 py-1">{selectedWorkspace.role}</span>
-          )}
-        </div>
-        <p class="mt-5 max-w-xl text-sm leading-6 text-muted-foreground">
-          Workspace access is connected. The monitoring overview will appear in the next slice, when
-          the dashboard endpoint is integrated.
-        </p>
-        {workspaces.length > 1 && (
-          <div class="mt-8 border-t pt-5">
-            <h3 class="text-sm font-semibold">Switch workspace</h3>
-            <ul class="mt-3 space-y-2">
-              {workspaces
-                .filter((workspace) => workspace.id !== selectedWorkspace?.id)
-                .map((workspace) => (
-                  <li>
-                    <a
-                      href={`/?workspace=${encodeURIComponent(workspace.id)}`}
-                      class="flex min-h-12 items-center justify-between rounded-md border px-3 py-2 text-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <span>{workspace.name}</span>
-                      <span class="text-xs text-muted-foreground">Open workspace →</span>
-                    </a>
-                  </li>
-                ))}
-            </ul>
-          </div>
-        )}
-      </div>
-    ) : (
+    ) : !selectedWorkspace ? (
       <div class="rounded-xl border bg-card p-5 sm:p-8">
         <h2 class="text-base font-semibold">Choose a workspace</h2>
-        <p class="mt-2 text-sm leading-6 text-muted-foreground">
+        <p class="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
           Select a workspace you’re authorized to access.
         </p>
         <ul class="mt-5 space-y-2">
@@ -156,6 +146,192 @@ try {
             </li>
           ))}
         </ul>
+      </div>
+    ) : (
+      <div class="space-y-8">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="text-lg font-semibold tracking-tight">{selectedWorkspace.name}</h2>
+            <div class="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+              {selectedWorkspace.personal && (
+                <span class="rounded-full border px-2.5 py-1">Personal</span>
+              )}
+              {selectedWorkspace.account_owner && (
+                <span class="rounded-full border px-2.5 py-1">Account owner</span>
+              )}
+              {selectedWorkspace.role && (
+                <span class="rounded-full border px-2.5 py-1">{selectedWorkspace.role}</span>
+              )}
+            </div>
+          </div>
+          {workspaces.length > 1 && (
+            <details class="relative">
+              <summary class="flex min-h-10 cursor-pointer list-none items-center rounded-md border px-3 text-sm font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                Switch workspace
+              </summary>
+              <ul class="absolute right-0 z-20 mt-2 max-h-72 w-64 overflow-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-md">
+                {workspaces
+                  .filter((workspace) => workspace.id !== selectedWorkspace?.id)
+                  .map((workspace) => (
+                    <li>
+                      <a
+                        href={`/?workspace=${encodeURIComponent(workspace.id)}`}
+                        class="block rounded-md px-3 py-2 text-sm hover:bg-accent"
+                      >
+                        {workspace.name}
+                      </a>
+                    </li>
+                  ))}
+              </ul>
+            </details>
+          )}
+        </div>
+
+        {dashboardError ? (
+          <div role="alert" class="rounded-xl border border-destructive/40 bg-card p-5 sm:p-8">
+            <h3 class="font-semibold">We couldn’t load this dashboard</h3>
+            <p class="mt-2 text-sm leading-6 text-muted-foreground">{dashboardError}</p>
+            {dashboardRequestId && (
+              <p class="mt-2 text-xs text-muted-foreground">Request ID: {dashboardRequestId}</p>
+            )}
+            <a
+              href={`/?workspace=${encodeURIComponent(selectedWorkspace.id)}`}
+              class="mt-5 inline-flex min-h-10 items-center rounded-md border px-4 text-sm font-medium hover:bg-accent"
+            >
+              Try again
+            </a>
+          </div>
+        ) : dashboard ? (
+          <>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              {[
+                { label: 'Active monitors', value: dashboard.summary.active_monitors },
+                { label: 'Disabled monitors', value: dashboard.summary.disabled_monitors },
+                {
+                  label: 'Evidence received recently',
+                  value: dashboard.summary.evidence_received_recently
+                },
+                { label: 'Needs attention', value: dashboard.summary.needs_attention },
+                {
+                  label: 'Awaiting first evidence',
+                  value: dashboard.summary.awaiting_first_evidence
+                }
+              ].map((item) => (
+                <article class="min-w-0 rounded-xl border bg-card p-4">
+                  <p class="text-sm leading-5 text-muted-foreground">{item.label}</p>
+                  <p class="mt-3 text-3xl font-semibold tracking-tight tabular-nums">
+                    {item.value}
+                  </p>
+                </article>
+              ))}
+            </div>
+
+            {dashboard.summary.active_monitors === 0 &&
+            dashboard.summary.disabled_monitors === 0 ? (
+              <section
+                class="rounded-xl border bg-card p-5 sm:p-8"
+                aria-labelledby="empty-monitors-title"
+              >
+                <h3 id="empty-monitors-title" class="text-base font-semibold">
+                  No monitors yet
+                </h3>
+                <p class="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+                  This workspace doesn’t have any monitors. Once monitors are created and evidence
+                  is submitted, their current activity will appear here.
+                </p>
+              </section>
+            ) : (
+              <div class="grid gap-8 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+                <section aria-labelledby="attention-title" class="min-w-0">
+                  <div class="mb-3 flex items-center justify-between gap-3">
+                    <h3 id="attention-title" class="text-base font-semibold">
+                      Needs attention
+                    </h3>
+                    <span class="text-xs text-muted-foreground">Up to 8 items</span>
+                  </div>
+                  {dashboard.attention_items.length === 0 ? (
+                    <div class="rounded-xl border bg-card p-5">
+                      <p class="text-sm font-medium">Nothing needs attention right now</p>
+                      <p class="mt-1 text-sm leading-6 text-muted-foreground">
+                        No active monitors are currently flagged by the dashboard. This is not a
+                        guarantee that every monitored field is healthy.
+                      </p>
+                    </div>
+                  ) : (
+                    <ul class="space-y-3">
+                      {dashboard.attention_items.map((item) => (
+                        <li class="rounded-xl border bg-card p-4 sm:p-5">
+                          <div class="flex flex-wrap items-start justify-between gap-2">
+                            <h4 class="font-medium">{item.title}</h4>
+                            <span class="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
+                              {item.severity}
+                            </span>
+                          </div>
+                          <p class="mt-1 text-sm font-medium text-muted-foreground">
+                            {item.monitor_name}
+                          </p>
+                          <p class="mt-3 text-sm leading-6">{item.description}</p>
+                          <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                            {item.occurred_at && (
+                              <span>Occurred: {formatTimestamp(item.occurred_at)}</span>
+                            )}
+                            <span>
+                              Last valid evidence:{' '}
+                              {formatTimestamp(item.last_valid_evidence_at) ?? 'None recorded'}
+                            </span>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+
+                <section aria-labelledby="activity-title" class="min-w-0">
+                  <div class="mb-3 flex items-center justify-between gap-3">
+                    <h3 id="activity-title" class="text-base font-semibold">
+                      Recent evidence activity
+                    </h3>
+                    <span class="text-xs text-muted-foreground">Latest events</span>
+                  </div>
+                  {dashboard.recent_evidence_activity.length === 0 ? (
+                    <div class="rounded-xl border bg-card p-5">
+                      <p class="text-sm font-medium">No recent evidence activity</p>
+                      <p class="mt-1 text-sm leading-6 text-muted-foreground">
+                        Evidence activity will appear here when submissions are received and
+                        processed.
+                      </p>
+                    </div>
+                  ) : (
+                    <ol class="divide-y rounded-xl border bg-card px-4 sm:px-5">
+                      {dashboard.recent_evidence_activity.map((item) => (
+                        <li class="flex min-w-0 flex-col gap-1 py-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                          <div class="min-w-0">
+                            <p class="break-words text-sm font-medium">
+                              {activityLabel(item.event_type)}
+                            </p>
+                            <p class="mt-1 truncate text-sm text-muted-foreground">
+                              {item.monitor_name}
+                            </p>
+                          </div>
+                          <time
+                            datetime={item.occurred_at}
+                            class="shrink-0 text-xs text-muted-foreground"
+                          >
+                            {formatTimestamp(item.occurred_at)}
+                          </time>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </section>
+              </div>
+            )}
+            <p class="text-xs text-muted-foreground">
+              Dashboard generated {formatTimestamp(dashboard.generated_at)}. This is a summary, not
+              a complete event log.
+            </p>
+          </>
+        ) : null}
       </div>
     )}
   </section>

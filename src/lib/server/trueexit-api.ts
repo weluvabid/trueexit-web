@@ -13,6 +13,35 @@ export interface CurrentUser {
   personal_workspace_id: string | null;
 }
 
+export interface WorkspaceDashboard {
+  generated_at: string;
+  summary: {
+    active_monitors: number;
+    disabled_monitors: number;
+    evidence_received_recently: number;
+    needs_attention: number;
+    awaiting_first_evidence: number;
+  };
+  attention_items: Array<{
+    monitor_id: string;
+    monitor_name: string;
+    reason: 'submission_rejected' | 'evidence_overdue' | string;
+    severity: string;
+    occurred_at: string | null;
+    last_valid_evidence_at: string | null;
+    title: string;
+    description: string;
+    action: { kind: string };
+  }>;
+  recent_evidence_activity: Array<{
+    event_id: string;
+    monitor_id: string;
+    monitor_name: string;
+    event_type: string;
+    occurred_at: string;
+  }>;
+}
+
 export class TrueExitApiError extends Error {
   constructor(
     message: string,
@@ -78,5 +107,17 @@ export async function getWorkspaces(baseUrl: string, accessToken: string) {
     baseUrl,
     accessToken,
     '/v1/workspaces?limit=100'
+  );
+}
+
+export async function getWorkspaceDashboard(
+  baseUrl: string,
+  accessToken: string,
+  workspaceId: string
+) {
+  return request<WorkspaceDashboard>(
+    baseUrl,
+    accessToken,
+    `/v1/workspaces/${encodeURIComponent(workspaceId)}/dashboard`
   );
 }
