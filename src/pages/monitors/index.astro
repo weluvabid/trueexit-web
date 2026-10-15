@@ -82,7 +82,6 @@ try {
     selectedWorkspace =
       workspaces.find((workspace) => workspace.id === currentUser.personal_workspace_id) ?? null;
   }
-
   if (selectedWorkspace) {
     const response = await getMonitors(apiBaseUrl, auth.accessToken, selectedWorkspace.id, {
       cursor: requestedCursor,
@@ -135,8 +134,8 @@ const notice = noticeLabels[Astro.url.searchParams.get('notice') ?? ''] ?? null;
           Monitors
         </h1>
         <p class="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-          Review monitor configuration and lifecycle. Health and evidence details are available in a
-          later slice.
+          Review monitor configuration and lifecycle, and open any monitor to inspect field health
+          and configuration-version history.
         </p>
       </div>
       <div class="flex flex-wrap gap-2">
@@ -261,7 +260,14 @@ const notice = noticeLabels[Astro.url.searchParams.get('notice') ?? ''] ?? null;
                 <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div class="min-w-0 flex-1">
                     <div class="flex flex-wrap items-center gap-2">
-                      <h3 class="break-words font-semibold">{monitor.name}</h3>
+                      <h3 class="break-words font-semibold">
+                        <a
+                          class="underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          href={`/monitors/${encodeURIComponent(monitor.id)}?workspace=${encodeURIComponent(selectedWorkspace.id)}`}
+                        >
+                          {monitor.name}
+                        </a>
+                      </h3>
                       <span class="rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
                         {statusLabel(monitor.status)}
                       </span>
@@ -285,6 +291,12 @@ const notice = noticeLabels[Astro.url.searchParams.get('notice') ?? ''] ?? null;
                         <dd class="inline">{formatDate(monitor.updated_at)}</dd>
                       </div>
                     </dl>
+                    <a
+                      href={`/monitors/${encodeURIComponent(monitor.id)}?workspace=${encodeURIComponent(selectedWorkspace.id)}`}
+                      class="mt-3 inline-flex min-h-9 items-center text-sm font-medium text-primary hover:underline"
+                    >
+                      View field health and history →
+                    </a>
                   </div>
                   <div class="flex flex-wrap gap-2 sm:max-w-64 sm:justify-end">
                     {monitor.status !== 'archived' && (

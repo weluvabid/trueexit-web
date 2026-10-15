@@ -1,0 +1,383 @@
+---
+import AppShell from '../../layouts/AppShell.astro';
+import { env } from 'cloudflare:workers';
+import {
+  getApiBaseUrl,
+  getCurrentMonitorHealth,
+  getCurrentUser,
+  getMonitor,
+  getMonitorHealthHistory,
+  getMonitorHealthVersion,
+  getWorkspaces,
+  TrueExitApiError,
+  type CurrentMonitorHealth,
+  type HealthHistoryEntry,
+  type HealthVersionDetail,
+  type TrueExitMonitor,
+  type TrueExitWorkspace
+} from '../../lib/server/trueexit-api';
+
+export const prerender = false;
+const { auth } = Astro.locals;
+if (!auth.user) return auth.redirectToSignIn();
+
+const monitorId = Astro.params.monitorId ?? '';
+const requestedWorkspaceId = Astro.url.searchParams.get('workspace') ?? '';
+const requestedVersion = Number(Astro.url.searchParams.get('version'));
+const requestedCursor = Number(Astro.url.searchParams.get('cursor'));
+let selectedWorkspace: TrueExitWorkspace | null = null;
+let monitor: TrueExitMonitor | null = null;
+let currentHealth: CurrentMonitorHealth | null = null;
+let history: HealthHistoryEntry[] = [];
+let nextCursor: number | null = null;
+let versionDetail: HealthVersionDetail | null = null;
+let pageError: string | null = null;
+let healthError: string | null = null;
+let historyError: string | null = null;
+let versionError: string | null = null;
+let requestId: string | null = null;
+
+try {
+  const apiBaseUrl = getApiBaseUrl({ env });
+  const [currentUser, workspaceResponse] = await Promise.all([
+    getCurrentUser(apiBaseUrl, auth.accessToken),
+    getWorkspaces(apiBaseUrl, auth.accessToken)
+  ]);
+  const workspaces = workspaceResponse.data;
+  selectedWorkspace = requestedWorkspaceId
+    ? (workspaces.find((workspace) => workspace.id === requestedWorkspaceId) ?? null)
+    : (workspaces.find((workspace) => workspace.id === currentUser.personal_workspace_id) ??
+      (workspaces.length === 1 ? workspaces[0] : null));
+
+  if (!selectedWorkspace) {
+    pageError = 'Choose a workspace from the monitor list before opening monitor health.';
+  } else if (!monitorId) {
+    pageError = 'The monitor ID is missing from this URL.';
+  } else {
+    monitor = await getMonitor(apiBaseUrl, auth.accessToken, selectedWorkspace.id, monitorId);
+    const healthResult = await getCurrentMonitorHealth(
+      apiBaseUrl,
+      auth.accessToken,
+      selectedWorkspace.id,
+      monitorId
+    )
+      .then((value) => ({ value, error: null as unknown }))
+      .catch((error: unknown) => ({ value: null, error }));
+    currentHealth = healthResult.value;
+    if (healthResult.error) {
+      healthError =
+        healthResult.error instanceof Error
+          ? healthResult.error.message
+          : 'Current field health is not available.';
+      if (healthResult.error instanceof TrueExitApiError) requestId = healthResult.error.requestId;
+    }
+
+    const historyResult = await getMonitorHealthHistory(
+      apiBaseUrl,
+      auth.accessToken,
+      selectedWorkspace.id,
+      monitorId,
+      { cursor: Number.isFinite(requestedCursor) && requestedCursor > 0 ? requestedCursor : null }
+    )
+      .then((value) => ({ value, error: null as unknown }))
+      .catch((error: unknown) => ({ value: null, error }));
+    if (historyResult.value) {
+      history = historyResult.value.data;
+      nextCursor = historyResult.value.page.next_cursor;
+    } else if (historyResult.error) {
+      historyError =
+        historyResult.error instanceof Error
+          ? historyResult.error.message
+          : 'Configuration-version history is not available.';
+      if (historyResult.error instanceof TrueExitApiError)
+        requestId = historyResult.error.requestId;
+    }
+
+    if (Number.isSafeInteger(requestedVersion) && requestedVersion > 0) {
+      try {
+        versionDetail = await getMonitorHealthVersion(
+          apiBaseUrl,
+          auth.accessToken,
+          selectedWorkspace.id,
+          monitorId,
+          requestedVersion
+        );
+      } catch (error) {
+        versionError =
+          error instanceof Error ? error.message : 'That configuration version is unavailable.';
+        if (error instanceof TrueExitApiError) requestId = error.requestId;
+      }
+    }
+  }
+} catch (error) {
+  pageError = error instanceof Error ? error.message : 'Unable to load this monitor.';
+  if (error instanceof TrueExitApiError) requestId = error.requestId;
+}
+
+const stateLabel = (state: string) =>
+  ({
+    normal: 'Normal',
+    suspected: 'Suspected',
+    confirmed: 'Confirmed',
+    ongoing: 'Ongoing',
+    recovered: 'Recovered',
+    unknown: 'Unknown'
+  })[state] ?? 'Unknown';
+const stateClass = (state: string) =>
+  ({
+    normal: 'border-emerald-500/30 text-emerald-700 dark:text-emerald-300',
+    recovered: 'border-sky-500/30 text-sky-700 dark:text-sky-300',
+    suspected: 'border-amber-500/30 text-amber-700 dark:text-amber-300',
+    confirmed: 'border-destructive/40 text-destructive',
+    ongoing: 'border-destructive/40 text-destructive',
+    unknown: 'border-border text-muted-foreground'
+  })[state] ?? 'border-border text-muted-foreground';
+const selectedHealth = currentHealth?.health ?? null;
+---
+
+<AppShell title={monitor ? `${monitor.name} health` : 'Monitor health'}>
+  <section aria-labelledby="page-title" class="mx-auto w-full max-w-5xl space-y-8">
+    <div class="space-y-3">
+      <a
+        href={
+          selectedWorkspace
+            ? `/monitors?workspace=${encodeURIComponent(selectedWorkspace.id)}`
+            : '/monitors'
+        }
+        class="inline-flex min-h-9 items-center text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        ← Back to monitors
+      </a>
+      <p class="text-sm font-medium text-muted-foreground">Field health</p>
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 id="page-title" class="break-words text-2xl font-semibold tracking-tight sm:text-3xl">
+            {monitor?.name ?? 'Monitor health'}
+          </h1>
+          {monitor && (
+            <p class="mt-2 text-sm text-muted-foreground">
+              Configuration version {monitor.current_config_version} · {monitor.status}
+            </p>
+          )}
+        </div>
+        {monitor && selectedWorkspace && (
+          <a
+            href={`/monitors/${encodeURIComponent(monitor.id)}?workspace=${encodeURIComponent(selectedWorkspace.id)}`}
+            class="inline-flex min-h-10 items-center justify-center rounded-md border px-4 text-sm font-medium hover:bg-accent"
+          >
+            Current health
+          </a>
+        )}
+      </div>
+      <p class="max-w-3xl text-sm leading-6 text-muted-foreground">
+        Health is reported per configured field. History below records configuration-version
+        snapshots, not an event-by-event timeline. Missing evidence or an unavailable snapshot does
+        not by itself mean the monitored system is unhealthy.
+      </p>
+    </div>
+
+    {pageError ? (
+      <div role="alert" class="rounded-xl border border-destructive/40 bg-card p-5 sm:p-8">
+        <h2 class="font-semibold">We couldn’t load this monitor</h2>
+        <p class="mt-2 text-sm leading-6 text-muted-foreground">{pageError}</p>
+        {requestId && <p class="mt-2 text-xs text-muted-foreground">Request ID: {requestId}</p>}
+      </div>
+    ) : monitor && selectedWorkspace ? (
+      <>
+        <section aria-labelledby="current-health-title" class="space-y-4">
+          <div>
+            <h2 id="current-health-title" class="text-lg font-semibold">
+              Current field health
+            </h2>
+            <p class="mt-1 text-sm text-muted-foreground">
+              Active configuration version{' '}
+              {currentHealth?.config_version ?? monitor.current_config_version}
+            </p>
+          </div>
+          {healthError ? (
+            <div role="status" class="rounded-xl border bg-card p-5 sm:p-6">
+              <h3 class="font-medium">No current health snapshot available</h3>
+              <p class="mt-2 text-sm leading-6 text-muted-foreground">{healthError}</p>
+              {requestId && (
+                <p class="mt-2 text-xs text-muted-foreground">Request ID: {requestId}</p>
+              )}
+            </div>
+          ) : selectedHealth && Object.keys(selectedHealth.fields ?? {}).length > 0 ? (
+            <ul class="grid gap-3 sm:grid-cols-2">
+              {Object.entries(selectedHealth.fields).map(([fieldName, field]) => (
+                <li class="rounded-xl border bg-card p-4 sm:p-5">
+                  <div class="flex flex-wrap items-start justify-between gap-3">
+                    <h3 class="break-all font-semibold">{fieldName}</h3>
+                    <span
+                      class={`rounded-full border px-2.5 py-1 text-xs font-medium ${stateClass(field.state)}`}
+                    >
+                      {stateLabel(field.state)}
+                    </span>
+                  </div>
+                  <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <dt class="text-muted-foreground">Consecutive anomalies</dt>
+                      <dd class="mt-1 font-medium">{field.consecutive_anomalies ?? '—'}</dd>
+                    </div>
+                    <div>
+                      <dt class="text-muted-foreground">Consecutive healthy</dt>
+                      <dd class="mt-1 font-medium">{field.consecutive_healthy ?? '—'}</dd>
+                    </div>
+                  </dl>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div class="rounded-xl border bg-card p-5 sm:p-6">
+              <h3 class="font-medium">No field health recorded yet</h3>
+              <p class="mt-2 text-sm leading-6 text-muted-foreground">
+                This configuration version does not currently have field health entries. Once valid
+                evidence is processed, the API may populate health for the configured fields.
+              </p>
+            </div>
+          )}
+        </section>
+
+        <section aria-labelledby="history-title" class="space-y-4">
+          <div>
+            <h2 id="history-title" class="text-lg font-semibold">
+              Configuration-version history
+            </h2>
+            <p class="mt-1 text-sm text-muted-foreground">
+              Each entry is a persisted snapshot for a configuration version.
+            </p>
+          </div>
+          {historyError ? (
+            <div role="alert" class="rounded-xl border border-destructive/40 bg-card p-5">
+              <p class="text-sm">{historyError}</p>
+              {requestId && (
+                <p class="mt-2 text-xs text-muted-foreground">Request ID: {requestId}</p>
+              )}
+            </div>
+          ) : history.length === 0 ? (
+            <div class="rounded-xl border bg-card p-5">
+              <h3 class="font-medium">No configuration history available</h3>
+              <p class="mt-2 text-sm leading-6 text-muted-foreground">
+                The API returned no version snapshots for this monitor.
+              </p>
+            </div>
+          ) : (
+            <div class="overflow-hidden rounded-xl border bg-card">
+              <ul class="divide-y">
+                {history.map((entry) => (
+                  <li>
+                    <a
+                      href={`/monitors/${encodeURIComponent(monitor!.id)}?workspace=${encodeURIComponent(selectedWorkspace!.id)}&version=${entry.config_version}`}
+                      aria-current={requestedVersion === entry.config_version ? 'page' : undefined}
+                      class={`flex flex-col gap-3 px-4 py-4 hover:bg-accent/50 sm:flex-row sm:items-center sm:justify-between sm:px-5 ${requestedVersion === entry.config_version ? 'bg-accent/40' : ''}`}
+                    >
+                      <div>
+                        <div class="flex flex-wrap items-center gap-2">
+                          <span class="font-medium">
+                            Configuration version {entry.config_version}
+                          </span>
+                          {entry.is_current && (
+                            <span class="rounded-full border px-2 py-0.5 text-xs">Current</span>
+                          )}
+                        </div>
+                        <p class="mt-1 text-sm text-muted-foreground">
+                          {entry.health_summary.field_count} fields with recorded health
+                        </p>
+                      </div>
+                      <dl class="grid grid-cols-3 gap-x-4 gap-y-1 text-xs text-muted-foreground sm:flex sm:gap-4">
+                        <div>
+                          <dt>Normal</dt>
+                          <dd class="mt-1 font-medium text-foreground">
+                            {entry.health_summary.normal}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Suspected</dt>
+                          <dd class="mt-1 font-medium text-foreground">
+                            {entry.health_summary.suspected}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Confirmed / ongoing</dt>
+                          <dd class="mt-1 font-medium text-foreground">
+                            {entry.health_summary.confirmed + entry.health_summary.ongoing}
+                          </dd>
+                        </div>
+                      </dl>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {nextCursor && (
+            <div class="flex justify-end">
+              <a
+                href={`/monitors/${encodeURIComponent(monitor.id)}?workspace=${encodeURIComponent(selectedWorkspace.id)}&cursor=${nextCursor}`}
+                class="inline-flex min-h-10 items-center justify-center rounded-md border px-4 text-sm font-medium hover:bg-accent"
+              >
+                Older versions
+              </a>
+            </div>
+          )}
+        </section>
+
+        {Number.isSafeInteger(requestedVersion) && requestedVersion > 0 && (
+          <section aria-labelledby="version-detail-title" class="space-y-4">
+            <div>
+              <h2 id="version-detail-title" class="text-lg font-semibold">
+                Version {requestedVersion} details
+              </h2>
+              <p class="mt-1 text-sm text-muted-foreground">
+                Configuration and health snapshot returned for this version.
+              </p>
+            </div>
+            {versionError ? (
+              <div role="alert" class="rounded-xl border border-destructive/40 bg-card p-5">
+                <p class="text-sm">{versionError}</p>
+              </div>
+            ) : versionDetail ? (
+              <div class="space-y-4 rounded-xl border bg-card p-4 sm:p-6">
+                <p class="text-sm text-muted-foreground">
+                  {versionDetail.is_current
+                    ? 'This is the current version.'
+                    : 'This is a historical version.'}{' '}
+                  No transition timestamp is inferred.
+                </p>
+                <div>
+                  <h3 class="text-sm font-semibold">Configuration</h3>
+                  <pre class="mt-2 overflow-x-auto rounded-lg bg-muted/50 p-3 text-xs leading-5"><code>{JSON.stringify(versionDetail.configuration, null, 2)}</code></pre>
+                </div>
+                <div>
+                  <h3 class="text-sm font-semibold">Field snapshot</h3>
+                  {Object.keys(versionDetail.health.fields ?? {}).length > 0 ? (
+                    <ul class="mt-2 space-y-2">
+                      {Object.entries(versionDetail.health.fields).map(([fieldName, field]) => (
+                        <li class="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
+                          <span class="break-all font-medium">{fieldName}</span>
+                          <span
+                            class={`rounded-full border px-2 py-0.5 text-xs ${stateClass(field.state)}`}
+                          >
+                            {stateLabel(field.state)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p class="mt-2 text-sm text-muted-foreground">
+                      No field entries in this snapshot.
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </section>
+        )}
+        <p class="text-xs leading-5 text-muted-foreground">
+          Health states are per field: normal, suspected, confirmed, ongoing, recovered, or unknown.
+          An empty snapshot is not a monitor-wide health verdict.
+        </p>
+      </>
+    ) : null}
+  </section>
+</AppShell>

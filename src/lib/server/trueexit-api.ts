@@ -64,6 +64,61 @@ export interface WorkspaceDashboard {
   }>;
 }
 
+export type FieldHealthState =
+  'normal' | 'suspected' | 'confirmed' | 'ongoing' | 'recovered' | 'unknown';
+
+export interface FieldHealth {
+  state: FieldHealthState;
+  consecutive_anomalies?: number;
+  consecutive_healthy?: number;
+  [key: string]: unknown;
+}
+
+export interface HealthSnapshot {
+  fields: Record<string, FieldHealth>;
+  checkpoints: unknown[];
+  adopted_baselines: Record<string, unknown>;
+}
+
+export interface CurrentMonitorHealth {
+  monitor_id: string;
+  config_version: number;
+  health: HealthSnapshot;
+}
+
+export interface HealthSummary {
+  field_count: number;
+  normal: number;
+  suspected: number;
+  confirmed: number;
+  ongoing: number;
+  recovered: number;
+  unknown: number;
+}
+
+export interface HealthHistoryEntry {
+  config_version: number;
+  is_current: boolean;
+  health_summary: HealthSummary;
+}
+
+export interface HealthHistoryPage {
+  monitor_id: string;
+  data: HealthHistoryEntry[];
+  page: { next_cursor: number | null };
+}
+
+export interface HealthVersionDetail {
+  monitor_id: string;
+  config_version: number;
+  is_current: boolean;
+  configuration: {
+    cadence_seconds?: number;
+    config?: unknown;
+  };
+  health: HealthSnapshot;
+}
+
 export class TrueExitApiError extends Error {
   constructor(
     message: string,
@@ -174,6 +229,68 @@ export async function getMonitors(
     baseUrl,
     accessToken,
     `/v1/monitors?${query.toString()}`
+  );
+}
+
+export async function getMonitor(
+  baseUrl: string,
+  accessToken: string,
+  workspaceId: string,
+  monitorId: string
+) {
+  const query = new URLSearchParams({ workspace_id: workspaceId });
+  return request<TrueExitMonitor>(
+    baseUrl,
+    accessToken,
+    `/v1/monitors/${encodeURIComponent(monitorId)}?${query.toString()}`
+  );
+}
+
+export async function getCurrentMonitorHealth(
+  baseUrl: string,
+  accessToken: string,
+  workspaceId: string,
+  monitorId: string
+) {
+  const query = new URLSearchParams({ workspace_id: workspaceId });
+  return request<CurrentMonitorHealth>(
+    baseUrl,
+    accessToken,
+    `/v1/monitors/${encodeURIComponent(monitorId)}/health?${query.toString()}`
+  );
+}
+
+export async function getMonitorHealthHistory(
+  baseUrl: string,
+  accessToken: string,
+  workspaceId: string,
+  monitorId: string,
+  options: { cursor?: number | null; limit?: number } = {}
+) {
+  const query = new URLSearchParams({
+    workspace_id: workspaceId,
+    limit: String(options.limit ?? 20)
+  });
+  if (options.cursor) query.set('cursor', String(options.cursor));
+  return request<HealthHistoryPage>(
+    baseUrl,
+    accessToken,
+    `/v1/monitors/${encodeURIComponent(monitorId)}/health/history?${query.toString()}`
+  );
+}
+
+export async function getMonitorHealthVersion(
+  baseUrl: string,
+  accessToken: string,
+  workspaceId: string,
+  monitorId: string,
+  configVersion: number
+) {
+  const query = new URLSearchParams({ workspace_id: workspaceId });
+  return request<HealthVersionDetail>(
+    baseUrl,
+    accessToken,
+    `/v1/monitors/${encodeURIComponent(monitorId)}/health/history/${configVersion}?${query.toString()}`
   );
 }
 
