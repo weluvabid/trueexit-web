@@ -1,0 +1,359 @@
+---
+import AppShell from '../../layouts/AppShell.astro';
+import { env } from 'cloudflare:workers';
+import {
+  getApiBaseUrl,
+  getCurrentUser,
+  getWorkspaces,
+  TrueExitApiError,
+  type TrueExitWorkspace
+} from '../../lib/server/trueexit-api';
+
+export const prerender = false;
+const { auth } = Astro.locals;
+if (!auth.user) return auth.redirectToSignIn();
+
+type ApiRow = Record<string, unknown>;
+type ApiPage = { data: ApiRow[]; page?: { next_cursor?: string | null } };
+
+const requestedWorkspaceId = Astro.url.searchParams.get('workspace') ?? '';
+const cursor = Astro.url.searchParams.get('cursor') ?? '';
+let workspaces: TrueExitWorkspace[] = [];
+let workspace: TrueExitWorkspace | null = null;
+let channels: ApiRow[] = [];
+let notifications: ApiRow[] = [];
+let nextCursor: string | null = null;
+let pageError: string | null = null;
+let channelsError: string | null = null;
+let notificationsError: string | null = null;
+let requestId: string | null = null;
+
+async function apiRequest<T>(baseUrl: string, token: string, path: string): Promise<T> {
+  const response = await fetch(`${baseUrl}${path}`, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+    redirect: 'manual'
+  });
+  if (!response.ok) {
+    let code = '';
+    try {
+      const body = (await response.json()) as { error?: { code?: string } };
+      code = body.error?.code ? ` (${body.error.code})` : '';
+    } catch {
+      // Never surface upstream response bodies or credentials.
+    }
+    throw new TrueExitApiError(
+      `TrueExit API request failed${code}.`,
+      response.status,
+      response.headers.get('X-Request-Id')
+    );
+  }
+  return (await response.json()) as T;
+}
+
+function first(row: ApiRow, ...keys: string[]): unknown {
+  for (const key of keys) {
+    if (row[key] !== undefined && row[key] !== null) return row[key];
+  }
+  return null;
+}
+function label(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return JSON.stringify(value);
+}
+function dateLabel(value: unknown): string {
+  if (typeof value !== 'string') return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+function enabledLabel(value: unknown): string {
+  if (value === true || value === 1 || value === 'enabled' || value === 'active') return 'Enabled';
+  if (value === false || value === 0 || value === 'disabled' || value === 'inactive')
+    return 'Disabled';
+  return label(value);
+}
+
+try {
+  const baseUrl = getApiBaseUrl({ env });
+  const [user, workspaceResponse] = await Promise.all([
+    getCurrentUser(baseUrl, auth.accessToken),
+    getWorkspaces(baseUrl, auth.accessToken)
+  ]);
+  workspaces = workspaceResponse.data;
+  workspace = requestedWorkspaceId
+    ? (workspaces.find((item) => item.id === requestedWorkspaceId) ?? null)
+    : (workspaces.find((item) => item.id === user.personal_workspace_id) ??
+      (workspaces.length === 1 ? workspaces[0] : null));
+
+  if (requestedWorkspaceId && !workspace) {
+    pageError = 'That workspace is not available to your account.';
+  } else if (workspace) {
+    const query = new URLSearchParams({ workspace_id: workspace.id, limit: '20' });
+    const historyQuery = new URLSearchParams(query);
+    if (cursor) historyQuery.set('cursor', cursor);
+
+    const [channelResult, notificationResult] = await Promise.allSettled([
+      apiRequest<ApiPage>(
+        baseUrl,
+        auth.accessToken,
+        `/v1/notification-channels?${query.toString()}`
+      ),
+      apiRequest<ApiPage>(baseUrl, auth.accessToken, `/v1/notifications?${historyQuery.toString()}`)
+    ]);
+
+    if (channelResult.status === 'fulfilled') {
+      channels = channelResult.value.data ?? [];
+    } else {
+      channelsError =
+        channelResult.reason instanceof Error
+          ? channelResult.reason.message
+          : 'Notification channels could not be loaded.';
+      if (channelResult.reason instanceof TrueExitApiError)
+        requestId = channelResult.reason.requestId;
+    }
+
+    if (notificationResult.status === 'fulfilled') {
+      notifications = notificationResult.value.data ?? [];
+      nextCursor = notificationResult.value.page?.next_cursor ?? null;
+    } else {
+      notificationsError =
+        notificationResult.reason instanceof Error
+          ? notificationResult.reason.message
+          : 'Notification history could not be loaded.';
+      if (notificationResult.reason instanceof TrueExitApiError)
+        requestId = notificationResult.reason.requestId;
+    }
+  }
+} catch (error) {
+  pageError = error instanceof Error ? error.message : 'Notifications could not be loaded.';
+  if (error instanceof TrueExitApiError) requestId = error.requestId;
+}
+
+const historyBase = workspace
+  ? `/notifications?workspace=${encodeURIComponent(workspace.id)}`
+  : '/notifications';
+---
+
+<AppShell title="Notifications">
+  <section class="mx-auto w-full max-w-5xl space-y-8" aria-labelledby="page-title">
+    <div class="space-y-3">
+      <p class="text-sm font-medium text-muted-foreground">Workspace operations</p>
+      <h1 id="page-title" class="text-2xl font-semibold tracking-tight sm:text-3xl">
+        Notifications
+      </h1>
+      <p class="max-w-3xl text-sm leading-6 text-muted-foreground">
+        Review workspace notification destinations and persisted delivery attempts. Historical
+        attempts are not a guarantee of current delivery health, and provider credentials are never
+        shown here.
+      </p>
+    </div>
+
+    {pageError ? (
+      <div role="alert" class="rounded-xl border border-destructive/40 bg-card p-5 sm:p-8">
+        <h2 class="font-semibold">Notifications could not be loaded</h2>
+        <p class="mt-2 text-sm leading-6 text-muted-foreground">{pageError}</p>
+        {requestId && <p class="mt-2 text-xs text-muted-foreground">Request ID: {requestId}</p>}
+      </div>
+    ) : (
+      <>
+        <section aria-labelledby="workspace-title" class="rounded-xl border bg-card p-4 sm:p-5">
+          <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+            <div class="space-y-2">
+              <h2 id="workspace-title" class="text-sm font-medium">
+                Workspace
+              </h2>
+              <p class="text-sm text-muted-foreground">
+                Notification destinations are shared by the workspace.
+              </p>
+            </div>
+            <form action="/notifications" method="get" class="flex flex-col gap-2 sm:min-w-72">
+              <label for="workspace" class="text-sm font-medium">
+                Active workspace
+              </label>
+              <select
+                id="workspace"
+                name="workspace"
+                required
+                class="min-h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="" disabled selected={!workspace}>
+                  Choose a workspace
+                </option>
+                {workspaces.map((item) => (
+                  <option value={item.id} selected={workspace?.id === item.id}>
+                    {item.name}
+                    {item.personal ? ' (Personal)' : ''}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="submit"
+                class="inline-flex min-h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"
+              >
+                Open workspace
+              </button>
+            </form>
+          </div>
+        </section>
+
+        {!workspace ? (
+          <div class="rounded-xl border bg-card p-5 sm:p-8">
+            <h2 class="font-semibold">Choose a workspace</h2>
+            <p class="mt-2 text-sm leading-6 text-muted-foreground">
+              Select a workspace to view its notification destinations and delivery history.
+            </p>
+          </div>
+        ) : (
+          <>
+            <section aria-labelledby="channels-title" class="space-y-4">
+              <div>
+                <h2 id="channels-title" class="text-lg font-semibold">
+                  Notification destinations
+                </h2>
+                <p class="mt-1 text-sm text-muted-foreground">
+                  Safe channel metadata only. Provider configuration and credentials are
+                  intentionally omitted.
+                </p>
+              </div>
+              {channelsError ? (
+                <div role="alert" class="rounded-xl border border-destructive/40 bg-card p-5">
+                  <p class="text-sm">{channelsError}</p>
+                  {requestId && (
+                    <p class="mt-2 text-xs text-muted-foreground">Request ID: {requestId}</p>
+                  )}
+                </div>
+              ) : channels.length === 0 ? (
+                <div class="rounded-xl border bg-card p-5 sm:p-6">
+                  <h3 class="font-medium">No notification destinations returned</h3>
+                  <p class="mt-2 text-sm leading-6 text-muted-foreground">
+                    This workspace has no visible destinations in the current API response.
+                    Destination management can be added once this read-only view is verified.
+                  </p>
+                </div>
+              ) : (
+                <ul class="grid gap-3 md:grid-cols-2">
+                  {channels.map((channel) => (
+                    <li class="min-w-0 rounded-xl border bg-card p-4 sm:p-5">
+                      <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                          <h3 class="break-all font-medium">
+                            {label(first(channel, 'name', 'label', 'channel_type', 'type'))}
+                          </h3>
+                          <p class="mt-1 break-all text-xs text-muted-foreground">
+                            {label(first(channel, 'id', 'channel_id'))}
+                          </p>
+                        </div>
+                        <span class="shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium">
+                          {enabledLabel(first(channel, 'enabled', 'is_enabled', 'status'))}
+                        </span>
+                      </div>
+                      <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <dt class="text-muted-foreground">Type</dt>
+                          <dd class="mt-1 break-words">
+                            {label(first(channel, 'channel_type', 'type'))}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt class="text-muted-foreground">Priority</dt>
+                          <dd class="mt-1">{label(first(channel, 'priority'))}</dd>
+                        </div>
+                        <div class="col-span-2">
+                          <dt class="text-muted-foreground">Updated</dt>
+                          <dd class="mt-1">
+                            {dateLabel(first(channel, 'updated_at', 'created_at'))}
+                          </dd>
+                        </div>
+                      </dl>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section aria-labelledby="history-title" class="space-y-4">
+              <div>
+                <h2 id="history-title" class="text-lg font-semibold">
+                  Delivery history
+                </h2>
+                <p class="mt-1 text-sm text-muted-foreground">
+                  Persisted notification attempts and outcomes. A past failed attempt may have
+                  succeeded on retry; do not interpret this list as a live health verdict.
+                </p>
+              </div>
+              {notificationsError ? (
+                <div role="alert" class="rounded-xl border border-destructive/40 bg-card p-5">
+                  <p class="text-sm">{notificationsError}</p>
+                  {requestId && (
+                    <p class="mt-2 text-xs text-muted-foreground">Request ID: {requestId}</p>
+                  )}
+                </div>
+              ) : notifications.length === 0 ? (
+                <div class="rounded-xl border bg-card p-5 sm:p-6">
+                  <h3 class="font-medium">No delivery history returned</h3>
+                  <p class="mt-2 text-sm leading-6 text-muted-foreground">
+                    There are no records in this page. No delivery failure is inferred from an empty
+                    history.
+                  </p>
+                </div>
+              ) : (
+                <div class="overflow-hidden rounded-xl border bg-card">
+                  <ul class="divide-y">
+                    {notifications.map((item) => (
+                      <li class="space-y-3 p-4 sm:p-5">
+                        <div class="flex flex-wrap items-start justify-between gap-2">
+                          <div class="min-w-0">
+                            <h3 class="break-all text-sm font-medium">
+                              {label(first(item, 'notification_id', 'id'))}
+                            </h3>
+                            <p class="mt-1 break-words text-sm text-muted-foreground">
+                              {label(first(item, 'channel_type', 'channel_id', 'destination_type'))}
+                            </p>
+                          </div>
+                          <span class="rounded-full border px-2.5 py-1 text-xs font-medium">
+                            {label(first(item, 'outcome', 'status', 'result'))}
+                          </span>
+                        </div>
+                        <dl class="grid gap-3 text-sm sm:grid-cols-3">
+                          <div>
+                            <dt class="text-muted-foreground">Attempt</dt>
+                            <dd class="mt-1">
+                              {label(first(item, 'attempt', 'attempt_number', 'attempt_count'))}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt class="text-muted-foreground">Duration</dt>
+                            <dd class="mt-1">
+                              {label(first(item, 'duration_ms', 'duration_millis'))}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt class="text-muted-foreground">Recorded</dt>
+                            <dd class="mt-1">
+                              {dateLabel(first(item, 'created_at', 'occurred_at', 'attempted_at'))}
+                            </dd>
+                          </div>
+                        </dl>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {nextCursor && (
+                <div class="flex justify-end">
+                  <a
+                    href={`${historyBase}&cursor=${encodeURIComponent(nextCursor)}`}
+                    class="inline-flex min-h-10 items-center rounded-md border px-4 text-sm font-medium hover:bg-accent"
+                  >
+                    Older delivery attempts
+                  </a>
+                </div>
+              )}
+            </section>
+          </>
+        )}
+      </>
+    )}
+  </section>
+</AppShell>
