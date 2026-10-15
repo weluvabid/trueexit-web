@@ -1,16 +1,42 @@
 ---
+import AppShell from '../layouts/AppShell.astro';
 ---
 
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="icon" href="/favicon.ico" />
-    <meta name="viewport" content="width=device-width" />
-    <meta name="generator" content={Astro.generator} />
-    <title>Astro</title>
-  </head>
-  <body>
-    <h1>Astro</h1>
-  </body>
-</html>
+<AppShell title="Overview">
+  <section aria-labelledby="page-title" class="mx-auto w-full max-w-5xl">
+    <div class="mb-8 space-y-2">
+      <p class="text-sm font-medium text-muted-foreground">Workspace</p>
+      <h1 id="page-title" class="text-2xl font-semibold tracking-tight sm:text-3xl">
+        Overview
+      </h1>
+      <p class="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
+        Your monitoring workspace will take shape here. We're connecting the application shell to
+        real workspace data in the next slices.
+      </p>
+    </div>
+
+    <div class="rounded-xl border bg-card p-5 shadow-sm sm:p-8">
+      <div
+        class="flex size-11 items-center justify-center rounded-lg border bg-muted text-foreground"
+        aria-hidden="true"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.7"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          class="size-5"
+        >
+          <path d="M3 12h4l3-8 4 16 3-8h4" />
+        </svg>
+      </div>
+      <h2 class="mt-5 text-base font-semibold">The foundation is in place</h2>
+      <p class="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+        This is a real application shell, not sample monitoring data. The overview will populate
+        when authentication, workspace selection, and the dashboard API are connected.
+      </p>
+    </div>
+  </section>
+</AppShell>
