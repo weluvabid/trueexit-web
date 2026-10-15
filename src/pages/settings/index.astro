@@ -1,0 +1,484 @@
+---
+import AppShell from '../../layouts/AppShell.astro';
+import { env } from 'cloudflare:workers';
+import {
+  getApiBaseUrl,
+  getWorkspaces,
+  TrueExitApiError,
+  type TrueExitWorkspace
+} from '../../lib/server/trueexit-api';
+
+export const prerender = false;
+
+const { auth } = Astro.locals;
+if (!auth.user) return auth.redirectToSignIn();
+
+type MemberRecord = {
+  user_id?: string;
+  email?: string | null;
+  display_name?: string | null;
+  role?: string;
+  joined_at?: string;
+  [key: string]: unknown;
+};
+
+const apiBaseUrl = getApiBaseUrl({ env });
+const token = auth.accessToken;
+const requestUrl = new URL(Astro.request.url);
+const requestedWorkspaceId = requestUrl.searchParams.get('workspace');
+const result = requestUrl.searchParams.get('result');
+const message = requestUrl.searchParams.get('message');
+let workspaces: TrueExitWorkspace[] = [];
+let selectedWorkspace: TrueExitWorkspace | null = null;
+let members: MemberRecord[] = [];
+let loadError: string | null = null;
+let memberError: string | null = null;
+let requestId: string | null = null;
+
+async function apiRequest<T>(
+  path: string,
+  init: { method?: string; headers?: Record<string, string>; body?: string } = {}
+): Promise<T> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    ...init,
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${token}`,
+      ...((init as { headers?: Record<string, string> }).headers ?? {})
+    },
+    redirect: 'manual'
+  });
+  if (!response.ok) {
+    let code = '';
+    try {
+      const body = (await response.json()) as { error?: { code?: string } };
+      code = body.error?.code ? ` (${body.error.code})` : '';
+    } catch {
+      // Do not expose upstream response bodies.
+    }
+    throw new TrueExitApiError(
+      `TrueExit API request failed (${response.status})${code}.`,
+      response.status,
+      response.headers.get('X-Request-Id')
+    );
+  }
+  if (response.status === 204) return undefined as T;
+  return (await response.json()) as T;
+}
+
+function safeReturnUrl(
+  workspaceId: string | null,
+  resultCode: string,
+  detail?: string,
+  id?: string | null
+) {
+  const target = new URL('/settings', Astro.url);
+  if (workspaceId) target.searchParams.set('workspace', workspaceId);
+  target.searchParams.set('result', resultCode);
+  if (detail) target.searchParams.set('message', detail.slice(0, 240));
+  if (id) target.searchParams.set('request_id', id);
+  return Astro.redirect(target.pathname + target.search, 303);
+}
+
+if (Astro.request.method === 'POST') {
+  let workspaceId = requestedWorkspaceId;
+  try {
+    const origin = Astro.request.headers.get('origin');
+    if (!origin || new URL(origin).origin !== Astro.url.origin) {
+      return safeReturnUrl(workspaceId, 'error', 'The request origin could not be verified.');
+    }
+    const form = await Astro.request.formData();
+    const action = String(form.get('action') ?? '');
+    const name = String(form.get('name') ?? '').trim();
+    const memberId = String(form.get('member_id') ?? '').trim();
+    const role = String(form.get('role') ?? '').trim();
+
+    if (action === 'create-workspace') {
+      if (!name || name.length > 120)
+        return safeReturnUrl(
+          null,
+          'error',
+          'Workspace names must be between 1 and 120 characters.'
+        );
+      const created = await apiRequest<{ id?: string }>('/v1/workspaces', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      return safeReturnUrl(created.id ?? null, 'created', 'Workspace created.');
+    }
+
+    if (!workspaceId) return safeReturnUrl(null, 'error', 'Choose a workspace first.');
+
+    if (action === 'rename-workspace') {
+      if (!name || name.length > 120)
+        return safeReturnUrl(
+          workspaceId,
+          'error',
+          'Workspace names must be between 1 and 120 characters.'
+        );
+      await apiRequest(`/v1/workspaces/${encodeURIComponent(workspaceId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      return safeReturnUrl(workspaceId, 'saved', 'Workspace name updated.');
+    }
+
+    if (action === 'change-role') {
+      if (!memberId || !['member', 'admin'].includes(role))
+        return safeReturnUrl(workspaceId, 'error', 'Choose a valid member and role.');
+      await apiRequest(
+        `/v1/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(memberId)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ role })
+        }
+      );
+      return safeReturnUrl(workspaceId, 'saved', 'Member role updated.');
+    }
+
+    if (action === 'remove-member') {
+      if (!memberId) return safeReturnUrl(workspaceId, 'error', 'Choose a member to remove.');
+      await apiRequest(
+        `/v1/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(memberId)}`,
+        { method: 'DELETE' }
+      );
+      return safeReturnUrl(workspaceId, 'saved', 'Member removed from the workspace.');
+    }
+
+    if (action === 'transfer-ownership') {
+      if (!memberId)
+        return safeReturnUrl(workspaceId, 'error', 'Choose a member to receive ownership.');
+      await apiRequest(`/v1/workspaces/${encodeURIComponent(workspaceId)}/transfer-ownership`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ new_owner_user_id: memberId })
+      });
+      return safeReturnUrl(workspaceId, 'saved', 'Workspace ownership transferred.');
+    }
+
+    return safeReturnUrl(workspaceId, 'error', 'Unknown settings action.');
+  } catch (error) {
+    const id = error instanceof TrueExitApiError ? error.requestId : null;
+    const detail =
+      error instanceof Error ? error.message : 'Unable to complete the workspace action.';
+    return safeReturnUrl(workspaceId, 'error', detail, id);
+  }
+}
+
+try {
+  const response = await getWorkspaces(apiBaseUrl, token);
+  workspaces = response.data;
+  selectedWorkspace = workspaces.find((workspace) => workspace.id === requestedWorkspaceId) ?? null;
+  if (!selectedWorkspace && workspaces.length === 1) selectedWorkspace = workspaces[0];
+  if (!selectedWorkspace)
+    selectedWorkspace = workspaces.find((workspace) => workspace.personal) ?? null;
+  if (!selectedWorkspace && workspaces.length) selectedWorkspace = workspaces[0];
+  if (selectedWorkspace && !selectedWorkspace.personal) {
+    try {
+      const query = new URLSearchParams({ limit: '100' });
+      const response = await apiRequest<{ data: MemberRecord[] }>(
+        `/v1/workspaces/${encodeURIComponent(selectedWorkspace.id)}/members?${query.toString()}`
+      );
+      members = response.data;
+    } catch (error) {
+      memberError = error instanceof Error ? error.message : 'Unable to load workspace members.';
+      if (error instanceof TrueExitApiError) requestId = error.requestId;
+    }
+  }
+} catch (error) {
+  loadError = error instanceof Error ? error.message : 'Unable to load workspace settings.';
+  if (error instanceof TrueExitApiError) requestId = error.requestId;
+}
+
+const label = (value: unknown, fallback = 'Not provided') =>
+  typeof value === 'string' && value.trim() ? value : fallback;
+const isOwner = (member: MemberRecord) => String(member.role ?? '').toLowerCase() === 'owner';
+const isWorkspaceAdmin = Boolean(
+  selectedWorkspace &&
+  !selectedWorkspace.personal &&
+  (selectedWorkspace.account_owner || selectedWorkspace.role === 'admin')
+);
+const canTransferOwnership = Boolean(
+  selectedWorkspace && !selectedWorkspace.personal && selectedWorkspace.account_owner
+);
+const settingsUrl = (workspaceId: string) =>
+  `/settings?workspace=${encodeURIComponent(workspaceId)}`;
+---
+
+<AppShell title="Workspace settings">
+  <section class="mx-auto w-full max-w-5xl space-y-8" aria-labelledby="page-title">
+    <header class="space-y-2">
+      <p class="text-sm font-medium text-muted-foreground">Workspace</p>
+      <h1 id="page-title" class="text-2xl font-semibold tracking-tight sm:text-3xl">
+        Settings & members
+      </h1>
+      <p class="max-w-2xl text-sm leading-6 text-muted-foreground">
+        Manage workspace details and team access. The API remains authoritative for permissions.
+      </p>
+    </header>
+
+    {result && (
+      <div
+        role={result === 'error' ? 'alert' : 'status'}
+        class={`rounded-lg border p-4 text-sm ${result === 'error' ? 'border-destructive/40' : 'border-border'}`}
+      >
+        <p class="font-medium">
+          {result === 'error' ? 'Action could not be completed' : 'Workspace updated'}
+        </p>
+        {message && <p class="mt-1 text-muted-foreground">{message}</p>}
+        {requestUrl.searchParams.get('request_id') && (
+          <p class="mt-2 text-xs text-muted-foreground">
+            Request ID: {requestUrl.searchParams.get('request_id')}
+          </p>
+        )}
+      </div>
+    )}
+
+    {loadError ? (
+      <div role="alert" class="rounded-xl border border-destructive/40 bg-card p-5">
+        <h2 class="font-semibold">We couldn’t load workspace settings</h2>
+        <p class="mt-2 text-sm text-muted-foreground">{loadError}</p>
+        {requestId && <p class="mt-2 text-xs text-muted-foreground">Request ID: {requestId}</p>}
+      </div>
+    ) : (
+      <>
+        <section
+          class="rounded-xl border bg-card p-5 sm:p-6"
+          aria-labelledby="workspace-select-title"
+        >
+          <div class="space-y-1">
+            <h2 id="workspace-select-title" class="text-lg font-semibold">
+              Choose workspace
+            </h2>
+            <p class="text-sm text-muted-foreground">
+              Workspace settings and membership are scoped to the selected workspace.
+            </p>
+          </div>
+          {workspaces.length ? (
+            <ul class="mt-4 grid gap-2 sm:grid-cols-2">
+              {workspaces.map((workspace) => (
+                <li>
+                  <a
+                    href={settingsUrl(workspace.id)}
+                    aria-current={selectedWorkspace?.id === workspace.id ? 'page' : undefined}
+                    class={`flex min-h-14 items-center justify-between gap-3 rounded-md border px-4 py-3 text-sm hover:bg-accent ${selectedWorkspace?.id === workspace.id ? 'border-foreground/40 bg-accent/50' : ''}`}
+                  >
+                    <span class="min-w-0">
+                      <span class="block truncate font-medium">{workspace.name}</span>
+                      <span class="mt-1 block text-xs text-muted-foreground">
+                        {workspace.personal
+                          ? 'Personal workspace'
+                          : (workspace.role ??
+                            (workspace.account_owner ? 'Owner' : 'Team workspace'))}
+                      </span>
+                    </span>
+                    {selectedWorkspace?.id === workspace.id && (
+                      <span class="text-xs font-medium">Selected</span>
+                    )}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p class="mt-4 text-sm text-muted-foreground">
+              No workspaces were returned by the API.
+            </p>
+          )}
+        </section>
+
+        <section
+          class="rounded-xl border bg-card p-5 sm:p-6"
+          aria-labelledby="create-workspace-title"
+        >
+          <div>
+            <h2 id="create-workspace-title" class="text-lg font-semibold">
+              Create a team workspace
+            </h2>
+            <p class="mt-1 text-sm text-muted-foreground">
+              A new team workspace is created with you as its owner. Personal workspaces are
+              separate and cannot be renamed.
+            </p>
+          </div>
+          <form method="post" class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+            <input type="hidden" name="action" value="create-workspace" />
+            <label class="flex-1 space-y-1.5 text-sm font-medium">
+              Workspace name
+              <input
+                name="name"
+                required
+                minlength="1"
+                maxlength="120"
+                autocomplete="organization"
+                class="flex min-h-10 w-full rounded-md border bg-background px-3 py-2 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                placeholder="e.g. Operations team"
+              />
+            </label>
+            <button
+              type="submit"
+              class="inline-flex min-h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"
+            >
+              Create workspace
+            </button>
+          </form>
+        </section>
+
+        {selectedWorkspace && (
+          <>
+            <section class="rounded-xl border bg-card p-5 sm:p-6" aria-labelledby="rename-title">
+              <div>
+                <h2 id="rename-title" class="text-lg font-semibold">
+                  Workspace details
+                </h2>
+                <p class="mt-1 text-sm text-muted-foreground">
+                  {selectedWorkspace.personal
+                    ? 'Personal workspace names are immutable.'
+                    : 'Rename this team workspace. Only owners and admins can make this change.'}
+                </p>
+              </div>
+              {selectedWorkspace.personal ? (
+                <p class="mt-4 rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
+                  This is a personal workspace. Rename is unavailable.
+                </p>
+              ) : (
+                <form method="post" class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+                  <input type="hidden" name="action" value="rename-workspace" />
+                  <label class="flex-1 space-y-1.5 text-sm font-medium">
+                    Workspace name
+                    <input
+                      name="name"
+                      required
+                      minlength="1"
+                      maxlength="120"
+                      value={selectedWorkspace.name}
+                      class="flex min-h-10 w-full rounded-md border bg-background px-3 py-2 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    class="inline-flex min-h-10 items-center justify-center rounded-md border px-4 text-sm font-medium hover:bg-accent"
+                  >
+                    Save name
+                  </button>
+                </form>
+              )}
+            </section>
+
+            {selectedWorkspace.personal ? (
+              <section class="rounded-xl border bg-card p-5 sm:p-6">
+                <h2 class="text-lg font-semibold">Team membership</h2>
+                <p class="mt-2 text-sm text-muted-foreground">
+                  Personal workspaces do not have team membership management.
+                </p>
+              </section>
+            ) : (
+              <section class="space-y-4" aria-labelledby="members-title">
+                <div>
+                  <h2 id="members-title" class="text-lg font-semibold">
+                    Team members
+                  </h2>
+                  <p class="mt-1 text-sm text-muted-foreground">
+                    Roles and membership changes are enforced by the API. Invitation delivery is not
+                    available in this UI pass because invitation HTTP routes are not yet integrated.
+                  </p>
+                </div>
+                {memberError ? (
+                  <div role="alert" class="rounded-xl border border-destructive/40 bg-card p-5">
+                    <p class="text-sm">{memberError}</p>
+                    {requestId && (
+                      <p class="mt-2 text-xs text-muted-foreground">Request ID: {requestId}</p>
+                    )}
+                  </div>
+                ) : members.length === 0 ? (
+                  <div class="rounded-xl border bg-card p-5">
+                    <h3 class="font-medium">No members returned</h3>
+                    <p class="mt-1 text-sm text-muted-foreground">
+                      The API returned an empty member list, or no members are visible to this role.
+                    </p>
+                  </div>
+                ) : (
+                  <ul class="space-y-3">
+                    {members.map((member) => (
+                      <li class="rounded-xl border bg-card p-4 sm:p-5">
+                        <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                          <div class="min-w-0">
+                            <p class="break-words font-medium">
+                              {label(member.display_name, label(member.email, 'Workspace member'))}
+                            </p>
+                            {member.email && (
+                              <p class="mt-1 break-all text-sm text-muted-foreground">
+                                {label(member.email)}
+                              </p>
+                            )}
+                            <p class="mt-2 text-xs text-muted-foreground">
+                              Role: {label(member.role)}
+                              {member.joined_at
+                                ? ` · Joined ${new Date(member.joined_at).toLocaleDateString('en-US', { timeZone: 'UTC' })}`
+                                : ''}
+                            </p>
+                            <p class="mt-1 break-all text-xs text-muted-foreground">
+                              User ID: {label(member.user_id)}
+                            </p>
+                          </div>
+                          {isWorkspaceAdmin && member.user_id && !isOwner(member) && (
+                            <div class="flex flex-col gap-3 sm:min-w-64">
+                              <form method="post" class="flex flex-wrap items-end gap-2">
+                                <input type="hidden" name="action" value="change-role" />
+                                <input type="hidden" name="member_id" value={member.user_id} />
+                                <label class="flex-1 space-y-1 text-xs font-medium">
+                                  Change role
+                                  <select
+                                    name="role"
+                                    class="flex min-h-10 w-full rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                    value={member.role === 'admin' ? 'admin' : 'member'}
+                                  >
+                                    <option value="member">Member</option>
+                                    <option value="admin">Admin</option>
+                                  </select>
+                                </label>
+                                <button
+                                  type="submit"
+                                  class="inline-flex min-h-10 items-center rounded-md border px-3 text-sm font-medium hover:bg-accent"
+                                >
+                                  Save
+                                </button>
+                              </form>
+                              <form method="post">
+                                <input type="hidden" name="action" value="remove-member" />
+                                <input type="hidden" name="member_id" value={member.user_id} />
+                                <button
+                                  type="submit"
+                                  class="inline-flex min-h-10 w-full items-center justify-center rounded-md border border-destructive/40 px-3 text-sm font-medium text-destructive hover:bg-destructive/5"
+                                >
+                                  Remove member
+                                </button>
+                              </form>
+                              {canTransferOwnership && (
+                                <form method="post">
+                                  <input type="hidden" name="action" value="transfer-ownership" />
+                                  <input type="hidden" name="member_id" value={member.user_id} />
+                                  <button
+                                    type="submit"
+                                    class="inline-flex min-h-10 w-full items-center justify-center rounded-md border px-3 text-sm font-medium hover:bg-accent"
+                                  >
+                                    Transfer ownership
+                                  </button>
+                                </form>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            )}
+          </>
+        )}
+      </>
+    )}
+  </section>
+</AppShell>
