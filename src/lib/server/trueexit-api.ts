@@ -7,6 +7,22 @@ export interface TrueExitWorkspace {
   role: 'admin' | 'member' | null;
 }
 
+export type MonitorStatus = 'enabled' | 'disabled' | 'archived';
+
+export interface TrueExitMonitor {
+  id: string;
+  workspace_id: string;
+  category_id: string;
+  name: string;
+  description: string;
+  status: MonitorStatus;
+  cadence_seconds: number;
+  current_config_version: number;
+  config_versions: unknown;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface CurrentUser {
   user_id: string;
   owned_account_ids: string[];
@@ -73,8 +89,14 @@ export function getApiBaseUrl(runtime: unknown): string {
   return url.toString().replace(/\/$/, '');
 }
 
-async function request<T>(baseUrl: string, accessToken: string, path: string): Promise<T> {
+async function request<T>(
+  baseUrl: string,
+  accessToken: string,
+  path: string,
+  init: RequestInit = {}
+): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
+    ...init,
     headers: {
       Accept: 'application/json',
       Authorization: `Bearer ${accessToken}`
@@ -119,5 +141,37 @@ export async function getWorkspaceDashboard(
     baseUrl,
     accessToken,
     `/v1/workspaces/${encodeURIComponent(workspaceId)}/dashboard`
+  );
+}
+
+export async function getMonitors(
+  baseUrl: string,
+  accessToken: string,
+  workspaceId: string,
+  options: { cursor?: string | null; includeArchived?: boolean } = {}
+) {
+  const query = new URLSearchParams({ workspace_id: workspaceId, limit: '100' });
+  if (options.cursor) query.set('cursor', options.cursor);
+  if (options.includeArchived) query.set('include_archived', 'true');
+  return request<{ data: TrueExitMonitor[]; page: { next_cursor: string | null } }>(
+    baseUrl,
+    accessToken,
+    `/v1/monitors?${query.toString()}`
+  );
+}
+
+export async function performMonitorAction(
+  baseUrl: string,
+  accessToken: string,
+  workspaceId: string,
+  monitorId: string,
+  action: 'pause' | 'resume' | 'archive' | 'restore'
+) {
+  const query = new URLSearchParams({ workspace_id: workspaceId });
+  return request<TrueExitMonitor>(
+    baseUrl,
+    accessToken,
+    `/v1/monitors/${encodeURIComponent(monitorId)}/${action}?${query.toString()}`,
+    { method: 'POST' }
   );
 }

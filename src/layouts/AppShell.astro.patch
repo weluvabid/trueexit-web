@@ -1,0 +1,61 @@
+diff --git a/src/layouts/AppShell.astro b/src/layouts/AppShell.astro
+--- a/src/layouts/AppShell.astro
++++ b/src/layouts/AppShell.astro
+@@ -8,2 +8,3 @@
+  const { title } = Astro.props;
++const isMonitorsPage = Astro.url.pathname.startsWith('/monitors');
+  ---
+@@ -71,4 +71,4 @@
+            <a
+              href="/"
+-            aria-current="page"
+-            class="flex min-h-10 items-center gap-3 rounded-md bg-sidebar-accent px-3 text-sm font-medium text-sidebar-accent-foreground"
++            aria-current={isMonitorsPage ? undefined : 'page'}
++            class={isMonitorsPage ? 'flex min-h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent' : 'flex min-h-10 items-center gap-3 rounded-md bg-sidebar-accent px-3 text-sm font-medium text-sidebar-accent-foreground'}
+@@ -89,8 +89,7 @@
+              Overview
+            </a>
+-          <button
+-            type="button"
+-            disabled
+-            title="Available in a later build slice"
+-            class="flex min-h-10 w-full cursor-not-allowed items-center gap-3 rounded-md px-3 text-left text-sm text-muted-foreground opacity-60"
+-          >
++          <a
++            href="/monitors"
++            aria-current={isMonitorsPage ? 'page' : undefined}
++            class={isMonitorsPage ? 'flex min-h-10 items-center gap-3 rounded-md bg-sidebar-accent px-3 text-sm font-medium text-sidebar-accent-foreground' : 'flex min-h-10 items-center gap-3 rounded-md px-3 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground'}
++          >
+@@ -109,4 +109,4 @@
+              </svg>
+              Monitors
+-          </button>
++          </a>
+            <button
+@@ -240,4 +240,4 @@
+            <a
+              href="/"
+-            aria-current="page"
+-            class="flex min-h-14 flex-col items-center justify-center gap-1 rounded-md text-primary"
++            aria-current={isMonitorsPage ? undefined : 'page'}
++            class={isMonitorsPage ? 'flex min-h-14 flex-col items-center justify-center gap-1 rounded-md text-muted-foreground' : 'flex min-h-14 flex-col items-center justify-center gap-1 rounded-md text-primary'}
+@@ -261,8 +261,7 @@
+              <span class="text-[11px] font-medium">Overview</span>
+            </a>
+-          <button
+-            type="button"
+-            disabled
+-            aria-label="Monitors, available in a later build slice"
+-            class="flex min-h-14 flex-col items-center justify-center gap-1 rounded-md text-muted-foreground opacity-50"
+-          >
++          <a
++            href="/monitors"
++            aria-current={isMonitorsPage ? 'page' : undefined}
++            class={isMonitorsPage ? 'flex min-h-14 flex-col items-center justify-center gap-1 rounded-md text-primary' : 'flex min-h-14 flex-col items-center justify-center gap-1 rounded-md text-muted-foreground'}
++          >
+@@ -282,4 +282,4 @@
+              </svg>
+              <span class="text-[11px]">Monitors</span>
+-          </button>
++          </a>
+            <button

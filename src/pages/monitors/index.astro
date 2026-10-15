@@ -1,0 +1,356 @@
+---
+import AppShell from '../../layouts/AppShell.astro';
+import { env } from 'cloudflare:workers';
+import {
+  getApiBaseUrl,
+  getCurrentUser,
+  getMonitors,
+  getWorkspaces,
+  performMonitorAction,
+  TrueExitApiError,
+  type TrueExitMonitor,
+  type TrueExitWorkspace
+} from '../../lib/server/trueexit-api';
+
+export const prerender = false;
+
+const { auth } = Astro.locals;
+if (!auth.user) return auth.redirectToSignIn();
+
+let workspaces: TrueExitWorkspace[] = [];
+let selectedWorkspace: TrueExitWorkspace | null = null;
+let monitors: TrueExitMonitor[] = [];
+let nextCursor: string | null = null;
+let pageError: string | null = null;
+let actionError: string | null = null;
+let requestId: string | null = null;
+const requestedCursor = Astro.url.searchParams.get('cursor');
+
+try {
+  const apiBaseUrl = getApiBaseUrl({ env });
+  const [currentUser, workspaceResponse] = await Promise.all([
+    getCurrentUser(apiBaseUrl, auth.accessToken),
+    getWorkspaces(apiBaseUrl, auth.accessToken)
+  ]);
+  workspaces = workspaceResponse.data;
+
+  const form = Astro.request.method === 'POST' ? await Astro.request.formData() : null;
+  if (form) {
+    const origin = Astro.request.headers.get('origin');
+    if (!origin || origin !== Astro.url.origin) {
+      actionError = 'This action could not be verified. Reload the page and try again.';
+    } else {
+      const workspaceId = String(form.get('workspace_id') ?? '');
+      const monitorId = String(form.get('monitor_id') ?? '');
+      const action = String(form.get('action') ?? '');
+      const authorizedWorkspace = workspaces.find((workspace) => workspace.id === workspaceId);
+      const allowedActions = ['pause', 'resume', 'archive', 'restore'] as const;
+
+      if (
+        !authorizedWorkspace ||
+        !monitorId ||
+        !allowedActions.includes(action as (typeof allowedActions)[number])
+      ) {
+        actionError = 'That monitor action is invalid. Refresh the page and try again.';
+      } else {
+        try {
+          await performMonitorAction(
+            apiBaseUrl,
+            auth.accessToken,
+            authorizedWorkspace.id,
+            monitorId,
+            action as (typeof allowedActions)[number]
+          );
+          return Astro.redirect(
+            `/monitors?workspace=${encodeURIComponent(authorizedWorkspace.id)}&notice=${action}`,
+            303
+          );
+        } catch (error) {
+          actionError = error instanceof Error ? error.message : 'The monitor action failed.';
+          if (error instanceof TrueExitApiError) requestId = error.requestId;
+        }
+      }
+    }
+  }
+
+  const requestedWorkspaceId = form
+    ? String(form.get('workspace_id') ?? '')
+    : Astro.url.searchParams.get('workspace');
+  if (requestedWorkspaceId) {
+    selectedWorkspace =
+      workspaces.find((workspace) => workspace.id === requestedWorkspaceId) ?? null;
+  }
+  if (!selectedWorkspace && workspaces.length === 1) selectedWorkspace = workspaces[0];
+  if (!selectedWorkspace && currentUser.personal_workspace_id) {
+    selectedWorkspace =
+      workspaces.find((workspace) => workspace.id === currentUser.personal_workspace_id) ?? null;
+  }
+
+  if (selectedWorkspace) {
+    const response = await getMonitors(apiBaseUrl, auth.accessToken, selectedWorkspace.id, {
+      cursor: requestedCursor,
+      includeArchived: true
+    });
+    monitors = response.data;
+    nextCursor = response.page?.next_cursor ?? null;
+  }
+} catch (error) {
+  pageError = error instanceof Error ? error.message : 'Unable to load monitors.';
+  if (error instanceof TrueExitApiError) requestId = error.requestId;
+}
+
+const statusLabel = (status: TrueExitMonitor['status']) => {
+  if (status === 'enabled') return 'Enabled';
+  if (status === 'disabled') return 'Disabled';
+  if (status === 'archived') return 'Archived';
+  return 'Unknown';
+};
+
+const formatDate = (value: string) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Unknown' : date.toISOString().slice(0, 10);
+};
+
+const formatCadence = (seconds: number) => {
+  if (seconds % 86400 === 0) return `${seconds / 86400} day${seconds === 86400 ? '' : 's'}`;
+  if (seconds % 3600 === 0) return `${seconds / 3600} hour${seconds === 3600 ? '' : 's'}`;
+  if (seconds % 60 === 0) return `${seconds / 60} min`;
+  return `${seconds} sec`;
+};
+
+const noticeLabels: Record<string, string> = {
+  pause: 'Monitoring paused.',
+  resume: 'Monitoring resumed.',
+  archive: 'Monitor archived. Its evidence and health history are retained.',
+  restore: 'Monitor restored as disabled. Resume it separately when ready.'
+};
+const notice = noticeLabels[Astro.url.searchParams.get('notice') ?? ''] ?? null;
+---
+
+<AppShell title="Monitors">
+  <section aria-labelledby="page-title" class="mx-auto w-full max-w-5xl">
+    <div class="mb-8 flex flex-wrap items-start justify-between gap-4">
+      <div class="space-y-2">
+        <p class="text-sm font-medium text-muted-foreground">Workspace</p>
+        <h1 id="page-title" class="text-2xl font-semibold tracking-tight sm:text-3xl">
+          Monitors
+        </h1>
+        <p class="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
+          Review monitor configuration and lifecycle. Health and evidence details are available in a
+          later slice.
+        </p>
+      </div>
+      <a
+        href={selectedWorkspace ? `/?workspace=${encodeURIComponent(selectedWorkspace.id)}` : '/'}
+        class="inline-flex min-h-10 items-center justify-center rounded-md border px-4 text-sm font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        Overview
+      </a>
+    </div>
+
+    {pageError ? (
+      <div role="alert" class="rounded-xl border border-destructive/40 bg-card p-5 sm:p-8">
+        <h2 class="font-semibold">We couldn’t load monitors</h2>
+        <p class="mt-2 text-sm leading-6 text-muted-foreground">{pageError}</p>
+        {requestId && <p class="mt-2 text-xs text-muted-foreground">Request ID: {requestId}</p>}
+        <a
+          href="/monitors"
+          class="mt-5 inline-flex min-h-10 items-center rounded-md border px-4 text-sm font-medium hover:bg-accent"
+        >
+          Try again
+        </a>
+      </div>
+    ) : workspaces.length === 0 ? (
+      <div class="rounded-xl border bg-card p-5 sm:p-8">
+        <h2 class="font-semibold">No workspaces available</h2>
+        <p class="mt-2 text-sm leading-6 text-muted-foreground">
+          This account has no accessible TrueExit workspace.
+        </p>
+      </div>
+    ) : !selectedWorkspace ? (
+      <div class="rounded-xl border bg-card p-5 sm:p-8">
+        <h2 class="font-semibold">Choose a workspace</h2>
+        <p class="mt-2 text-sm text-muted-foreground">
+          Select the workspace whose monitors you want to manage.
+        </p>
+        <ul class="mt-4 space-y-2">
+          {workspaces.map((workspace) => (
+            <li>
+              <a
+                class="flex min-h-12 items-center justify-between rounded-md border px-3 py-2 text-sm hover:bg-accent"
+                href={`/monitors?workspace=${encodeURIComponent(workspace.id)}`}
+              >
+                <span>{workspace.name}</span>
+                <span aria-hidden="true">→</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ) : (
+      <div class="space-y-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="text-lg font-semibold">{selectedWorkspace.name}</h2>
+            <p class="mt-1 text-sm text-muted-foreground">
+              {monitors.length} monitor{monitors.length === 1 ? '' : 's'} on this page
+            </p>
+          </div>
+          {workspaces.length > 1 && (
+            <details class="relative">
+              <summary class="flex min-h-10 cursor-pointer list-none items-center rounded-md border px-3 text-sm font-medium hover:bg-accent">
+                Switch workspace
+              </summary>
+              <ul class="absolute right-0 z-20 mt-2 max-h-72 w-64 overflow-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-md">
+                {workspaces
+                  .filter((workspace) => workspace.id !== selectedWorkspace?.id)
+                  .map((workspace) => (
+                    <li>
+                      <a
+                        href={`/monitors?workspace=${encodeURIComponent(workspace.id)}`}
+                        class="block rounded-md px-3 py-2 text-sm hover:bg-accent"
+                      >
+                        {workspace.name}
+                      </a>
+                    </li>
+                  ))}
+              </ul>
+            </details>
+          )}
+        </div>
+
+        {notice && (
+          <p role="status" class="rounded-lg border bg-card px-4 py-3 text-sm">
+            {notice}
+          </p>
+        )}
+        {actionError && (
+          <div
+            role="alert"
+            class="rounded-lg border border-destructive/40 bg-card px-4 py-3 text-sm"
+          >
+            <p>{actionError}</p>
+            {requestId && <p class="mt-1 text-xs text-muted-foreground">Request ID: {requestId}</p>}
+          </div>
+        )}
+
+        {monitors.length === 0 ? (
+          <div class="rounded-xl border bg-card p-5 sm:p-8">
+            <h3 class="font-semibold">No monitors yet</h3>
+            <p class="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+              This workspace has no monitors on this page. Monitor creation will be added in a later
+              slice.
+            </p>
+          </div>
+        ) : (
+          <ul class="space-y-3">
+            {monitors.map((monitor) => (
+              <li class="rounded-xl border bg-card p-4 sm:p-5">
+                <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div class="min-w-0 flex-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <h3 class="break-words font-semibold">{monitor.name}</h3>
+                      <span class="rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
+                        {statusLabel(monitor.status)}
+                      </span>
+                    </div>
+                    {monitor.description && (
+                      <p class="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">
+                        {monitor.description}
+                      </p>
+                    )}
+                    <dl class="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
+                      <div>
+                        <dt class="inline">Cadence: </dt>
+                        <dd class="inline">{formatCadence(monitor.cadence_seconds)}</dd>
+                      </div>
+                      <div>
+                        <dt class="inline">Configuration version: </dt>
+                        <dd class="inline">{monitor.current_config_version}</dd>
+                      </div>
+                      <div>
+                        <dt class="inline">Updated: </dt>
+                        <dd class="inline">{formatDate(monitor.updated_at)}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                  <div class="flex flex-wrap gap-2 sm:max-w-64 sm:justify-end">
+                    {monitor.status !== 'archived' && (
+                      <form method="POST" class="inline-flex">
+                        <input type="hidden" name="workspace_id" value={selectedWorkspace.id} />
+                        <input type="hidden" name="monitor_id" value={monitor.id} />
+                        <input
+                          type="hidden"
+                          name="action"
+                          value={monitor.status === 'enabled' ? 'pause' : 'resume'}
+                        />
+                        <button
+                          type="submit"
+                          class="inline-flex min-h-9 items-center justify-center rounded-md border px-3 text-sm font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {monitor.status === 'enabled' ? 'Pause' : 'Resume'}
+                        </button>
+                      </form>
+                    )}
+                    {monitor.status === 'archived' ? (
+                      <form method="POST" class="inline-flex">
+                        <input type="hidden" name="workspace_id" value={selectedWorkspace.id} />
+                        <input type="hidden" name="monitor_id" value={monitor.id} />
+                        <input type="hidden" name="action" value="restore" />
+                        <button
+                          type="submit"
+                          class="inline-flex min-h-9 items-center justify-center rounded-md border px-3 text-sm font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          Restore
+                        </button>
+                      </form>
+                    ) : (
+                      <details class="relative">
+                        <summary class="inline-flex min-h-9 cursor-pointer list-none items-center justify-center rounded-md border border-destructive/40 px-3 text-sm font-medium text-destructive hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                          Archive
+                        </summary>
+                        <div class="absolute right-0 z-20 mt-2 w-64 rounded-lg border bg-popover p-4 text-popover-foreground shadow-md">
+                          <p class="text-sm font-medium">Archive this monitor?</p>
+                          <p class="mt-1 text-xs leading-5 text-muted-foreground">
+                            It will stop accepting new evidence. Existing evidence and health
+                            history will be retained.
+                          </p>
+                          <form method="POST" class="mt-3">
+                            <input type="hidden" name="workspace_id" value={selectedWorkspace.id} />
+                            <input type="hidden" name="monitor_id" value={monitor.id} />
+                            <input type="hidden" name="action" value="archive" />
+                            <button
+                              type="submit"
+                              class="inline-flex min-h-9 w-full items-center justify-center rounded-md bg-destructive px-3 text-sm font-medium text-destructive-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              Confirm archive
+                            </button>
+                          </form>
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {nextCursor && (
+          <div class="flex justify-end">
+            <a
+              href={`/monitors?workspace=${encodeURIComponent(selectedWorkspace.id)}&cursor=${encodeURIComponent(nextCursor)}`}
+              class="inline-flex min-h-10 items-center justify-center rounded-md border px-4 text-sm font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Next page
+            </a>
+          </div>
+        )}
+        <p class="text-xs leading-5 text-muted-foreground">
+          Pausing disables future monitoring. Archiving retains evidence and health history;
+          restoring returns a monitor to disabled, and resuming is a separate action.
+        </p>
+      </div>
+    )}
+  </section>
+</AppShell>
