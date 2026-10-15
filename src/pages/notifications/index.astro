@@ -18,6 +18,7 @@ type ApiPage = { data: ApiRow[]; page?: { next_cursor?: string | null } };
 
 const requestedWorkspaceId = Astro.url.searchParams.get('workspace') ?? '';
 const cursor = Astro.url.searchParams.get('cursor') ?? '';
+const actionResult = Astro.url.searchParams.get('result') ?? '';
 let workspaces: TrueExitWorkspace[] = [];
 let workspace: TrueExitWorkspace | null = null;
 let channels: ApiRow[] = [];
@@ -26,11 +27,23 @@ let nextCursor: string | null = null;
 let pageError: string | null = null;
 let channelsError: string | null = null;
 let notificationsError: string | null = null;
+let mutationError: string | null = null;
 let requestId: string | null = null;
 
-async function apiRequest<T>(baseUrl: string, token: string, path: string): Promise<T> {
+async function apiRequest<T>(
+  baseUrl: string,
+  token: string,
+  path: string,
+  init?: globalThis.RequestInit
+): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
-    headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+    ...init,
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${token}`,
+      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+      ...init?.headers
+    },
     redirect: 'manual'
   });
   if (!response.ok) {
@@ -74,8 +87,96 @@ function enabledLabel(value: unknown): string {
   return label(value);
 }
 
+const baseUrl = getApiBaseUrl({ env });
+
+if (Astro.request.method === 'POST') {
+  const origin = Astro.request.headers.get('origin');
+  const requestUrl = new URL(Astro.request.url);
+  if (!origin || new URL(origin).origin !== requestUrl.origin) {
+    return new Response('Forbidden', { status: 403 });
+  }
+
+  let form: FormData;
+  try {
+    form = await Astro.request.formData();
+  } catch {
+    return new Response('Invalid form submission', { status: 400 });
+  }
+
+  const formWorkspaceId = String(form.get('workspace_id') ?? '');
+  const action = String(form.get('action') ?? '');
+  const channelId = String(form.get('channel_id') ?? '');
+  const redirectBase = `/notifications?workspace=${encodeURIComponent(formWorkspaceId)}`;
+
+  try {
+    if (!formWorkspaceId)
+      throw new Error('Choose a workspace before changing notification destinations.');
+
+    if (action === 'create') {
+      const priorityRaw = String(form.get('priority') ?? '');
+      const typeRaw = String(form.get('channel_type') ?? '');
+      const priority = Number(priorityRaw);
+      const channelType = Number(typeRaw);
+      if (!Number.isInteger(priority) || priority < 0 || priority > 255) {
+        throw new Error('Priority must be a whole number from 0 to 255.');
+      }
+      if (!Number.isInteger(channelType) || channelType < 0 || channelType > 3) {
+        throw new Error('Channel type code must be a whole number from 0 to 3.');
+      }
+      const configText = String(form.get('config') ?? '');
+      let config: unknown;
+      try {
+        config = JSON.parse(configText);
+      } catch {
+        throw new Error('Configuration must be valid JSON.');
+      }
+      if (!config || typeof config !== 'object' || Array.isArray(config)) {
+        throw new Error('Configuration must be a JSON object.');
+      }
+      await apiRequest(baseUrl, auth.accessToken, '/v1/notification-channels', {
+        method: 'POST',
+        body: JSON.stringify({
+          workspace_id: formWorkspaceId,
+          priority,
+          channel_type: channelType,
+          config
+        })
+      });
+      return Astro.redirect(`${redirectBase}&result=created`, 303);
+    }
+
+    if (action === 'toggle' && channelId) {
+      const enabled = String(form.get('enabled') ?? '') === 'true';
+      await apiRequest(
+        baseUrl,
+        auth.accessToken,
+        `/v1/notification-channels/${encodeURIComponent(channelId)}?workspace_id=${encodeURIComponent(formWorkspaceId)}`,
+        { method: 'PATCH', body: JSON.stringify({ enabled }) }
+      );
+      return Astro.redirect(`${redirectBase}&result=${enabled ? 'enabled' : 'disabled'}`, 303);
+    }
+
+    throw new Error('That notification action is not supported.');
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'The notification destination could not be updated.';
+    const id =
+      error instanceof TrueExitApiError && error.requestId
+        ? `&request_id=${encodeURIComponent(error.requestId)}`
+        : '';
+    return Astro.redirect(
+      `${redirectBase}&result=error&message=${encodeURIComponent(message)}${id}`,
+      303
+    );
+  }
+}
+
+if (actionResult === 'error') {
+  mutationError = Astro.url.searchParams.get('message') ?? 'The notification action failed.';
+  requestId = Astro.url.searchParams.get('request_id');
+}
+
 try {
-  const baseUrl = getApiBaseUrl({ env });
   const [user, workspaceResponse] = await Promise.all([
     getCurrentUser(baseUrl, auth.accessToken),
     getWorkspaces(baseUrl, auth.accessToken)
@@ -143,9 +244,9 @@ const historyBase = workspace
         Notifications
       </h1>
       <p class="max-w-3xl text-sm leading-6 text-muted-foreground">
-        Review workspace notification destinations and persisted delivery attempts. Historical
-        attempts are not a guarantee of current delivery health, and provider credentials are never
-        shown here.
+        Manage workspace-shared notification destinations and review persisted delivery attempts.
+        Historical attempts are not a guarantee of current delivery health. Provider credentials are
+        never returned by the API or displayed after saving.
       </p>
     </div>
 
@@ -157,6 +258,28 @@ const historyBase = workspace
       </div>
     ) : (
       <>
+        {actionResult === 'created' && (
+          <p role="status" class="rounded-lg border border-emerald-600/30 bg-card p-3 text-sm">
+            Notification destination created.
+          </p>
+        )}
+        {actionResult === 'enabled' && (
+          <p role="status" class="rounded-lg border bg-card p-3 text-sm">
+            Notification destination enabled.
+          </p>
+        )}
+        {actionResult === 'disabled' && (
+          <p role="status" class="rounded-lg border bg-card p-3 text-sm">
+            Notification destination disabled.
+          </p>
+        )}
+        {mutationError && (
+          <div role="alert" class="rounded-lg border border-destructive/40 bg-card p-3 text-sm">
+            <p>{mutationError}</p>
+            {requestId && <p class="mt-1 text-xs text-muted-foreground">Request ID: {requestId}</p>}
+          </div>
+        )}
+
         <section aria-labelledby="workspace-title" class="rounded-xl border bg-card p-4 sm:p-5">
           <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
             <div class="space-y-2">
@@ -164,7 +287,8 @@ const historyBase = workspace
                 Workspace
               </h2>
               <p class="text-sm text-muted-foreground">
-                Notification destinations are shared by the workspace.
+                Notification destinations are shared by the workspace. Create and enable-state
+                changes require workspace Owner or Admin permissions.
               </p>
             </div>
             <form action="/notifications" method="get" class="flex flex-col gap-2 sm:min-w-72">
@@ -212,10 +336,11 @@ const historyBase = workspace
                   Notification destinations
                 </h2>
                 <p class="mt-1 text-sm text-muted-foreground">
-                  Safe channel metadata only. Provider configuration and credentials are
-                  intentionally omitted.
+                  Only safe metadata is shown. Configuration values and credentials are not returned
+                  by the API.
                 </p>
               </div>
+
               {channelsError ? (
                 <div role="alert" class="rounded-xl border border-destructive/40 bg-card p-5">
                   <p class="text-sm">{channelsError}</p>
@@ -227,49 +352,144 @@ const historyBase = workspace
                 <div class="rounded-xl border bg-card p-5 sm:p-6">
                   <h3 class="font-medium">No notification destinations returned</h3>
                   <p class="mt-2 text-sm leading-6 text-muted-foreground">
-                    This workspace has no visible destinations in the current API response.
-                    Destination management can be added once this read-only view is verified.
+                    Create a destination below if you have Owner or Admin access. The API enforces
+                    permissions and validates the configuration.
                   </p>
                 </div>
               ) : (
                 <ul class="grid gap-3 md:grid-cols-2">
-                  {channels.map((channel) => (
-                    <li class="min-w-0 rounded-xl border bg-card p-4 sm:p-5">
-                      <div class="flex items-start justify-between gap-3">
-                        <div class="min-w-0">
-                          <h3 class="break-all font-medium">
-                            {label(first(channel, 'name', 'label', 'channel_type', 'type'))}
-                          </h3>
-                          <p class="mt-1 break-all text-xs text-muted-foreground">
-                            {label(first(channel, 'id', 'channel_id'))}
-                          </p>
+                  {channels.map((channel) => {
+                    const id = label(first(channel, 'id', 'channel_id'));
+                    const enabled = first(channel, 'enabled', 'is_enabled', 'status') === true;
+                    return (
+                      <li class="min-w-0 rounded-xl border bg-card p-4 sm:p-5">
+                        <div class="flex items-start justify-between gap-3">
+                          <div class="min-w-0">
+                            <h3 class="break-all font-medium">Destination</h3>
+                            <p class="mt-1 break-all text-xs text-muted-foreground">{id}</p>
+                          </div>
+                          <span class="shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium">
+                            {enabledLabel(first(channel, 'enabled', 'is_enabled', 'status'))}
+                          </span>
                         </div>
-                        <span class="shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium">
-                          {enabledLabel(first(channel, 'enabled', 'is_enabled', 'status'))}
-                        </span>
-                      </div>
-                      <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
-                        <div>
-                          <dt class="text-muted-foreground">Type</dt>
-                          <dd class="mt-1 break-words">
-                            {label(first(channel, 'channel_type', 'type'))}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt class="text-muted-foreground">Priority</dt>
-                          <dd class="mt-1">{label(first(channel, 'priority'))}</dd>
-                        </div>
-                        <div class="col-span-2">
-                          <dt class="text-muted-foreground">Updated</dt>
-                          <dd class="mt-1">
-                            {dateLabel(first(channel, 'updated_at', 'created_at'))}
-                          </dd>
-                        </div>
-                      </dl>
-                    </li>
-                  ))}
+                        <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
+                          <div>
+                            <dt class="text-muted-foreground">Type code</dt>
+                            <dd class="mt-1">{label(first(channel, 'channel_type', 'type'))}</dd>
+                          </div>
+                          <div>
+                            <dt class="text-muted-foreground">Priority</dt>
+                            <dd class="mt-1">{label(first(channel, 'priority'))}</dd>
+                          </div>
+                          <div>
+                            <dt class="text-muted-foreground">Total attempts</dt>
+                            <dd class="mt-1">{label(first(channel, 'total_attempts'))}</dd>
+                          </div>
+                          <div>
+                            <dt class="text-muted-foreground">Successful attempts</dt>
+                            <dd class="mt-1">{label(first(channel, 'successful_attempts'))}</dd>
+                          </div>
+                        </dl>
+                        <form action="/notifications" method="post" class="mt-4 border-t pt-4">
+                          <input type="hidden" name="workspace_id" value={workspace.id} />
+                          <input type="hidden" name="channel_id" value={id} />
+                          <input type="hidden" name="action" value="toggle" />
+                          <input type="hidden" name="enabled" value={String(!enabled)} />
+                          <button
+                            type="submit"
+                            class="inline-flex min-h-10 w-full items-center justify-center rounded-md border px-4 text-sm font-medium hover:bg-accent"
+                          >
+                            {enabled ? 'Disable destination' : 'Enable destination'}
+                          </button>
+                        </form>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
+
+              <details class="rounded-xl border bg-card">
+                <summary class="cursor-pointer px-4 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  Add notification destination
+                </summary>
+                <form action="/notifications" method="post" class="space-y-4 border-t p-4 sm:p-5">
+                  <input type="hidden" name="workspace_id" value={workspace.id} />
+                  <input type="hidden" name="action" value="create" />
+                  <div class="grid gap-4 sm:grid-cols-2">
+                    <div class="space-y-2">
+                      <label for="channel_type" class="text-sm font-medium">
+                        Channel type code
+                      </label>
+                      <select
+                        id="channel_type"
+                        name="channel_type"
+                        required
+                        class="min-h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      >
+                        <option value="" disabled selected>
+                          Select a type code
+                        </option>
+                        <option value="0">0</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                      </select>
+                      <p class="text-xs leading-5 text-muted-foreground">
+                        The backend currently accepts codes 0–3. The provider mapping is not exposed
+                        by this API contract, so select only a code already defined for your
+                        deployment.
+                      </p>
+                    </div>
+                    <div class="space-y-2">
+                      <label for="priority" class="text-sm font-medium">
+                        Priority (0–255)
+                      </label>
+                      <input
+                        id="priority"
+                        name="priority"
+                        type="number"
+                        min="0"
+                        max="255"
+                        step="1"
+                        value="0"
+                        required
+                        class="min-h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      />
+                      <p class="text-xs leading-5 text-muted-foreground">
+                        Lower or higher priority behavior depends on the existing delivery worker
+                        semantics.
+                      </p>
+                    </div>
+                  </div>
+                  <div class="space-y-2">
+                    <label for="config" class="text-sm font-medium">
+                      Provider configuration (JSON object)
+                    </label>
+                    <textarea
+                      id="config"
+                      name="config"
+                      required
+                      rows="6"
+                      spellcheck="false"
+                      autocapitalize="off"
+                      class="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs leading-5"
+                      placeholder={'{\n  "provider-specific-key": "value"\n}'}
+                    ></textarea>
+                    <p class="text-xs leading-5 text-muted-foreground">
+                      Use the configuration shape expected by the selected provider. Treat
+                      credentials as secrets. This form submits them to the authenticated API over
+                      HTTPS; they will not be shown again after saving. Do not use this UI until
+                      your deployment's provider configuration shape is known.
+                    </p>
+                  </div>
+                  <button
+                    type="submit"
+                    class="inline-flex min-h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"
+                  >
+                    Create destination
+                  </button>
+                </form>
+              </details>
             </section>
 
             <section aria-labelledby="history-title" class="space-y-4">
@@ -305,10 +525,18 @@ const historyBase = workspace
                         <div class="flex flex-wrap items-start justify-between gap-2">
                           <div class="min-w-0">
                             <h3 class="break-all text-sm font-medium">
-                              {label(first(item, 'notification_id', 'id'))}
+                              {label(first(item, 'request_id', 'notification_id', 'id'))}
                             </h3>
                             <p class="mt-1 break-words text-sm text-muted-foreground">
-                              {label(first(item, 'channel_type', 'channel_id', 'destination_type'))}
+                              {label(
+                                first(
+                                  item,
+                                  'monitor_id',
+                                  'channel_type',
+                                  'channel_id',
+                                  'destination_type'
+                                )
+                              )}
                             </p>
                           </div>
                           <span class="rounded-full border px-2.5 py-1 text-xs font-medium">
@@ -335,6 +563,10 @@ const historyBase = workspace
                             </dd>
                           </div>
                         </dl>
+                        {first(
+                          item,
+                          'delivery_attempts'
+                        ) && <pre class="overflow-x-auto rounded-md bg-muted/50 p-3 text-xs">{label(first(item, 'delivery_attempts'))}</pre>}
                       </li>
                     ))}
                   </ul>
