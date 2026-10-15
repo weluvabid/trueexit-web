@@ -6,6 +6,13 @@ interface Props {
 }
 
 const { title } = Astro.props;
+const isMonitors = Astro.url.pathname.startsWith('/monitors');
+const overviewClass = isMonitors
+  ? 'flex min-h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+  : 'flex min-h-10 items-center gap-3 rounded-md bg-sidebar-accent px-3 text-sm font-medium text-sidebar-accent-foreground';
+const monitorsClass = isMonitors
+  ? 'flex min-h-10 items-center gap-3 rounded-md bg-sidebar-accent px-3 text-sm font-medium text-sidebar-accent-foreground'
+  : 'flex min-h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground';
 ---
 
 <!doctype html>
@@ -44,7 +51,6 @@ const { title } = Astro.props;
     >
       Skip to content
     </a>
-
     <div class="min-h-dvh lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]">
       <aside class="hidden border-r bg-sidebar text-sidebar-foreground lg:fixed lg:inset-y-0 lg:flex lg:w-60 lg:flex-col">
         <div class="flex h-16 items-center gap-3 border-b px-5">
@@ -66,13 +72,8 @@ const { title } = Astro.props;
           </div>
           <span class="font-semibold tracking-tight">TrueExit</span>
         </div>
-
         <nav aria-label="Main navigation" class="flex-1 space-y-1 p-3">
-          <a
-            href="/"
-            aria-current="page"
-            class="flex min-h-10 items-center gap-3 rounded-md bg-sidebar-accent px-3 text-sm font-medium text-sidebar-accent-foreground"
-          >
+          <a href="/" aria-current={!isMonitors ? 'page' : undefined} class={overviewClass}>
             <svg
               viewBox="0 0 24 24"
               fill="none"
@@ -90,12 +91,7 @@ const { title } = Astro.props;
             </svg>
             Overview
           </a>
-          <button
-            type="button"
-            disabled
-            title="Available in a later build slice"
-            class="flex min-h-10 w-full cursor-not-allowed items-center gap-3 rounded-md px-3 text-left text-sm text-muted-foreground opacity-60"
-          >
+          <a href="/monitors" aria-current={isMonitors ? 'page' : undefined} class={monitorsClass}>
             <svg
               viewBox="0 0 24 24"
               fill="none"
@@ -110,7 +106,7 @@ const { title } = Astro.props;
               <path d="M7 8h10M7 12h6M7 16h4" />
             </svg>
             Monitors
-          </button>
+          </a>
           <button
             type="button"
             disabled
@@ -153,7 +149,6 @@ const { title } = Astro.props;
             Notifications
           </button>
         </nav>
-
         <div class="border-t p-3">
           <div class="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground">
             <div
@@ -169,7 +164,6 @@ const { title } = Astro.props;
           </div>
         </div>
       </aside>
-
       <div class="flex min-h-dvh min-w-0 flex-col lg:col-start-2 lg:pl-60">
         <header class="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6 lg:h-16 lg:px-8">
           <div class="flex min-w-0 items-center gap-3 lg:hidden">
@@ -228,22 +222,20 @@ const { title } = Astro.props;
             </button>
           </div>
         </header>
-
         <main
           id="main-content"
           class="w-full flex-1 px-4 py-6 pb-24 sm:px-6 sm:py-8 lg:px-8 lg:py-10 lg:pb-10"
         >
           <slot />
         </main>
-
         <nav
           aria-label="Mobile navigation"
           class="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t bg-background/95 px-1 pb-[env(safe-area-inset-bottom)] pt-1 backdrop-blur lg:hidden"
         >
           <a
             href="/"
-            aria-current="page"
-            class="flex min-h-14 flex-col items-center justify-center gap-1 rounded-md text-primary"
+            aria-current={!isMonitors ? 'page' : undefined}
+            class={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-md ${!isMonitors ? 'text-primary' : 'text-muted-foreground'}`}
           >
             <svg
               viewBox="0 0 24 24"
@@ -262,11 +254,10 @@ const { title } = Astro.props;
             </svg>
             <span class="text-[11px] font-medium">Overview</span>
           </a>
-          <button
-            type="button"
-            disabled
-            aria-label="Monitors, available in a later build slice"
-            class="flex min-h-14 flex-col items-center justify-center gap-1 rounded-md text-muted-foreground opacity-50"
+          <a
+            href="/monitors"
+            aria-current={isMonitors ? 'page' : undefined}
+            class={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-md ${isMonitors ? 'text-primary' : 'text-muted-foreground'}`}
           >
             <svg
               viewBox="0 0 24 24"
@@ -281,8 +272,8 @@ const { title } = Astro.props;
               <rect x="3" y="4" width="18" height="16" rx="2" />
               <path d="M7 8h10M7 12h6M7 16h4" />
             </svg>
-            <span class="text-[11px]">Monitors</span>
-          </button>
+            <span class="text-[11px] font-medium">Monitors</span>
+          </a>
           <button
             type="button"
             disabled
@@ -328,12 +319,10 @@ const { title } = Astro.props;
         </nav>
       </div>
     </div>
-
     <script>
       const themeToggle = document.querySelector<HTMLButtonElement>('#theme-toggle');
       const sunIcon = document.querySelector<SVGElement>('#theme-icon-sun');
       const moonIcon = document.querySelector<SVGElement>('#theme-icon-moon');
-
       function syncThemeButton() {
         const isDark = document.documentElement.classList.contains('dark');
         themeToggle?.setAttribute(
@@ -343,17 +332,15 @@ const { title } = Astro.props;
         sunIcon?.classList.toggle('hidden', isDark);
         moonIcon?.classList.toggle('hidden', !isDark);
       }
-
       themeToggle?.addEventListener('click', () => {
         const isDark = document.documentElement.classList.toggle('dark');
         try {
           localStorage.setItem('trueexit-theme', isDark ? 'dark' : 'light');
         } catch {
-          // Theme switching still works for this session when storage is unavailable.
+          /* Theme still works for this session. */
         }
         syncThemeButton();
       });
-
       syncThemeButton();
     </script>
   </body>

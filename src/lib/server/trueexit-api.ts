@@ -23,6 +23,12 @@ export interface TrueExitMonitor {
   updated_at: string;
 }
 
+export interface TrueExitCategory {
+  id: string;
+  name: string;
+  kind: 'global' | 'workspace';
+}
+
 export interface CurrentUser {
   user_id: string;
   owned_account_ids: string[];
@@ -99,7 +105,8 @@ async function request<T>(
     ...init,
     headers: {
       Accept: 'application/json',
-      Authorization: `Bearer ${accessToken}`
+      Authorization: `Bearer ${accessToken}`,
+      ...(init.headers as Record<string, string> | undefined)
     },
     redirect: 'manual'
   });
@@ -117,6 +124,7 @@ async function request<T>(
     throw new TrueExitApiError(message, response.status, response.headers.get('X-Request-Id'));
   }
 
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 
@@ -144,6 +152,15 @@ export async function getWorkspaceDashboard(
   );
 }
 
+export async function getCategories(baseUrl: string, accessToken: string, workspaceId: string) {
+  const query = new URLSearchParams({ workspace_id: workspaceId, limit: '100' });
+  return request<{ data: TrueExitCategory[]; page: { next_cursor: string | null } }>(
+    baseUrl,
+    accessToken,
+    `/v1/categories?${query.toString()}`
+  );
+}
+
 export async function getMonitors(
   baseUrl: string,
   accessToken: string,
@@ -158,6 +175,29 @@ export async function getMonitors(
     accessToken,
     `/v1/monitors?${query.toString()}`
   );
+}
+
+export async function createMonitor(
+  baseUrl: string,
+  accessToken: string,
+  idempotencyKey: string,
+  payload: {
+    workspace_id: string;
+    category_id: string;
+    name: string;
+    description: string;
+    cadence_seconds: number;
+    config: { fields: Array<{ name: string; path: string; primitive: number }> };
+  }
+) {
+  return request<TrueExitMonitor>(baseUrl, accessToken, '/v1/monitors', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey
+    },
+    body: JSON.stringify(payload)
+  });
 }
 
 export async function performMonitorAction(

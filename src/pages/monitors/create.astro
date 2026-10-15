@@ -1,0 +1,459 @@
+---
+import AppShell from '../../layouts/AppShell.astro';
+import { env } from 'cloudflare:workers';
+import {
+  createMonitor,
+  getApiBaseUrl,
+  getCategories,
+  getCurrentUser,
+  getWorkspaces,
+  TrueExitApiError,
+  type TrueExitCategory,
+  type TrueExitWorkspace
+} from '../../lib/server/trueexit-api';
+
+export const prerender = false;
+
+const { auth } = Astro.locals;
+if (!auth.user) return auth.redirectToSignIn();
+
+let workspaces: TrueExitWorkspace[] = [];
+let categories: TrueExitCategory[] = [];
+let selectedWorkspace: TrueExitWorkspace | null = null;
+let pageError: string | null = null;
+let formError: string | null = null;
+let requestId: string | null = null;
+let formName = '';
+let formDescription = '';
+let formCadence = '3600';
+let formCategory = '';
+let fieldNames = [''];
+let fieldPaths = [''];
+let fieldPrimitives = ['1'];
+let idempotencyKey: string = crypto.randomUUID();
+
+try {
+  const apiBaseUrl = getApiBaseUrl({ env });
+  const [currentUser, workspaceResponse] = await Promise.all([
+    getCurrentUser(apiBaseUrl, auth.accessToken),
+    getWorkspaces(apiBaseUrl, auth.accessToken)
+  ]);
+  workspaces = workspaceResponse.data;
+
+  const requestedWorkspaceId = Astro.url.searchParams.get('workspace');
+  if (requestedWorkspaceId) {
+    selectedWorkspace =
+      workspaces.find((workspace) => workspace.id === requestedWorkspaceId) ?? null;
+  }
+  if (!selectedWorkspace && workspaces.length === 1) selectedWorkspace = workspaces[0];
+  if (!selectedWorkspace && currentUser.personal_workspace_id) {
+    selectedWorkspace =
+      workspaces.find((workspace) => workspace.id === currentUser.personal_workspace_id) ?? null;
+  }
+
+  if (selectedWorkspace) {
+    const categoryResponse = await getCategories(
+      apiBaseUrl,
+      auth.accessToken,
+      selectedWorkspace.id
+    );
+    categories = categoryResponse.data;
+  }
+
+  if (Astro.request.method === 'POST') {
+    const form = await Astro.request.formData();
+    formName = String(form.get('name') ?? '').trim();
+    formDescription = String(form.get('description') ?? '').trim();
+    formCadence = String(form.get('cadence_seconds') ?? '3600');
+    formCategory = String(form.get('category_id') ?? '');
+    idempotencyKey = String(form.get('idempotency_key') ?? '');
+    fieldNames = form.getAll('field_name').map((value) => String(value).trim());
+    fieldPaths = form.getAll('field_path').map((value) => String(value).trim());
+    fieldPrimitives = form.getAll('field_primitive').map((value) => String(value));
+    if (fieldNames.length === 0) {
+      fieldNames = [''];
+      fieldPaths = [''];
+      fieldPrimitives = ['1'];
+    }
+
+    const origin = Astro.request.headers.get('origin');
+    const workspaceId = String(form.get('workspace_id') ?? '');
+    const postedWorkspace = workspaces.find((workspace) => workspace.id === workspaceId);
+    if (!origin || origin !== Astro.url.origin) {
+      formError = 'This submission could not be verified. Reload the page and try again.';
+    } else if (!postedWorkspace || postedWorkspace.id !== selectedWorkspace?.id) {
+      formError = 'Choose a valid workspace and try again.';
+    } else if (!formName || formName.length > 120) {
+      formError = 'Enter a monitor name between 1 and 120 characters.';
+    } else if (formDescription.length > 500) {
+      formError = 'Description must be 500 characters or fewer.';
+    } else if (
+      !Number.isInteger(Number(formCadence)) ||
+      Number(formCadence) < 15 ||
+      Number(formCadence) > 31536000
+    ) {
+      formError = 'Cadence must be between 15 seconds and 365 days.';
+    } else if (!categories.some((category) => category.id === formCategory)) {
+      formError = 'Choose a category available to this workspace.';
+    } else if (
+      fieldNames.length === 0 ||
+      fieldNames.length !== fieldPaths.length ||
+      fieldNames.length !== fieldPrimitives.length ||
+      fieldNames.some((name) => !name || name.length > 120) ||
+      fieldPaths.some((path) => !path) ||
+      new Set(fieldNames).size !== fieldNames.length ||
+      fieldPrimitives.some((primitive) => !['0', '1', '2', '3', '4', '5', '7'].includes(primitive))
+    ) {
+      formError =
+        'Add at least one field. Each field needs a unique name, a JSON path, and a supported type.';
+    } else if (!/^[\x21-\x7e]{1,128}$/.test(idempotencyKey)) {
+      formError = 'The form expired. Reload it and try again.';
+    } else {
+      try {
+        await createMonitor(apiBaseUrl, auth.accessToken, idempotencyKey, {
+          workspace_id: postedWorkspace.id,
+          category_id: formCategory,
+          name: formName,
+          description: formDescription,
+          cadence_seconds: Number(formCadence),
+          config: {
+            fields: fieldNames.map((name, index) => ({
+              name,
+              path: fieldPaths[index],
+              primitive: Number(fieldPrimitives[index])
+            }))
+          }
+        });
+        return Astro.redirect(
+          `/monitors?workspace=${encodeURIComponent(postedWorkspace.id)}&notice=created`,
+          303
+        );
+      } catch (error) {
+        formError = error instanceof Error ? error.message : 'The monitor could not be created.';
+        if (error instanceof TrueExitApiError) requestId = error.requestId;
+      }
+    }
+  }
+
+  if (!formCategory && categories.length) formCategory = categories[0].id;
+} catch (error) {
+  pageError = error instanceof Error ? error.message : 'Unable to load monitor creation options.';
+  if (error instanceof TrueExitApiError) requestId = error.requestId;
+}
+
+const primitiveOptions = [
+  { value: '0', label: 'Size' },
+  { value: '1', label: 'Count' },
+  { value: '2', label: 'Duration' },
+  { value: '3', label: 'Timestamp' },
+  { value: '4', label: 'Boolean' },
+  { value: '5', label: 'Categorical' },
+  { value: '7', label: 'Text' }
+];
+---
+
+<AppShell title="Create monitor">
+  <section aria-labelledby="page-title" class="mx-auto w-full max-w-3xl">
+    <div class="mb-8 space-y-2">
+      <a
+        href={`/monitors${selectedWorkspace ? `?workspace=${encodeURIComponent(selectedWorkspace.id)}` : ''}`}
+        class="text-sm text-muted-foreground underline-offset-4 hover:underline"
+      >
+        ← Back to monitors
+      </a>
+      <p class="pt-3 text-sm font-medium text-muted-foreground">Workspace</p>
+      <h1 id="page-title" class="text-2xl font-semibold tracking-tight sm:text-3xl">
+        Create monitor
+      </h1>
+      <p class="max-w-2xl text-sm leading-6 text-muted-foreground">
+        Define the fields TrueExit should verify when your system submits evidence. Field names and
+        paths must match the JSON payload sent to the monitor's Ping URL.
+      </p>
+    </div>
+
+    {pageError ? (
+      <div role="alert" class="rounded-xl border border-destructive/40 bg-card p-5 sm:p-8">
+        <h2 class="font-semibold">We couldn’t load monitor setup</h2>
+        <p class="mt-2 text-sm leading-6 text-muted-foreground">{pageError}</p>
+        {requestId && <p class="mt-2 text-xs text-muted-foreground">Request ID: {requestId}</p>}
+      </div>
+    ) : workspaces.length === 0 ? (
+      <div class="rounded-xl border bg-card p-5 sm:p-8">
+        <h2 class="font-semibold">No workspace available</h2>
+        <p class="mt-2 text-sm text-muted-foreground">
+          You need access to a TrueExit workspace before creating a monitor.
+        </p>
+      </div>
+    ) : !selectedWorkspace ? (
+      <div class="rounded-xl border bg-card p-5 sm:p-8">
+        <h2 class="font-semibold">Choose a workspace first</h2>
+        <ul class="mt-4 space-y-2">
+          {workspaces.map((workspace) => (
+            <li>
+              <a
+                href={`/monitors/create?workspace=${encodeURIComponent(workspace.id)}`}
+                class="flex min-h-12 items-center justify-between rounded-md border px-3 py-2 text-sm hover:bg-accent"
+              >
+                <span>{workspace.name}</span>
+                <span aria-hidden="true">→</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ) : categories.length === 0 ? (
+      <div class="rounded-xl border bg-card p-5 sm:p-8">
+        <h2 class="font-semibold">No categories available</h2>
+        <p class="mt-2 text-sm leading-6 text-muted-foreground">
+          The API returned no categories for this workspace, so a monitor cannot be created yet. No
+          category has been invented for you.
+        </p>
+      </div>
+    ) : (
+      <form method="POST" class="space-y-6 rounded-xl border bg-card p-5 sm:p-8">
+        {formError && (
+          <div role="alert" class="rounded-lg border border-destructive/40 px-4 py-3 text-sm">
+            <p>{formError}</p>
+            {requestId && <p class="mt-1 text-xs text-muted-foreground">Request ID: {requestId}</p>}
+          </div>
+        )}
+        <input type="hidden" name="workspace_id" value={selectedWorkspace.id} />
+        <input type="hidden" name="idempotency_key" value={idempotencyKey} />
+        <div class="space-y-2">
+          <label for="monitor-name" class="text-sm font-medium">
+            Monitor name <span aria-hidden="true">*</span>
+          </label>
+          <input
+            id="monitor-name"
+            name="name"
+            required
+            maxlength="120"
+            value={formName}
+            class="min-h-11 w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            autocomplete="off"
+          />
+          <p class="text-xs text-muted-foreground">Up to 120 characters.</p>
+        </div>
+        <div class="space-y-2">
+          <label for="monitor-description" class="text-sm font-medium">
+            Description
+          </label>
+          <textarea
+            id="monitor-description"
+            name="description"
+            maxlength="500"
+            rows="3"
+            class="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >{formDescription}</textarea>
+          <p class="text-xs text-muted-foreground">Optional; up to 500 characters.</p>
+        </div>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div class="space-y-2">
+            <label for="category-id" class="text-sm font-medium">
+              Category <span aria-hidden="true">*</span>
+            </label>
+            <select
+              id="category-id"
+              name="category_id"
+              required
+              class="min-h-11 w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {categories.map((category) => (
+                <option value={category.id} selected={category.id === formCategory}>
+                  {category.name} ({category.kind})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div class="space-y-2">
+            <label for="cadence-seconds" class="text-sm font-medium">
+              Evidence cadence (seconds) <span aria-hidden="true">*</span>
+            </label>
+            <input
+              id="cadence-seconds"
+              name="cadence_seconds"
+              type="number"
+              inputmode="numeric"
+              min="15"
+              max="31536000"
+              step="1"
+              required
+              value={formCadence}
+              class="min-h-11 w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <p class="text-xs text-muted-foreground">
+              How often evidence is expected. Choose 15 seconds to 31,536,000 seconds (365 days).
+            </p>
+          </div>
+        </div>
+
+        <fieldset class="space-y-3 border-t pt-6">
+          <legend class="text-base font-semibold">Fields to verify</legend>
+          <p class="text-sm leading-6 text-muted-foreground">
+            Each field maps a unique name to a path in the submitted JSON payload. Paths use dot
+            notation, for example <code class="rounded bg-muted px-1">orders.count</code>.
+          </p>
+          <div id="field-list" class="space-y-3">
+            {fieldNames.map((name, index) => (
+              <div class="field-row grid gap-3 rounded-lg border p-3 sm:grid-cols-[1fr_1fr_10rem_auto] sm:items-end">
+                <div class="space-y-1">
+                  <label class="text-xs font-medium">Field name</label>
+                  <input
+                    name="field_name"
+                    required
+                    maxlength="120"
+                    value={name}
+                    placeholder="processed_count"
+                    class="min-h-10 w-full rounded-md border bg-background px-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </div>
+                <div class="space-y-1">
+                  <label class="text-xs font-medium">JSON path</label>
+                  <input
+                    name="field_path"
+                    required
+                    value={fieldPaths[index] ?? ''}
+                    placeholder="results.count"
+                    class="min-h-10 w-full rounded-md border bg-background px-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </div>
+                <div class="space-y-1">
+                  <label class="text-xs font-medium">Type</label>
+                  <select
+                    name="field_primitive"
+                    class="min-h-10 w-full rounded-md border bg-background px-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {primitiveOptions.map((option) => (
+                      <option
+                        value={option.value}
+                        selected={option.value === (fieldPrimitives[index] ?? '1')}
+                      >
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  class="remove-field min-h-10 rounded-md border px-3 text-sm hover:bg-accent"
+                  aria-label={`Remove field ${index + 1}`}
+                  disabled={fieldNames.length === 1}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+          <button
+            id="add-field"
+            type="button"
+            class="inline-flex min-h-10 items-center justify-center rounded-md border px-3 text-sm font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Add field
+          </button>
+        </fieldset>
+
+        <div class="rounded-lg border bg-muted/30 p-4">
+          <p class="text-sm font-medium">Before you create it</p>
+          <p class="mt-1 text-sm leading-6 text-muted-foreground">
+            The API validates this configuration using the same parser as evidence ingestion. Once
+            created, the monitor starts enabled. You'll then need to configure your producer to send
+            matching evidence to its capability URL.
+          </p>
+        </div>
+        <div class="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <a
+            href={`/monitors?workspace=${encodeURIComponent(selectedWorkspace.id)}`}
+            class="inline-flex min-h-11 items-center justify-center rounded-md border px-4 text-sm font-medium hover:bg-accent"
+          >
+            Cancel
+          </a>
+          <button
+            type="submit"
+            class="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Create monitor
+          </button>
+        </div>
+      </form>
+    )}
+  </section>
+  <template id="field-template">
+    <div class="field-row grid gap-3 rounded-lg border p-3 sm:grid-cols-[1fr_1fr_10rem_auto] sm:items-end">
+      <div class="space-y-1">
+        <label class="text-xs font-medium">Field name</label>
+        <input
+          name="field_name"
+          required
+          maxlength="120"
+          placeholder="processed_count"
+          class="min-h-10 w-full rounded-md border bg-background px-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+      </div>
+      <div class="space-y-1">
+        <label class="text-xs font-medium">JSON path</label>
+        <input
+          name="field_path"
+          required
+          placeholder="results.count"
+          class="min-h-10 w-full rounded-md border bg-background px-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+      </div>
+      <div class="space-y-1">
+        <label class="text-xs font-medium">Type</label>
+        <select
+          name="field_primitive"
+          class="min-h-10 w-full rounded-md border bg-background px-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <option value="0">Size</option>
+          <option value="1" selected>
+            Count
+          </option>
+          <option value="2">Duration</option>
+          <option value="3">Timestamp</option>
+          <option value="4">Boolean</option>
+          <option value="5">Categorical</option>
+          <option value="7">Text</option>
+        </select>
+      </div>
+      <button
+        type="button"
+        class="remove-field min-h-10 rounded-md border px-3 text-sm hover:bg-accent"
+      >
+        Remove
+      </button>
+    </div>
+  </template>
+  <script>
+    const fieldList = document.querySelector<HTMLDivElement>('#field-list');
+    const fieldTemplate = document.querySelector<HTMLTemplateElement>('#field-template');
+    const addFieldButton = document.querySelector<HTMLButtonElement>('#add-field');
+
+    function syncRemoveButtons() {
+      const rows = fieldList?.querySelectorAll<HTMLElement>('.field-row');
+      rows?.forEach((row) => {
+        const button = row.querySelector<HTMLButtonElement>('.remove-field');
+        if (button) button.disabled = rows.length === 1;
+      });
+    }
+
+    addFieldButton?.addEventListener('click', () => {
+      if (!fieldList || !fieldTemplate) return;
+      fieldList.append(fieldTemplate.content.cloneNode(true));
+      syncRemoveButtons();
+      fieldList
+        .querySelector<HTMLInputElement>('.field-row:last-child input[name="field_name"]')
+        ?.focus();
+    });
+
+    fieldList?.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLButtonElement) || !target.classList.contains('remove-field'))
+        return;
+      if (fieldList.querySelectorAll('.field-row').length <= 1) return;
+      target.closest('.field-row')?.remove();
+      syncRemoveButtons();
+    });
+    syncRemoveButtons();
+  </script>
+</AppShell>

@@ -13,7 +13,6 @@ import {
 } from '../../lib/server/trueexit-api';
 
 export const prerender = false;
-
 const { auth } = Astro.locals;
 if (!auth.user) return auth.redirectToSignIn();
 
@@ -45,7 +44,6 @@ try {
       const action = String(form.get('action') ?? '');
       const authorizedWorkspace = workspaces.find((workspace) => workspace.id === workspaceId);
       const allowedActions = ['pause', 'resume', 'archive', 'restore'] as const;
-
       if (
         !authorizedWorkspace ||
         !monitorId ||
@@ -76,10 +74,9 @@ try {
   const requestedWorkspaceId = form
     ? String(form.get('workspace_id') ?? '')
     : Astro.url.searchParams.get('workspace');
-  if (requestedWorkspaceId) {
+  if (requestedWorkspaceId)
     selectedWorkspace =
       workspaces.find((workspace) => workspace.id === requestedWorkspaceId) ?? null;
-  }
   if (!selectedWorkspace && workspaces.length === 1) selectedWorkspace = workspaces[0];
   if (!selectedWorkspace && currentUser.personal_workspace_id) {
     selectedWorkspace =
@@ -99,26 +96,28 @@ try {
   if (error instanceof TrueExitApiError) requestId = error.requestId;
 }
 
-const statusLabel = (status: TrueExitMonitor['status']) => {
-  if (status === 'enabled') return 'Enabled';
-  if (status === 'disabled') return 'Disabled';
-  if (status === 'archived') return 'Archived';
-  return 'Unknown';
-};
-
+const statusLabel = (status: TrueExitMonitor['status']) =>
+  status === 'enabled'
+    ? 'Enabled'
+    : status === 'disabled'
+      ? 'Disabled'
+      : status === 'archived'
+        ? 'Archived'
+        : 'Unknown';
 const formatDate = (value: string) => {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? 'Unknown' : date.toISOString().slice(0, 10);
 };
-
-const formatCadence = (seconds: number) => {
-  if (seconds % 86400 === 0) return `${seconds / 86400} day${seconds === 86400 ? '' : 's'}`;
-  if (seconds % 3600 === 0) return `${seconds / 3600} hour${seconds === 3600 ? '' : 's'}`;
-  if (seconds % 60 === 0) return `${seconds / 60} min`;
-  return `${seconds} sec`;
-};
-
+const formatCadence = (seconds: number) =>
+  seconds % 86400 === 0
+    ? `${seconds / 86400} day${seconds === 86400 ? '' : 's'}`
+    : seconds % 3600 === 0
+      ? `${seconds / 3600} hour${seconds === 3600 ? '' : 's'}`
+      : seconds % 60 === 0
+        ? `${seconds / 60} min`
+        : `${seconds} sec`;
 const noticeLabels: Record<string, string> = {
+  created: 'Monitor created. Configure your producer to send matching evidence to its Ping URL.',
   pause: 'Monitoring paused.',
   resume: 'Monitoring resumed.',
   archive: 'Monitor archived. Its evidence and health history are retained.',
@@ -140,12 +139,22 @@ const notice = noticeLabels[Astro.url.searchParams.get('notice') ?? ''] ?? null;
           later slice.
         </p>
       </div>
-      <a
-        href={selectedWorkspace ? `/?workspace=${encodeURIComponent(selectedWorkspace.id)}` : '/'}
-        class="inline-flex min-h-10 items-center justify-center rounded-md border px-4 text-sm font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        Overview
-      </a>
+      <div class="flex flex-wrap gap-2">
+        {selectedWorkspace && (
+          <a
+            href={`/monitors/create?workspace=${encodeURIComponent(selectedWorkspace.id)}`}
+            class="inline-flex min-h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Create monitor
+          </a>
+        )}
+        <a
+          href={selectedWorkspace ? `/?workspace=${encodeURIComponent(selectedWorkspace.id)}` : '/'}
+          class="inline-flex min-h-10 items-center justify-center rounded-md border px-4 text-sm font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Overview
+        </a>
+      </div>
     </div>
 
     {pageError ? (
@@ -163,7 +172,7 @@ const notice = noticeLabels[Astro.url.searchParams.get('notice') ?? ''] ?? null;
     ) : workspaces.length === 0 ? (
       <div class="rounded-xl border bg-card p-5 sm:p-8">
         <h2 class="font-semibold">No workspaces available</h2>
-        <p class="mt-2 text-sm leading-6 text-muted-foreground">
+        <p class="mt-2 text-sm text-muted-foreground">
           This account has no accessible TrueExit workspace.
         </p>
       </div>
@@ -218,7 +227,6 @@ const notice = noticeLabels[Astro.url.searchParams.get('notice') ?? ''] ?? null;
             </details>
           )}
         </div>
-
         {notice && (
           <p role="status" class="rounded-lg border bg-card px-4 py-3 text-sm">
             {notice}
@@ -233,14 +241,18 @@ const notice = noticeLabels[Astro.url.searchParams.get('notice') ?? ''] ?? null;
             {requestId && <p class="mt-1 text-xs text-muted-foreground">Request ID: {requestId}</p>}
           </div>
         )}
-
         {monitors.length === 0 ? (
           <div class="rounded-xl border bg-card p-5 sm:p-8">
             <h3 class="font-semibold">No monitors yet</h3>
             <p class="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-              This workspace has no monitors on this page. Monitor creation will be added in a later
-              slice.
+              Create a monitor to define the evidence fields TrueExit should verify.
             </p>
+            <a
+              href={`/monitors/create?workspace=${encodeURIComponent(selectedWorkspace.id)}`}
+              class="mt-4 inline-flex min-h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"
+            >
+              Create your first monitor
+            </a>
           </div>
         ) : (
           <ul class="space-y-3">
@@ -286,7 +298,7 @@ const notice = noticeLabels[Astro.url.searchParams.get('notice') ?? ''] ?? null;
                         />
                         <button
                           type="submit"
-                          class="inline-flex min-h-9 items-center justify-center rounded-md border px-3 text-sm font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          class="inline-flex min-h-9 items-center justify-center rounded-md border px-3 text-sm font-medium hover:bg-accent"
                         >
                           {monitor.status === 'enabled' ? 'Pause' : 'Resume'}
                         </button>
@@ -299,14 +311,14 @@ const notice = noticeLabels[Astro.url.searchParams.get('notice') ?? ''] ?? null;
                         <input type="hidden" name="action" value="restore" />
                         <button
                           type="submit"
-                          class="inline-flex min-h-9 items-center justify-center rounded-md border px-3 text-sm font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          class="inline-flex min-h-9 items-center justify-center rounded-md border px-3 text-sm font-medium hover:bg-accent"
                         >
                           Restore
                         </button>
                       </form>
                     ) : (
                       <details class="relative">
-                        <summary class="inline-flex min-h-9 cursor-pointer list-none items-center justify-center rounded-md border border-destructive/40 px-3 text-sm font-medium text-destructive hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                        <summary class="inline-flex min-h-9 cursor-pointer list-none items-center justify-center rounded-md border border-destructive/40 px-3 text-sm font-medium text-destructive hover:bg-destructive/10">
                           Archive
                         </summary>
                         <div class="absolute right-0 z-20 mt-2 w-64 rounded-lg border bg-popover p-4 text-popover-foreground shadow-md">
@@ -321,7 +333,7 @@ const notice = noticeLabels[Astro.url.searchParams.get('notice') ?? ''] ?? null;
                             <input type="hidden" name="action" value="archive" />
                             <button
                               type="submit"
-                              class="inline-flex min-h-9 w-full items-center justify-center rounded-md bg-destructive px-3 text-sm font-medium text-destructive-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              class="inline-flex min-h-9 w-full items-center justify-center rounded-md bg-destructive px-3 text-sm font-medium text-destructive-foreground hover:opacity-90"
                             >
                               Confirm archive
                             </button>
@@ -335,12 +347,11 @@ const notice = noticeLabels[Astro.url.searchParams.get('notice') ?? ''] ?? null;
             ))}
           </ul>
         )}
-
         {nextCursor && (
           <div class="flex justify-end">
             <a
               href={`/monitors?workspace=${encodeURIComponent(selectedWorkspace.id)}&cursor=${encodeURIComponent(nextCursor)}`}
-              class="inline-flex min-h-10 items-center justify-center rounded-md border px-4 text-sm font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              class="inline-flex min-h-10 items-center justify-center rounded-md border px-4 text-sm font-medium hover:bg-accent"
             >
               Next page
             </a>
