@@ -17,8 +17,11 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@astrojs/cloudflare": "^14.3.4",
     "@astrojs/svelte": "^9.0.1",
     "@tailwindcss/vite": "^4.3.3",
+    "@workos-inc/node": "^10.0.0",
+    "@workos/authkit-astro": "^0.2.1",
     "astro": "^7.3.8",
     "svelte": "^5.57.2",
     "tailwindcss": "^4.3.3",
