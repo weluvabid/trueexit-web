@@ -6,11 +6,17 @@ interface Props {
 }
 
 const { title } = Astro.props;
-const isMonitors = Astro.url.pathname.startsWith('/monitors');
-const overviewClass = isMonitors
-  ? 'flex min-h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
-  : 'flex min-h-10 items-center gap-3 rounded-md bg-sidebar-accent px-3 text-sm font-medium text-sidebar-accent-foreground';
+const path = Astro.url.pathname;
+const isMonitors = path.startsWith('/monitors');
+const isNotifications = path.startsWith('/notifications');
+const overviewClass =
+  !isMonitors && !isNotifications
+    ? 'flex min-h-10 items-center gap-3 rounded-md bg-sidebar-accent px-3 text-sm font-medium text-sidebar-accent-foreground'
+    : 'flex min-h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground';
 const monitorsClass = isMonitors
+  ? 'flex min-h-10 items-center gap-3 rounded-md bg-sidebar-accent px-3 text-sm font-medium text-sidebar-accent-foreground'
+  : 'flex min-h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground';
+const notificationsClass = isNotifications
   ? 'flex min-h-10 items-center gap-3 rounded-md bg-sidebar-accent px-3 text-sm font-medium text-sidebar-accent-foreground'
   : 'flex min-h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground';
 ---
@@ -73,7 +79,11 @@ const monitorsClass = isMonitors
           <span class="font-semibold tracking-tight">TrueExit</span>
         </div>
         <nav aria-label="Main navigation" class="flex-1 space-y-1 p-3">
-          <a href="/" aria-current={!isMonitors ? 'page' : undefined} class={overviewClass}>
+          <a
+            href="/"
+            aria-current={!isMonitors && !isNotifications ? 'page' : undefined}
+            class={overviewClass}
+          >
             <svg
               viewBox="0 0 24 24"
               fill="none"
@@ -128,11 +138,10 @@ const monitorsClass = isMonitors
             </svg>
             Templates
           </button>
-          <button
-            type="button"
-            disabled
-            title="Available in a later build slice"
-            class="flex min-h-10 w-full cursor-not-allowed items-center gap-3 rounded-md px-3 text-left text-sm text-muted-foreground opacity-60"
+          <a
+            href="/notifications"
+            aria-current={isNotifications ? 'page' : undefined}
+            class={notificationsClass}
           >
             <svg
               viewBox="0 0 24 24"
@@ -147,7 +156,7 @@ const monitorsClass = isMonitors
               <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
             </svg>
             Notifications
-          </button>
+          </a>
         </nav>
         <div class="border-t p-3">
           <div class="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground">
@@ -234,8 +243,8 @@ const monitorsClass = isMonitors
         >
           <a
             href="/"
-            aria-current={!isMonitors ? 'page' : undefined}
-            class={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-md ${!isMonitors ? 'text-primary' : 'text-muted-foreground'}`}
+            aria-current={!isMonitors && !isNotifications ? 'page' : undefined}
+            class={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-md ${!isMonitors && !isNotifications ? 'text-primary' : 'text-muted-foreground'}`}
           >
             <svg
               viewBox="0 0 24 24"
@@ -274,11 +283,10 @@ const monitorsClass = isMonitors
             </svg>
             <span class="text-[11px] font-medium">Monitors</span>
           </a>
-          <button
-            type="button"
-            disabled
-            aria-label="Evidence, available in a later build slice"
-            class="flex min-h-14 flex-col items-center justify-center gap-1 rounded-md text-muted-foreground opacity-50"
+          <a
+            href="/notifications"
+            aria-current={isNotifications ? 'page' : undefined}
+            class={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-md ${isNotifications ? 'text-primary' : 'text-muted-foreground'}`}
           >
             <svg
               viewBox="0 0 24 24"
@@ -290,11 +298,10 @@ const monitorsClass = isMonitors
               class="size-5"
               aria-hidden="true"
             >
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
-              <path d="M14 2v6h6M8 13h8M8 17h8" />
+              <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
             </svg>
-            <span class="text-[11px]">Evidence</span>
-          </button>
+            <span class="text-[11px] font-medium">Notifications</span>
+          </a>
           <button
             type="button"
             disabled
