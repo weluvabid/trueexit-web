@@ -1,0 +1,302 @@
+---
+import AppShell from '../../../layouts/AppShell.astro';
+import { env } from 'cloudflare:workers';
+import {
+  getApiBaseUrl,
+  getCurrentUser,
+  getMonitor,
+  getWorkspaces,
+  TrueExitApiError,
+  type TrueExitMonitor,
+  type TrueExitWorkspace
+} from '../../../lib/server/trueexit-api';
+
+export const prerender = false;
+const { auth } = Astro.locals;
+if (!auth.user) return auth.redirectToSignIn();
+
+type EvidenceRow = Record<string, unknown>;
+type EvidencePage = { data: EvidenceRow[]; page?: { next_cursor: string | null } };
+
+const monitorId = Astro.params.monitorId ?? '';
+const requestedWorkspaceId = Astro.url.searchParams.get('workspace') ?? '';
+const kind = Astro.url.searchParams.get('kind') === 'bad' ? 'bad' : 'verified';
+const cursor = Astro.url.searchParams.get('cursor') ?? '';
+const traceId = Astro.url.searchParams.get('trace') ?? '';
+const traceKind = Astro.url.searchParams.get('trace_kind') === 'bad' ? 'bad' : 'verified';
+
+let workspace: TrueExitWorkspace | null = null;
+let monitor: TrueExitMonitor | null = null;
+let rows: EvidenceRow[] = [];
+let nextCursor: string | null = null;
+let pageError: string | null = null;
+let listError: string | null = null;
+let traceData: unknown = null;
+let traceError: string | null = null;
+let requestId: string | null = null;
+
+async function apiRequest<T>(baseUrl: string, token: string, path: string): Promise<T> {
+  const response = await fetch(`${baseUrl}${path}`, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+    redirect: 'manual'
+  });
+  if (!response.ok) {
+    let code = '';
+    try {
+      const body = (await response.json()) as { error?: { code?: string } };
+      code = body.error?.code ? ` (${body.error.code})` : '';
+    } catch {
+      // Do not surface upstream response bodies.
+    }
+    throw new TrueExitApiError(
+      `TrueExit API request failed${code}.`,
+      response.status,
+      response.headers.get('X-Request-Id')
+    );
+  }
+  return (await response.json()) as T;
+}
+
+const display = (value: unknown) => {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return JSON.stringify(value);
+};
+const dateLabel = (value: unknown) => {
+  if (typeof value !== 'string') return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+};
+const field = (row: EvidenceRow, ...keys: string[]) => {
+  for (const key of keys) if (row[key] !== undefined && row[key] !== null) return row[key];
+  return null;
+};
+
+try {
+  const baseUrl = getApiBaseUrl({ env });
+  const [user, workspaces] = await Promise.all([
+    getCurrentUser(baseUrl, auth.accessToken),
+    getWorkspaces(baseUrl, auth.accessToken)
+  ]);
+  workspace = requestedWorkspaceId
+    ? (workspaces.data.find((item) => item.id === requestedWorkspaceId) ?? null)
+    : (workspaces.data.find((item) => item.id === user.personal_workspace_id) ??
+      (workspaces.data.length === 1 ? workspaces.data[0] : null));
+
+  if (!workspace) {
+    pageError = 'Choose a workspace from the monitor list before opening evidence.';
+  } else if (!monitorId) {
+    pageError = 'The monitor ID is missing from this URL.';
+  } else {
+    monitor = await getMonitor(baseUrl, auth.accessToken, workspace.id, monitorId);
+    const query = new URLSearchParams({ workspace_id: workspace.id, limit: '20' });
+    if (cursor) query.set('cursor', cursor);
+    const endpoint = kind === 'bad' ? 'bad-evidence' : 'evidence';
+    try {
+      const result = await apiRequest<EvidencePage>(
+        baseUrl,
+        auth.accessToken,
+        `/v1/monitors/${encodeURIComponent(monitorId)}/${endpoint}?${query.toString()}`
+      );
+      rows = result.data ?? [];
+      nextCursor = result.page?.next_cursor ?? null;
+    } catch (error) {
+      listError = error instanceof Error ? error.message : 'Evidence history is unavailable.';
+      if (error instanceof TrueExitApiError) requestId = error.requestId;
+    }
+
+    if (traceId) {
+      const traceEndpoint = traceKind === 'bad' ? 'bad-evidence' : 'evidence';
+      try {
+        traceData = await apiRequest<unknown>(
+          baseUrl,
+          auth.accessToken,
+          `/v1/monitors/${encodeURIComponent(monitorId)}/${traceEndpoint}/${encodeURIComponent(traceId)}/trace?workspace_id=${encodeURIComponent(workspace.id)}`
+        );
+      } catch (error) {
+        traceError = error instanceof Error ? error.message : 'Evidence detail is unavailable.';
+        if (error instanceof TrueExitApiError) requestId = error.requestId;
+      }
+    }
+  }
+} catch (error) {
+  pageError = error instanceof Error ? error.message : 'Unable to load evidence.';
+  if (error instanceof TrueExitApiError) requestId = error.requestId;
+}
+
+const basePath =
+  monitor && workspace
+    ? `/monitors/${encodeURIComponent(monitor.id)}/evidence?workspace=${encodeURIComponent(workspace.id)}`
+    : '/monitors';
+---
+
+<AppShell title={monitor ? `${monitor.name} evidence` : 'Evidence'}>
+  <section class="mx-auto w-full max-w-5xl space-y-8" aria-labelledby="page-title">
+    <div class="space-y-3">
+      <a
+        href={workspace ? `/monitors?workspace=${encodeURIComponent(workspace.id)}` : '/monitors'}
+        class="inline-flex min-h-9 items-center text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        ← Back to monitors
+      </a>
+      <p class="text-sm font-medium text-muted-foreground">Evidence investigation</p>
+      <h1 id="page-title" class="break-words text-2xl font-semibold tracking-tight sm:text-3xl">
+        {monitor?.name ?? 'Evidence'}
+      </h1>
+      <p class="max-w-3xl text-sm leading-6 text-muted-foreground">
+        Verified and rejected submissions are shown separately. This view presents the API’s
+        persisted decisions; it does not re-verify evidence or infer monitor-wide health.
+      </p>
+      {monitor && workspace && (
+        <div class="flex flex-wrap gap-2">
+          <a
+            href={`/monitors/${encodeURIComponent(monitor.id)}?workspace=${encodeURIComponent(workspace.id)}`}
+            class="inline-flex min-h-10 items-center rounded-md border px-3 text-sm hover:bg-accent"
+          >
+            Field health
+          </a>
+          <a
+            href={`${basePath}&kind=verified`}
+            aria-current={kind === 'verified' ? 'page' : undefined}
+            class={`inline-flex min-h-10 items-center rounded-md border px-3 text-sm ${kind === 'verified' ? 'bg-accent font-medium' : 'hover:bg-accent'}`}
+          >
+            Verified submissions
+          </a>
+          <a
+            href={`${basePath}&kind=bad`}
+            aria-current={kind === 'bad' ? 'page' : undefined}
+            class={`inline-flex min-h-10 items-center rounded-md border px-3 text-sm ${kind === 'bad' ? 'bg-accent font-medium' : 'hover:bg-accent'}`}
+          >
+            Rejected submissions
+          </a>
+        </div>
+      )}
+    </div>
+
+    {pageError ? (
+      <div role="alert" class="rounded-xl border border-destructive/40 bg-card p-5 sm:p-8">
+        <h2 class="font-semibold">Evidence could not be loaded</h2>
+        <p class="mt-2 text-sm leading-6 text-muted-foreground">{pageError}</p>
+        {requestId && <p class="mt-2 text-xs text-muted-foreground">Request ID: {requestId}</p>}
+      </div>
+    ) : monitor && workspace ? (
+      <>
+        <section aria-labelledby="list-title" class="space-y-4">
+          <div>
+            <h2 id="list-title" class="text-lg font-semibold">
+              {kind === 'bad' ? 'Rejected submissions' : 'Verified submissions'}
+            </h2>
+            <p class="mt-1 text-sm text-muted-foreground">
+              Newest records are returned first by the API. Each record retains its
+              configuration-version context.
+            </p>
+          </div>
+          {listError ? (
+            <div role="alert" class="rounded-xl border border-destructive/40 bg-card p-5">
+              <p class="text-sm">{listError}</p>
+              {requestId && (
+                <p class="mt-2 text-xs text-muted-foreground">Request ID: {requestId}</p>
+              )}
+            </div>
+          ) : rows.length === 0 ? (
+            <div class="rounded-xl border bg-card p-5 sm:p-6">
+              <h3 class="font-medium">
+                No {kind === 'bad' ? 'rejected' : 'verified'} submissions returned
+              </h3>
+              <p class="mt-2 text-sm leading-6 text-muted-foreground">
+                There are no records in this page. An empty result is not evidence that the monitor
+                has failed.
+              </p>
+            </div>
+          ) : (
+            <ul class="space-y-3">
+              {rows.map((row) => {
+                const id = display(field(row, 'id', 'evidence_id'));
+                const observed = field(row, 'observed_at');
+                const created = field(row, 'created_at');
+                const version = field(row, 'config_version', 'configuration_version');
+                const reason = field(row, 'reason', 'reason_code', 'outcome');
+                return (
+                  <li class="rounded-xl border bg-card p-4 sm:p-5">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                      <div class="min-w-0">
+                        <h3 class="break-all font-medium">{id}</h3>
+                        <p class="mt-1 text-sm text-muted-foreground">
+                          {kind === 'bad'
+                            ? `Reason: ${display(reason)}`
+                            : 'Verification accepted by API'}
+                        </p>
+                      </div>
+                      <a
+                        href={`${basePath}&kind=${kind}&trace=${encodeURIComponent(id)}&trace_kind=${kind}`}
+                        class="inline-flex min-h-9 shrink-0 items-center rounded-md border px-3 text-sm hover:bg-accent"
+                      >
+                        Inspect trace
+                      </a>
+                    </div>
+                    <dl class="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+                      <div>
+                        <dt class="text-muted-foreground">Configuration version</dt>
+                        <dd class="mt-1 font-medium">{display(version)}</dd>
+                      </div>
+                      <div>
+                        <dt class="text-muted-foreground">Observed at</dt>
+                        <dd class="mt-1">{dateLabel(observed)}</dd>
+                      </div>
+                      <div>
+                        <dt class="text-muted-foreground">Recorded at</dt>
+                        <dd class="mt-1">{dateLabel(created)}</dd>
+                      </div>
+                    </dl>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {nextCursor && (
+            <div class="flex justify-end">
+              <a
+                href={`${basePath}&kind=${kind}&cursor=${encodeURIComponent(nextCursor)}`}
+                class="inline-flex min-h-10 items-center rounded-md border px-4 text-sm font-medium hover:bg-accent"
+              >
+                Older submissions
+              </a>
+            </div>
+          )}
+        </section>
+
+        {traceId && (
+          <section aria-labelledby="trace-title" class="space-y-4">
+            <div>
+              <h2 id="trace-title" class="text-lg font-semibold">
+                Submission trace
+              </h2>
+              <p class="mt-1 break-all text-sm text-muted-foreground">Record ID: {traceId}</p>
+            </div>
+            {traceError ? (
+              <div role="alert" class="rounded-xl border border-destructive/40 bg-card p-5">
+                <h3 class="font-medium">Trace unavailable</h3>
+                <p class="mt-2 text-sm leading-6 text-muted-foreground">{traceError}</p>
+                {requestId && (
+                  <p class="mt-2 text-xs text-muted-foreground">Request ID: {requestId}</p>
+                )}
+                <p class="mt-2 text-sm text-muted-foreground">
+                  An unavailable trace is not proof that the submission failed verification.
+                </p>
+              </div>
+            ) : (
+              <div class="rounded-xl border bg-card p-4 sm:p-6">
+                <p class="text-sm text-muted-foreground">
+                  Trace response returned by the API. Payload availability is represented as
+                  returned; this page does not invent missing payload data.
+                </p>
+                <pre class="mt-4 max-h-[32rem] overflow-auto rounded-lg bg-muted/50 p-3 text-xs leading-5"><code>{JSON.stringify(traceData, null, 2)}</code></pre>
+              </div>
+            )}
+          </section>
+        )}
+      </>
+    ) : null}
+  </section>
+</AppShell>
