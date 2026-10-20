@@ -9,7 +9,10 @@ export default defineConfig({
   adapter: node({ mode: 'standalone' }),
   integrations: [
     svelte(),
-    authkit({ errorRedirect: '/login' })
+    authkit({
+      errorRedirect: '/login',
+      protectedRoutes: ['/monitors(.*)', '/templates(.*)', '/settings(.*)'],
+    })
   ],
   vite: {
     plugins: [tailwindcss()],
