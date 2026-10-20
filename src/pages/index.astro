@@ -1,5 +1,6 @@
 ---
 import AppShell from '../layouts/AppShell.astro';
+import DashboardOverview from '../components/DashboardOverview.svelte';
 const { auth } = Astro.locals;
 
 if (!auth.user) {
@@ -38,6 +39,8 @@ if (!auth.user) {
       <span class="signal-art__spark signal-art__spark--three"></span>
     </div>
   </section>
+
+  <DashboardOverview client:load />
 
   <section class="next-steps" aria-labelledby="next-steps-title">
     <div class="section-heading">

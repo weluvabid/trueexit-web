@@ -1,6 +1,6 @@
 import type { APIContext } from 'astro';
 
-const DEFAULT_API_BASE_URL = process.env.TRUEEXIT_API_BASE_URL as string;
+const DEFAULT_API_BASE_URL = import.meta.env.TRUEEXIT_API_BASE_URL;
 const REQUEST_TIMEOUT_MS = 15_000;
 
 export function jsonError(status: number, code: string, requestId = crypto.randomUUID()): Response {
@@ -17,7 +17,7 @@ export function jsonError(status: number, code: string, requestId = crypto.rando
 }
 
 function getApiBaseUrl(): URL {
-  const raw = process.env.TRUEEXIT_API_BASE_URL ?? DEFAULT_API_BASE_URL;
+  const raw = import.meta.env.TRUEEXIT_API_BASE_URL ?? DEFAULT_API_BASE_URL;
   const url = new URL(raw);
 
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
@@ -67,7 +67,7 @@ export async function proxyApiRequest(context: APIContext): Promise<Response> {
     const encodedPath = path.split('/').map((segment) => encodeURIComponent(segment)).join('/');
     upstreamUrl = new URL(`${baseUrl}/${encodedPath}`);
     upstreamUrl.search = url.search;
-  } catch {
+  } catch(e) {
     return jsonError(500, 'api_configuration_error');
   }
 
