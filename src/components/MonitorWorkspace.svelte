@@ -14,6 +14,8 @@
     created_at: string;
     updated_at: string;
   };
+  type MonitorConfigVersion = { version: number; cadence_seconds: number; config: { fields: Array<{ name: string; path: string; primitive: number; meta?: Record<string, unknown> }> } };
+  type MonitorDetail = Monitor & { config_versions?: MonitorConfigVersion[] };
   type MonitorPage = { data: Monitor[]; page: { next_cursor: string | null } };
   type ApiErrorBody = { error?: { code?: string }; request_id?: string };
   type ChannelKind = 'email' | 'webhook' | 'slack' | 'discord';
@@ -55,6 +57,11 @@
   let requestSequence = 0;
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let createOpen = false;
+  let editingMonitor: MonitorDetail | null = null;
+  let createRequestKey = '';
+  let createRequestBody = '';
+  let editRequestKey = '';
+  let editRequestBody = '';
   let creating = false;
   let createError = '';
   let createMessage = '';
@@ -116,6 +123,7 @@
   $: availableChannels = channels.filter((channel) => channel.enabled && !channelSelection.some((item) => item.kind === 'existing' && item.channel_id === channel.id));
 
   async function openCreate() {
+    editingMonitor = null;
     createOpen = true;
     createError = '';
     createMessage = '';
@@ -152,6 +160,87 @@
     createOpen = false;
     newChannelOpen = false;
     createError = '';
+    editingMonitor = null;
+  }
+
+  async function openEdit(monitor: Monitor) {
+    if (busyMonitorId || creating) return;
+    editingMonitor = monitor as MonitorDetail;
+    editRequestKey = '';
+    editRequestBody = '';
+    createError = '';
+    createMessage = '';
+    fieldError = '';
+    channelsError = '';
+    channels = [];
+    selectedExistingChannelId = '';
+    if (channelSelectionWorkspaceId !== selectedWorkspaceId) {
+      channelSelection = [];
+      channelSelectionWorkspaceId = selectedWorkspaceId;
+    }
+    createOpen = true;
+    creating = true;
+    try {
+      const detailUrl = `/api/backend/monitors/${encodeURIComponent(monitor.id)}?workspace_id=${encodeURIComponent(selectedWorkspaceId)}`;
+      const channelsUrl = `/api/backend/monitors/${encodeURIComponent(monitor.id)}/channels?workspace_id=${encodeURIComponent(selectedWorkspaceId)}`;
+      const destinationsUrl = `/api/backend/workspaces/${encodeURIComponent(selectedWorkspaceId)}/channels`;
+      const [detailResponse, channelResponse, destinationsResponse] = await Promise.all([
+        fetch(detailUrl, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' }),
+        fetch(channelsUrl, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' }),
+        fetch(destinationsUrl, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' }),
+      ]);
+      const detailBody: unknown = await detailResponse.json().catch(() => null);
+      if (!detailResponse.ok) {
+        const errorBody = detailBody as ApiErrorBody | null;
+        createError = messageFor(detailResponse.status, errorBody?.error?.code ?? null);
+        createOpen = false;
+        return;
+      }
+      const detail = detailBody as MonitorDetail;
+      const currentConfig = detail.config_versions?.find((version) => version.version === detail.current_config_version);
+      if (!currentConfig || !Array.isArray(currentConfig.config?.fields) || currentConfig.config.fields.length === 0) {
+        createError = 'The current monitor configuration could not be loaded safely. Nothing has been changed.';
+        createOpen = false;
+        return;
+      }
+      const channelBody: unknown = await channelResponse.json().catch(() => null);
+      if (!channelResponse.ok) {
+        const errorBody = channelBody as ApiErrorBody | null;
+        createError = messageFor(channelResponse.status, errorBody?.error?.code ?? null);
+        createOpen = false;
+        return;
+      }
+      const destinationBody: unknown = await destinationsResponse.json().catch(() => null);
+      if (!destinationsResponse.ok) {
+        const errorBody = destinationBody as ApiErrorBody | null;
+        createError = messageFor(destinationsResponse.status, errorBody?.error?.code ?? null);
+        createOpen = false;
+        return;
+      }
+      const selectedIds = (channelBody as { channel_ids?: string[] } | null)?.channel_ids ?? [];
+      channels = Array.isArray(destinationBody) ? destinationBody as Channel[] : [];
+      channelSelection = selectedIds.flatMap((id) => {
+        const channel = channels.find((item) => item.id === id);
+        return channel ? [{ kind: 'existing' as const, channel_id: channel.id, label: channel.label }] : [];
+      });
+      selectedExistingChannelId = availableChannels[0]?.id ?? '';
+      monitorName = detail.name;
+      monitorDescription = detail.description ?? '';
+      cadenceSeconds = currentConfig.cadence_seconds;
+      fields = currentConfig.config.fields.map((field, index) => ({
+        key: index + 1,
+        name: field.name,
+        path: field.path,
+        primitive: (Object.entries(primitiveValues).find(([, value]) => value === field.primitive)?.[0] ?? 'text') as FieldPrimitive,
+      }));
+      nextFieldKey = fields.length + 1;
+      editingMonitor = detail;
+    } catch {
+      createError = messageFor(0, 'network_error');
+      createOpen = false;
+    } finally {
+      creating = false;
+    }
   }
 
   function addField() {
@@ -277,6 +366,10 @@
   async function createMonitor(event: SubmitEvent) {
     event.preventDefault();
     if (creating || !selectedWorkspaceId) return;
+    if (editingMonitor) {
+      await saveMonitorEdits(event);
+      return;
+    }
     createError = '';
     createMessage = '';
     const name = monitorName.trim();
@@ -304,8 +397,6 @@
       channels: payloadChannels,
     };
     const requestBody = JSON.stringify(payload);
-    let createRequestKey = '';
-    let createRequestBody = '';
 
     if (!createRequestKey || createRequestBody !== requestBody) {
       createRequestKey = crypto.randomUUID();
@@ -345,6 +436,78 @@
       resetPagination();
       actionError = '';
       actionMessage = `“${created.name || name}” was created.`;
+      await loadMonitors(null);
+    } catch {
+      createError = messageFor(0, 'network_error');
+    } finally {
+      creating = false;
+    }
+  }
+
+  async function saveMonitorEdits(event: SubmitEvent) {
+    event.preventDefault();
+    const original = editingMonitor;
+    if (!original || creating || !selectedWorkspaceId) return;
+    createError = '';
+    createMessage = '';
+    const name = monitorName.trim();
+    if (!name || name.length > 200) {
+      createError = 'Enter a monitor name between 1 and 200 characters.';
+      return;
+    }
+    if (monitorDescription.length > 2000) {
+      createError = 'Description must be 2,000 characters or fewer.';
+      return;
+    }
+    const config = buildMonitorConfig();
+    if (!config) return;
+    const channelsPayload = channelSelection.map((selection) => selection.kind === 'existing'
+      ? { kind: 'existing', channel_id: selection.channel_id }
+      : { kind: 'new', type: selection.type, label: selection.label, priority: selection.priority, enabled: selection.enabled, config: selection.config });
+    const payload = {
+      expected_updated_at: original.updated_at,
+      name,
+      description: monitorDescription.trim(),
+      cadence_seconds: cadenceSeconds,
+      config,
+      channels: channelsPayload,
+    };
+    const requestBody = JSON.stringify(payload);
+    if (!editRequestKey || editRequestBody !== requestBody) {
+      editRequestKey = crypto.randomUUID();
+      editRequestBody = requestBody;
+    }
+    creating = true;
+    try {
+      const response = await fetch(`/api/backend/monitors/${encodeURIComponent(original.id)}?workspace_id=${encodeURIComponent(selectedWorkspaceId)}`, {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'Idempotency-Key': editRequestKey,
+        },
+        body: requestBody,
+      });
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        const errorBody = body as ApiErrorBody | null;
+        createError = response.status === 409
+          ? 'This monitor changed while you were editing it. Close this form, reopen Edit monitor, and review the latest version before saving again.'
+          : response.status === 422 && errorBody?.error?.code === 'invalid_monitor_config'
+            ? 'TrueExit rejected this field configuration. Check field names, paths, and value types.'
+            : messageFor(response.status, errorBody?.error?.code ?? null);
+        return;
+      }
+      createOpen = false;
+      editingMonitor = null;
+      editRequestKey = '';
+      editRequestBody = '';
+      newChannelOpen = false;
+      actionError = '';
+      actionMessage = `“${name}” was updated.`;
+      resetPagination();
       await loadMonitors(null);
     } catch {
       createError = messageFor(0, 'network_error');
@@ -560,6 +723,9 @@
               </div>
             </div>
             <div class="monitor-row__actions">
+              {#if monitor.status !== 'archived'}
+                <button class="monitor-button monitor-button--quiet" type="button" disabled={!!busyMonitorId || creating} on:click={() => openEdit(monitor)}>Edit</button>
+              {/if}
               {#if monitor.status === 'enabled'}
                 <button class="monitor-button monitor-button--quiet" type="button" disabled={!!busyMonitorId} on:click={() => runLifecycleAction(monitor, 'pause')}>{busyMonitorId === monitor.id ? 'Working…' : 'Pause'}</button>
                 <button class="monitor-button monitor-button--subtle" type="button" disabled={!!busyMonitorId} on:click={() => runLifecycleAction(monitor, 'archive')}>Archive</button>
@@ -586,8 +752,8 @@
     <div class="monitor-modal-backdrop" role="presentation">
       <section class="monitor-create-modal" role="dialog" aria-modal="true" aria-labelledby="monitor-create-title">
         <header class="monitor-create-modal__header">
-          <div><p class="eyebrow">NEW CHECK</p><h2 id="monitor-create-title">Give your signal a shape.</h2><p>Define the fields TrueExit should observe. A monitor always needs at least one valid field.</p></div>
-          <button class="monitor-modal-close" type="button" aria-label="Close monitor creation" on:click={closeCreate} disabled={creating}>×</button>
+          <div><p class="eyebrow">{editingMonitor ? 'EDIT CHECK' : 'NEW CHECK'}</p><h2 id="monitor-create-title">{editingMonitor ? 'Refine your signal.' : 'Give your signal a shape.'}</h2><p>{editingMonitor ? 'Update the fields, cadence, and notification destinations for this monitor.' : 'Define the fields TrueExit should observe. A monitor always needs at least one valid field.'}</p></div>
+          <button class="monitor-modal-close" type="button" aria-label={editingMonitor ? 'Close monitor editor' : 'Close monitor creation'} on:click={closeCreate} disabled={creating}>×</button>
         </header>
         {#if createError}<div class="monitor-inline-alert" role="alert">{createError}</div>{/if}
         <form class="monitor-create-form" on:submit={createMonitor}>
