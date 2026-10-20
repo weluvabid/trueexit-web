@@ -18,6 +18,7 @@
   type MonitorDetail = Monitor & { config_versions?: MonitorConfigVersion[] };
   type MonitorPage = { data: Monitor[]; page: { next_cursor: string | null } };
   type ApiErrorBody = { error?: { code?: string }; request_id?: string };
+  type WorkspaceTag = { id: string; workspace_id: string; name: string; monitor_count: number; created_at: string; updated_at: string };
   type ChannelKind = 'email' | 'webhook' | 'slack' | 'discord';
   type Channel = { id: string; label: string; type: ChannelKind; enabled: boolean; configured: boolean };
   type FieldPrimitive = 'size' | 'count' | 'duration' | 'timestamp' | 'boolean' | 'categorical' | 'checksum' | 'text';
@@ -58,6 +59,18 @@
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let createOpen = false;
   let editingMonitor: MonitorDetail | null = null;
+  let workspaceTags: WorkspaceTag[] = [];
+  let tagFilter = '';
+  let tagModalOpen = false;
+  let taggingMonitor: Monitor | null = null;
+  let monitorTagIds: string[] = [];
+  let newTagNames: string[] = [];
+  let tagInput = '';
+  let tagBusy = false;
+  let tagReady = false;
+  let tagError = '';
+  let tagRequestKey = '';
+  let tagRequestBody = '';
   let createRequestKey = '';
   let createRequestBody = '';
   let editRequestKey = '';
@@ -121,6 +134,134 @@
   $: selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null;
   $: canManageChannels = !!selectedWorkspace && (selectedWorkspace.personal || selectedWorkspace.account_owner || selectedWorkspace.role === 'admin');
   $: availableChannels = channels.filter((channel) => channel.enabled && !channelSelection.some((item) => item.kind === 'existing' && item.channel_id === channel.id));
+
+  async function loadWorkspaceTags(): Promise<boolean> {
+    if (!selectedWorkspaceId) {
+      workspaceTags = [];
+      return false;
+    }
+    try {
+      const response = await fetch(`/api/backend/workspaces/${encodeURIComponent(selectedWorkspaceId)}/tags`, {
+        headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store',
+      });
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok) return false;
+      if (Array.isArray(body)) workspaceTags = body as WorkspaceTag[];
+      else if (body && typeof body === 'object' && 'data' in body && Array.isArray(body.data)) workspaceTags = body.data as WorkspaceTag[];
+      else return false;
+      return true;
+    } catch {
+      // Tags are an optional organization layer; do not block monitor inventory on their availability.
+      return false;
+    }
+  }
+
+  async function openTagManager(monitor: Monitor) {
+    if (tagBusy || creating || busyMonitorId) return;
+    taggingMonitor = monitor;
+    monitorTagIds = [];
+    newTagNames = [];
+    tagInput = '';
+    tagReady = false;
+    tagError = '';
+    tagRequestKey = '';
+    tagRequestBody = '';
+    tagModalOpen = true;
+    tagBusy = true;
+    try {
+      const tagsLoaded = await loadWorkspaceTags();
+      if (!tagsLoaded) {
+        tagError = 'Workspace tags could not be loaded. Close this panel and try again; no changes have been made.';
+        return;
+      }
+      const response = await fetch(`/api/backend/monitors/${encodeURIComponent(monitor.id)}/tags?workspace_id=${encodeURIComponent(selectedWorkspaceId)}`, {
+        headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store',
+      });
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        const errorBody = body as ApiErrorBody | null;
+        tagError = messageFor(response.status, errorBody?.error?.code ?? null);
+        return;
+      }
+      const assigned = Array.isArray(body) ? body as WorkspaceTag[] : (body && typeof body === 'object' && 'data' in body && Array.isArray(body.data) ? body.data as WorkspaceTag[] : []);
+      monitorTagIds = assigned.map((tag) => tag.id);
+      tagReady = true;
+    } catch {
+      tagError = messageFor(0, 'network_error');
+      tagReady = false;
+    } finally {
+      tagBusy = false;
+    }
+  }
+
+  function addTagDraft() {
+    const name = tagInput.trim().replace(/\s+/g, ' ');
+    if (!name) return;
+    if (name.length > 40) {
+      tagError = 'Tag names must be 40 characters or fewer.';
+      return;
+    }
+    if (monitorTagIds.length + newTagNames.length >= 3) {
+      tagError = 'A monitor can have at most three tags.';
+      return;
+    }
+    const existing = workspaceTags.find((tag) => tag.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+    if (existing) {
+      if (!monitorTagIds.includes(existing.id)) monitorTagIds = [...monitorTagIds, existing.id];
+    } else if (!newTagNames.some((tag) => tag.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+      newTagNames = [...newTagNames, name];
+    }
+    tagInput = '';
+    tagError = '';
+  }
+
+  function removeTagDraft(name: string) {
+    newTagNames = newTagNames.filter((tag) => tag !== name);
+  }
+
+  async function saveMonitorTags(event: SubmitEvent) {
+    event.preventDefault();
+    if (!taggingMonitor || tagBusy) return;
+    if (monitorTagIds.length + newTagNames.length > 3) {
+      tagError = 'A monitor can have at most three tags.';
+      return;
+    }
+    tagBusy = true;
+    tagError = '';
+    const monitorName = taggingMonitor.name;
+    const requestBody = JSON.stringify({ workspace_id: selectedWorkspaceId, tag_ids: monitorTagIds, create_tags: newTagNames });
+    if (!tagRequestKey || tagRequestBody !== requestBody) {
+      tagRequestKey = crypto.randomUUID();
+      tagRequestBody = requestBody;
+    }
+    try {
+      const response = await fetch(`/api/backend/monitors/${encodeURIComponent(taggingMonitor.id)}/tags`, {
+        method: 'PUT',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'Idempotency-Key': tagRequestKey },
+        body: requestBody,
+      });
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        const errorBody = body as ApiErrorBody | null;
+        tagError = messageFor(response.status, errorBody?.error?.code ?? null);
+        return;
+      }
+      tagModalOpen = false;
+      taggingMonitor = null;
+      tagRequestKey = '';
+      tagRequestBody = '';
+      actionError = '';
+      actionMessage = `Tags updated for “${monitorName}”.`;
+      await Promise.all([loadWorkspaceTags(), loadMonitors(null)]);
+    } catch {
+      tagError = messageFor(0, 'network_error');
+    } finally {
+      tagBusy = false;
+    }
+  }
+
 
   async function openCreate() {
     editingMonitor = null;
@@ -537,6 +678,7 @@
     const params = new URLSearchParams({ workspace_id: selectedWorkspaceId, limit: '25', sort, direction });
     if (search.trim()) params.set('q', search.trim());
     if (statusFilter !== 'all') params.set('status', statusFilter);
+    if (tagFilter) params.set('tag_ids', tagFilter);
     if (includeArchived || statusFilter === 'archived') params.set('include_archived', 'true');
     if (cursor) params.set('cursor', cursor);
 
@@ -590,6 +732,7 @@
     const initialWorkspace = workspaces.find((workspace) => workspace.id === personalId) ?? workspaces[0];
     selectedWorkspaceId = initialWorkspace?.id ?? '';
     loadingWorkspaces = false;
+    if (selectedWorkspaceId) void loadWorkspaceTags();
     if (selectedWorkspaceId) await loadMonitors(null);
   }
 
@@ -683,6 +826,7 @@
         {#if search}<button type="button" class="monitor-search__clear" aria-label="Clear search" on:click={() => { search = ''; applyFilters(); }}>×</button>{/if}
       </label>
       <label class="monitor-filter"><span>Status</span><select bind:value={statusFilter} on:change={applyFilters}><option value="all">All active</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option><option value="archived">Archived</option></select></label>
+      <label class="monitor-filter"><span>Tag</span><select bind:value={tagFilter} on:change={applyFilters}><option value="">All tags</option>{#each workspaceTags as tag (tag.id)}<option value={tag.id}>{tag.name}</option>{/each}</select></label>
       <label class="monitor-filter"><span>Sort by</span><select bind:value={sort} on:change={applyFilters}><option value="updated_at">Recently updated</option><option value="created_at">Recently created</option><option value="name">Name</option><option value="id">Default order</option></select></label>
       <button class="monitor-sort-direction" type="button" on:click={() => { direction = direction === 'desc' ? 'asc' : 'desc'; applyFilters(); }} aria-label={`Sort ${direction === 'desc' ? 'ascending' : 'descending'}`} title={`Currently ${direction === 'desc' ? 'descending' : 'ascending'}`}>
         {direction === 'desc' ? '↓' : '↑'} <span>{direction === 'desc' ? 'Desc' : 'Asc'}</span>
@@ -700,9 +844,9 @@
     {:else if monitors.length === 0}
       <div class="monitor-state monitor-state--empty">
         <span class="monitor-empty-mark" aria-hidden="true">⌁</span>
-        <h2>{search || statusFilter !== 'all' ? 'No monitors match these filters' : 'Nothing to monitor yet'}</h2>
-        <p>{search || statusFilter !== 'all' ? 'Try another search or broaden the status filter.' : 'There are no monitors in this view yet. Create one by defining the fields TrueExit should observe.'}</p>
-        {#if search || statusFilter !== 'all'}<button class="monitor-button monitor-button--quiet" type="button" on:click={() => { search = ''; statusFilter = 'all'; includeArchived = false; applyFilters(); }}>Clear filters</button>{:else}<button class="monitor-button monitor-button--primary" type="button" on:click={openCreate}>Create your first monitor</button>{/if}
+        <h2>{search || statusFilter !== 'all' || tagFilter ? 'No monitors match these filters' : 'Nothing to monitor yet'}</h2>
+        <p>{search || statusFilter !== 'all' || tagFilter ? 'Try another search or broaden the status or tag filter.' : 'There are no monitors in this view yet. Create one by defining the fields TrueExit should observe.'}</p>
+        {#if search || statusFilter !== 'all' || tagFilter}<button class="monitor-button monitor-button--quiet" type="button" on:click={() => { search = ''; statusFilter = 'all'; tagFilter = ''; includeArchived = false; applyFilters(); }}>Clear filters</button>{:else}<button class="monitor-button monitor-button--primary" type="button" on:click={openCreate}>Create your first monitor</button>{/if}
       </div>
     {:else}
       <div class="monitor-results-heading"><span>{loadingMonitors ? 'Refreshing…' : `${monitors.length} monitor${monitors.length === 1 ? '' : 's'} on this page`}</span><span>Page {pageIndex + 1}</span></div>
@@ -723,6 +867,7 @@
               </div>
             </div>
             <div class="monitor-row__actions">
+              <button class="monitor-button monitor-button--quiet" type="button" disabled={tagBusy || creating || !!busyMonitorId} on:click={() => openTagManager(monitor)}>Tags</button>
               {#if monitor.status !== 'archived'}
                 <button class="monitor-button monitor-button--quiet" type="button" disabled={!!busyMonitorId || creating} on:click={() => openEdit(monitor)}>Edit</button>
               {/if}
@@ -812,6 +957,48 @@
 
           <footer class="monitor-create-footer"><p>Fields are required. Destinations are optional. Tags can be assigned separately after creation.</p><div><button class="monitor-button monitor-button--quiet" type="button" on:click={closeCreate} disabled={creating}>Cancel</button><button class="monitor-button monitor-button--primary" type="submit" disabled={creating}>{creating ? 'Creating monitor…' : 'Create monitor'} <span aria-hidden="true">↗</span></button></div></footer>
         </form>
+      </section>
+    </div>
+  {/if}
+
+  {#if tagModalOpen && taggingMonitor}
+    <div class="monitor-modal-backdrop" role="presentation">
+      <section class="monitor-create-modal monitor-tag-modal" role="dialog" aria-modal="true" aria-labelledby="monitor-tags-title">
+        <header class="monitor-create-modal__header">
+          <div><p class="eyebrow">WORKSPACE LABELS</p><h2 id="monitor-tags-title">Organise this monitor.</h2><p>Tags are optional labels shared across monitors. They do not change verification or health.</p></div>
+          <button class="monitor-modal-close" type="button" aria-label="Close tag manager" on:click={() => { if (!tagBusy) { tagModalOpen = false; taggingMonitor = null; } }} disabled={tagBusy}>×</button>
+        </header>
+        {#if tagError}<div class="monitor-inline-alert" role="alert">{tagError}</div>{/if}
+        {#if tagBusy}
+          <div class="monitor-state" aria-live="polite"><span class="monitor-loader" aria-hidden="true"></span>Loading tags…</div>
+        {:else}
+          <form class="monitor-create-form" on:submit={saveMonitorTags}>
+            <div class="monitor-create-section">
+              <div class="monitor-create-section__heading"><span>01</span><div><h3>Available tags</h3><p>Select up to three labels for {taggingMonitor.name}.</p></div></div>
+              {#if workspaceTags.length > 0}
+                <div class="monitor-tag-options">
+                  {#each workspaceTags as tag (tag.id)}
+                    <label class="monitor-tag-option"><input type="checkbox" value={tag.id} bind:group={monitorTagIds} disabled={!monitorTagIds.includes(tag.id) && monitorTagIds.length + newTagNames.length >= 3} /><span>{tag.name}</span><small>{tag.monitor_count} monitor{tag.monitor_count === 1 ? '' : 's'}</small></label>
+                  {/each}
+                </div>
+              {:else}
+                <p class="monitor-form-hint">No workspace tags yet. Create one below.</p>
+              {/if}
+            </div>
+            <div class="monitor-create-section">
+              <div class="monitor-create-section__heading"><span>02</span><div><h3>Create a tag</h3><p>New tags become reusable across this workspace.</p></div></div>
+              <div class="monitor-channel-add"><label class="monitor-form-field"><span>Tag name</span><input bind:value={tagInput} maxlength="40" placeholder="e.g. Customer-facing" /></label><button class="monitor-button monitor-button--quiet" type="button" on:click={addTagDraft} disabled={!tagInput.trim() || monitorTagIds.length + newTagNames.length >= 3}>Add tag</button></div>
+              {#if newTagNames.length > 0}
+                <div class="monitor-selected-channels" aria-label="New tags to create">
+                  {#each newTagNames as tag (tag)}
+                    <div class="monitor-selected-channel"><span class="monitor-selected-channel__icon" aria-hidden="true">＋</span><span><strong>{tag}</strong><small>Will be created and assigned on save</small></span><button type="button" aria-label={`Remove ${tag}`} on:click={() => removeTagDraft(tag)}>×</button></div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+            <footer class="monitor-create-footer"><p>Saving replaces this monitor's complete tag assignment. Removing a tag here does not delete it from the workspace.</p><div><button class="monitor-button monitor-button--quiet" type="button" on:click={() => { tagModalOpen = false; taggingMonitor = null; }} disabled={tagBusy}>Cancel</button><button class="monitor-button monitor-button--primary" type="submit" disabled={tagBusy || !tagReady}>{tagBusy ? 'Saving tags…' : 'Save tags'} <span aria-hidden="true">↗</span></button></div></footer>
+          </form>
+        {/if}
       </section>
     </div>
   {/if}
