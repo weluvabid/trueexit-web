@@ -857,6 +857,7 @@
               <div class="monitor-row__titleline">
                 <span class={`monitor-status-dot monitor-status-dot--${monitor.status}`} aria-hidden="true"></span>
                 <h2>{monitor.name}</h2>
+                <a class="monitor-button monitor-button--quiet" href={`/monitors/${encodeURIComponent(monitor.id)}?workspace_id=${encodeURIComponent(selectedWorkspaceId)}`}>Investigate</a>
                 <span class={`monitor-status-pill monitor-status-pill--${monitor.status}`}>{monitor.status}</span>
               </div>
               <p class="monitor-row__description">{monitor.description || 'No description added.'}</p>

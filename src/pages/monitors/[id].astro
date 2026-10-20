@@ -1,0 +1,18 @@
+---
+import AppShell from '../../layouts/AppShell.astro';
+import MonitorInvestigation from '../../components/MonitorInvestigation.svelte';
+const { auth } = Astro.locals;
+const monitorId = Astro.params.id;
+
+if (!auth.user) {
+  return auth.redirectToSignIn();
+}
+
+if (!monitorId) {
+  return new Response('Monitor not found', { status: 404 });
+}
+---
+
+<AppShell title="Monitor investigation" description="Inspect persisted health, evidence, and delivery history for a TrueExit monitor.">
+  <MonitorInvestigation client:load monitorId={monitorId} />
+</AppShell>
