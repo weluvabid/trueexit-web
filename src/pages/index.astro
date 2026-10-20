@@ -1,0 +1,43 @@
+---
+import '../styles/global.css';
+
+const productName = 'TrueExit';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f7f8fa" />
+    <meta
+      name="description"
+      content="Understand service health through clear evidence and dependable monitoring."
+    />
+    <title>{productName} · Clear signals, fewer surprises</title>
+  </head>
+  <body>
+    <main class="min-h-screen px-6 py-20 sm:px-10">
+      <section class="mx-auto flex min-h-[60vh] max-w-5xl flex-col justify-center">
+        <p class="mb-8 inline-flex w-fit items-center gap-2 rounded-full border border-[var(--color-border)] bg-white/80 px-3 py-1.5 text-xs font-medium tracking-[0.14em] text-[var(--color-text-secondary)] uppercase">
+          <span
+            aria-hidden="true"
+            class="h-2 w-2 rounded-full bg-gradient-to-br from-[var(--color-accent)] to-[var(--color-accent-secondary)]"
+          ></span>
+          Foundation phase
+        </p>
+        <h1 class="max-w-3xl text-5xl leading-[1.04] font-semibold tracking-[-0.055em] sm:text-7xl">
+          Clear signals.<br />
+          <span class="bg-gradient-to-r from-[var(--color-accent)] to-[var(--color-accent-secondary)] bg-clip-text text-transparent">Fewer surprises.</span>
+        </h1>
+        <p class="mt-7 max-w-xl text-base leading-7 text-[var(--color-text-secondary)] sm:text-lg">
+          The application foundation is in place. The product shell and monitoring
+          workflows will be introduced in their own reviewable phases.
+        </p>
+        <p class="mt-12 text-sm text-[var(--color-text-muted)]">
+          Server-rendered by Astro · Interactive features will use focused Svelte islands
+        </p>
+      </section>
+    </main>
+  </body>
+</html>
