@@ -1,5 +1,10 @@
 ---
 import AppShell from '../layouts/AppShell.astro';
+const { auth } = Astro.locals;
+
+if (!auth.user) {
+  return auth.redirectToSignIn();
+}
 ---
 
 <AppShell title="Overview" description="A clearer view of service health, evidence, and monitoring activity.">

@@ -52,8 +52,9 @@ button:disabled { cursor: not-allowed; }
 .app-header__right { display: flex; align-items: center; justify-content: flex-end; gap: 17px; margin-left: auto; }
 .header-status { display: inline-flex; align-items: center; gap: 8px; color: var(--color-text-muted); font-size: 11px; white-space: nowrap; }
 .header-status > span { width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent-secondary); box-shadow: 0 0 0 3px rgb(154 120 245 / 12%); }
-.avatar-button { display: grid; width: 35px; height: 35px; place-items: center; border: 1px solid var(--color-border); border-radius: 50%; background: white; color: #a2a8b5; }
-.avatar-button svg { width: 18px; height: 18px; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.account-email { max-width: 220px; overflow: hidden; color: var(--color-text-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.sign-out-link { display: inline-flex; min-height: 36px; align-items: center; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 11px; background: rgb(255 255 255 / 82%); color: var(--color-text-secondary); font-size: 11px; font-weight: 600; transition: border-color 160ms ease, color 160ms ease, background 160ms ease; }
+.sign-out-link:hover { border-color: #d5d0fa; background: white; color: var(--color-text); }
 .app-main { width: min(100% - 64px, 1120px); margin-inline: auto; padding: 54px 0 84px; }
 .mobile-nav-wrap { display: none; }
 
@@ -130,7 +131,8 @@ h1, h2, p { margin-top: 0; }
   .brand__wordmark { font-size: 18px; }
   .app-header__inner > .app-nav { display: none; }
   .app-header__right { gap: 0; }
-  .avatar-button { width: 33px; height: 33px; }
+  .account-email { display: none; }
+  .sign-out-link { min-height: 34px; padding-inline: 10px; font-size: 10px; }
   .app-main { width: calc(100% - 36px); padding: 38px 0 calc(100px + env(safe-area-inset-bottom)); }
   .mobile-nav-wrap { position: fixed; z-index: 30; right: 0; bottom: 0; left: 0; display: block; padding: 9px 14px calc(9px + env(safe-area-inset-bottom)); border-top: 1px solid rgb(227 231 238 / 90%); background: rgb(255 255 255 / 92%); backdrop-filter: blur(20px); }
   .mobile-nav-wrap .app-nav { justify-content: space-around; gap: 2px; }
