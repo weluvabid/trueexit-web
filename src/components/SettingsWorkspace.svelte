@@ -321,7 +321,7 @@
     if (!selectedWorkspace) return false;
     const result = await perform<{ valid?: boolean; duplicate?: boolean; existing_channel?: { id: string; label: string } | null }>(
       'validate-channel', `/workspaces/${encodeURIComponent(selectedWorkspace.id)}/channels/validate`,
-      { method: 'POST', body: JSON.stringify({ type, label, priority, enabled, config }) },
+      { method: 'POST', body: JSON.stringify({ type, config }) },
     );
     if (!result) return false;
     if (result.duplicate && result.existing_channel) {
