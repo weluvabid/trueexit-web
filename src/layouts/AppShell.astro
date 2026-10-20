@@ -1,0 +1,44 @@
+---
+import BrandMark from '../components/BrandMark.astro';
+import AppNavigation from '../components/AppNavigation.astro';
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = 'Clear signals, fewer surprises.' } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f7f8fa" />
+    <meta name="description" content={description} />
+    <title>{title} · TrueExit</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <div class="app-frame">
+      <header class="app-header">
+        <div class="app-header__inner">
+          <BrandMark />
+          <AppNavigation />
+          <div class="app-header__right" aria-label="Account area">
+            <span class="header-status"><span aria-hidden="true"></span>Monitoring, made clear</span>
+            <button class="avatar-button" type="button" aria-label="Account menu unavailable until authentication is implemented" disabled>
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8" r="3.5" /><path d="M5 20c.8-3.1 3.2-4.8 7-4.8s6.2 1.7 7 4.8" /></svg>
+            </button>
+          </div>
+        </div>
+      </header>
+      <main id="main-content" class="app-main">
+        <slot />
+      </main>
+      <div class="mobile-nav-wrap"><AppNavigation /></div>
+    </div>
+  </body>
+</html>
