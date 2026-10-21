@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { can } from '../lib/client/permissions';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
 
@@ -78,9 +79,7 @@
   let showCreateAccount = false;
 
   $: selectedWorkspace = workspaces.find((item) => item.id === selectedWorkspaceId) ?? null;
-  $: canManageWorkspace = !!selectedWorkspace && (
-    selectedWorkspace.personal || selectedWorkspace.account_owner || selectedWorkspace.role === 'admin'
-  );
+  $: canManageWorkspace = can(selectedWorkspace, 'workspace.manage');
   $: selectedAccount = accounts.find((item) => item.account_id === selectedWorkspace?.account_id) ?? null;
   $: ownedAccounts = accounts;
 
@@ -155,9 +154,12 @@
       }
       const workspaceBody = bootstrap.workspaces.data;
       workspaces = Array.isArray(workspaceBody?.data) ? workspaceBody.data : [];
+      let storedWorkspaceId = '';
+      try { storedWorkspaceId = localStorage.getItem('trueexit.active-workspace-id') ?? ''; } catch { /* Storage may be unavailable. */ }
       if (!selectedWorkspaceId || !workspaces.some((item) => item.id === selectedWorkspaceId)) {
-        selectedWorkspaceId = workspaces[0]?.id ?? '';
+        selectedWorkspaceId = workspaces.find((item) => item.id === storedWorkspaceId)?.id ?? workspaces[0]?.id ?? '';
       }
+      if (selectedWorkspaceId) { try { localStorage.setItem('trueexit.active-workspace-id', selectedWorkspaceId); } catch { /* Storage may be unavailable. */ } }
       if (!selectedWorkspaceId) {
         members = []; invitations = []; channels = [];
       }
@@ -195,6 +197,7 @@
   }
 
   async function selectWorkspace() {
+    try { localStorage.setItem('trueexit.active-workspace-id', selectedWorkspaceId); } catch { /* Storage may be unavailable. */ }
     error = ''; notice = '';
     workspaceName = selectedWorkspace?.name ?? '';
     await loadWorkspaceSections();

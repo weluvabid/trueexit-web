@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { can } from '../lib/client/permissions';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
 
@@ -53,7 +54,7 @@
   let pendingDelete: Template | null = null;
 
   $: selectedWorkspace = workspaces.find((item) => item.id === workspaceId) ?? null;
-  $: canManage = !!selectedWorkspace && (selectedWorkspace.personal || selectedWorkspace.account_owner || selectedWorkspace.role === 'admin');
+  $: canManage = can(selectedWorkspace, 'templates.create');
 
   function errorMessage(status: number, code: string | null): string {
     if (status === 401) return 'Your session needs attention. Sign in again to continue.';
@@ -103,7 +104,9 @@
     if (!result.workspaces.ok) { bootError = errorMessage(result.workspaces.status, result.workspaces.code); loading = false; return; }
     workspaces = result.workspaces.data.data;
     const personal = result.me.ok ? result.me.data.personal_workspace_id : null;
-    workspaceId = workspaces.find((w) => w.id === personal)?.id ?? workspaces[0]?.id ?? '';
+    let storedWorkspaceId = '';
+    try { storedWorkspaceId = localStorage.getItem('trueexit.active-workspace-id') ?? ''; } catch { /* Storage may be unavailable. */ }
+    workspaceId = workspaces.find((w) => w.id === storedWorkspaceId)?.id ?? workspaces.find((w) => w.id === personal)?.id ?? workspaces[0]?.id ?? '';
     if (!workspaceId) { loading = false; return; }
     await loadTemplates(null);
   }
@@ -240,7 +243,7 @@
   </header>
 
   {#if workspaces.length > 1}
-    <label class="template-workspace">Workspace <select bind:value={workspaceId} on:change={() => { cursorStack = [null]; pageIndex = 0; void loadTemplates(null); }}><option value="" disabled>Select workspace</option>{#each workspaces as workspace}<option value={workspace.id}>{workspace.name}{workspace.personal ? ' · Personal' : ''}</option>{/each}</select></label>
+    <label class="template-workspace">Workspace <select bind:value={workspaceId} on:change={() => { try { localStorage.setItem('trueexit.active-workspace-id', workspaceId); } catch { /* Storage may be unavailable. */ } cursorStack = [null]; pageIndex = 0; void loadTemplates(null); }}><option value="" disabled>Select workspace</option>{#each workspaces as workspace}<option value={workspace.id}>{workspace.name}{workspace.personal ? ' · Personal' : ''}</option>{/each}</select></label>
   {/if}
   {#if bootError}<div class="template-alert" role="alert">{bootError} <button type="button" on:click={() => void bootstrap()}>Try again</button></div>{/if}
   {#if notice}<div class="template-notice" role="status">{notice}<button type="button" aria-label="Dismiss message" on:click={() => notice = ''}>×</button></div>{/if}

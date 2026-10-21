@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { can } from '../lib/client/permissions';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
 
@@ -132,7 +133,7 @@
   }
 
   $: selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null;
-  $: canManageChannels = !!selectedWorkspace && (selectedWorkspace.personal || selectedWorkspace.account_owner || selectedWorkspace.role === 'admin');
+  $: canManageChannels = can(selectedWorkspace, 'workspace.destinations.manage');
   $: availableChannels = channels.filter((channel) => channel.enabled && !channelSelection.some((item) => item.kind === 'existing' && item.channel_id === channel.id));
 
   async function loadWorkspaceTags(): Promise<boolean> {
@@ -729,7 +730,10 @@
 
     workspaces = result.workspaces.data.data;
     const personalId = result.me.ok ? result.me.data.personal_workspace_id : null;
-    const initialWorkspace = workspaces.find((workspace) => workspace.id === personalId) ?? workspaces[0];
+    let storedWorkspaceId = '';
+    try { storedWorkspaceId = localStorage.getItem('trueexit.active-workspace-id') ?? ''; } catch { /* Storage may be unavailable. */ }
+    const initialWorkspace = workspaces.find((workspace) => workspace.id === storedWorkspaceId) ?? workspaces.find((workspace) => workspace.id === personalId) ?? workspaces[0];
+    if (initialWorkspace) { try { localStorage.setItem('trueexit.active-workspace-id', initialWorkspace.id); } catch { /* Storage may be unavailable. */ } }
     selectedWorkspaceId = initialWorkspace?.id ?? '';
     loadingWorkspaces = false;
     if (selectedWorkspaceId) void loadWorkspaceTags();
@@ -800,7 +804,7 @@
     {#if workspaces.length > 1}
       <label class="monitor-workspace-picker">
         <span>Workspace</span>
-        <select value={selectedWorkspaceId} on:change={(event) => { selectedWorkspaceId = event.currentTarget.value; resetPagination(); void loadMonitors(null); }} disabled={loadingWorkspaces || loadingMonitors}>
+        <select value={selectedWorkspaceId} on:change={(event) => { selectedWorkspaceId = event.currentTarget.value; try { localStorage.setItem('trueexit.active-workspace-id', selectedWorkspaceId); } catch { /* Storage may be unavailable. */ } resetPagination(); void loadMonitors(null); }} disabled={loadingWorkspaces || loadingMonitors}>
           {#each workspaces as workspace (workspace.id)}
             <option value={workspace.id}>{workspace.name}</option>
           {/each}

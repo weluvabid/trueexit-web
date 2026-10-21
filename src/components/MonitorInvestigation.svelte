@@ -231,8 +231,11 @@
     workspaces = result.workspaces.data.data;
     const personalId = result.me.ok ? result.me.data.personal_workspace_id : null;
     const requestedWorkspaceId = new URLSearchParams(window.location.search).get('workspace_id');
-    const initial = workspaces.find((workspace) => workspace.id === requestedWorkspaceId) ?? workspaces.find((workspace) => workspace.id === personalId) ?? workspaces[0];
+    let storedWorkspaceId = '';
+    try { storedWorkspaceId = localStorage.getItem('trueexit.active-workspace-id') ?? ''; } catch { /* Storage may be unavailable. */ }
+    const initial = workspaces.find((workspace) => workspace.id === requestedWorkspaceId) ?? workspaces.find((workspace) => workspace.id === storedWorkspaceId) ?? workspaces.find((workspace) => workspace.id === personalId) ?? workspaces[0];
     workspaceId = initial?.id ?? '';
+    if (workspaceId) { try { localStorage.setItem('trueexit.active-workspace-id', workspaceId); } catch { /* Storage may be unavailable. */ } }
     workspaceGeneration += 1;
     bootLoading = false;
     if (!workspaceId) { bootError = 'No workspace is available to inspect this monitor.'; return; }
@@ -240,6 +243,7 @@
   }
 
   async function changeWorkspace() {
+    try { localStorage.setItem('trueexit.active-workspace-id', workspaceId); } catch { /* Storage may be unavailable. */ }
     workspaceGeneration += 1;
     monitor = null; health = null; healthHistory = null; evidence = null; badEvidence = null; deliveries = null;
     selectedEvidence = null; selectedTrace = null; selectedDelivery = null; selectedHealthVersion = null;
