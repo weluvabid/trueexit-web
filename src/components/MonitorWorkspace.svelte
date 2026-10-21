@@ -3,24 +3,15 @@
   export let monitorId = '';
   import { can } from '../lib/client/permissions';
   import { onMount } from 'svelte';
-  import StyledSelect from './ui/StyledSelect.svelte';
+  import MonitorInventory from './MonitorInventory.svelte';
+  import type { Monitor, MonitorStatus } from '../lib/client/monitor-types';
+  import { formatMonitorCadence } from '../lib/client/monitor-format';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
+  import { createMonitorQueryClient, fetchMonitorPage, fetchMonitorTemplates, monitorQueryKeys, monitorTemplateQueryKeys, type MonitorTemplate } from '../lib/client/monitor-queries';
 
-  type MonitorStatus = 'enabled' | 'disabled' | 'archived';
-  type Monitor = {
-    id: string;
-    workspace_id: string;
-    name: string;
-    description: string;
-    status: MonitorStatus;
-    cadence_seconds: number;
-    current_config_version: number;
-    created_at: string;
-    updated_at: string;
-  };
   type MonitorConfigVersion = { version: number; cadence_seconds: number; config: { fields: Array<{ name: string; path: string; primitive: number; meta?: Record<string, unknown> }> } };
   type MonitorDetail = Monitor & { config_versions?: MonitorConfigVersion[] };
-  type MonitorPage = { data: Monitor[]; page: { next_cursor: string | null } };
+  const monitorQueryClient = createMonitorQueryClient();
   type ApiErrorBody = { error?: { code?: string }; request_id?: string };
   type WorkspaceTag = { id: string; workspace_id: string; name: string; monitor_count: number; created_at: string; updated_at: string };
   type ChannelKind = 'email' | 'webhook' | 'slack' | 'discord';
@@ -65,7 +56,7 @@
   let fieldMode: 'json' | 'fields' | 'templates' = 'fields';
   let jsonDraft = '';
   let jsonError = '';
-  let templates: Array<{ id: string; name: string; description?: string; fields: Array<{ name: string; path: string; primitive: number }> }> = [];
+  let templates: MonitorTemplate[] = [];
   let templatesLoading = false;
   let templatesError = '';
   let selectedTemplateId = '';
@@ -135,26 +126,12 @@
     return messageFor(response.status, body?.error?.code ?? null);
   }
 
-  function formatDate(value: string): string {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return 'Time unavailable';
-    return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-  }
-
-  function formatCadence(seconds: number): string {
-    if (!Number.isFinite(seconds) || seconds <= 0) return 'Cadence unavailable';
-    if (seconds % 86400 === 0) return `${seconds / 86400} day${seconds === 86400 ? '' : 's'}`;
-    if (seconds % 3600 === 0) return `${seconds / 3600} hour${seconds === 3600 ? '' : 's'}`;
-    if (seconds % 60 === 0) return `${seconds / 60} min`;
-    return `${seconds} sec`;
-  }
-
   function secondsToCadence(seconds: number) {
     if (seconds % 3600 === 0) { cadenceValue = String(seconds / 3600); cadenceUnit = 'hours'; }
     else if (seconds % 60 === 0) { cadenceValue = String(seconds / 60); cadenceUnit = 'minutes'; }
     else { cadenceValue = String(seconds); cadenceUnit = 'seconds'; }
     cadenceMode = 'interval';
-    cadencePreview = `Every ${formatCadence(seconds)}`;
+    cadencePreview = `Every ${formatMonitorCadence(seconds)}`;
   }
 
   function resolveCadence(): number | null {
@@ -171,7 +148,7 @@
         cadenceError = 'The minimum interval is 15 seconds.';
         return null;
       }
-      cadencePreview = `Every ${formatCadence(seconds)}`;
+      cadencePreview = `Every ${formatMonitorCadence(seconds)}`;
       return seconds;
     }
     const expression = cronExpression.trim();
@@ -189,7 +166,7 @@
       cadenceError = 'Use a fixed-interval expression such as */30 * * * * * (seconds) or */5 * * * * (minutes). The minimum interval is 15 seconds.';
       return null;
     }
-    cadencePreview = `Every ${formatCadence(seconds)} · ${secondsMatch ? 'seconds-level cron' : 'minute-level cron'}`;
+    cadencePreview = `Every ${formatMonitorCadence(seconds)} · ${secondsMatch ? 'seconds-level cron' : 'minute-level cron'}`;
     return seconds;
   }
 
@@ -251,13 +228,22 @@
     templatesLoading = true;
     templatesError = '';
     try {
-      const response = await fetch(`/api/backend/templates?workspace_id=${encodeURIComponent(selectedWorkspaceId)}&limit=100`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
-      const body: any = await response.json().catch(() => null);
-      if (!response.ok) { templatesError = messageFor(response.status, body?.error?.code ?? null); return; }
-      const rows = Array.isArray(body?.data) ? body.data : Array.isArray(body) ? body : [];
-      templates = rows.map((template: any) => ({ id: String(template.id), name: String(template.name), description: template.description, fields: Array.isArray(template.fields) ? template.fields : [] }));
-    } catch { templatesError = messageFor(0, 'network_error'); }
-    finally { templatesLoading = false; }
+      const result = await monitorQueryClient.fetchQuery({
+        queryKey: monitorTemplateQueryKeys.workspaceList(selectedWorkspaceId),
+        queryFn: ({ signal }) => fetchMonitorTemplates(selectedWorkspaceId, signal),
+        staleTime: 30_000,
+        retry: false,
+      });
+      if (!result.ok) {
+        templatesError = messageFor(result.status, result.code);
+        return;
+      }
+      templates = result.data;
+    } catch {
+      templatesError = messageFor(0, 'network_error');
+    } finally {
+      templatesLoading = false;
+    }
   }
 
   async function applySelectedTemplate() {
@@ -831,29 +817,32 @@
     listError = '';
     actionError = '';
 
-    const params = new URLSearchParams({ workspace_id: selectedWorkspaceId, limit: '25', sort, direction });
-    if (search.trim()) params.set('q', search.trim());
-    if (statusFilter !== 'all') params.set('status', statusFilter);
-    if (tagFilter) params.set('tag_ids', tagFilter);
-    if (includeArchived || statusFilter === 'archived') params.set('include_archived', 'true');
-    if (cursor) params.set('cursor', cursor);
+    const query = {
+      workspaceId: selectedWorkspaceId,
+      limit: 25,
+      sort,
+      direction,
+      search: search.trim(),
+      status: statusFilter,
+      tagId: tagFilter,
+      includeArchived,
+      cursor,
+    } as const;
 
     try {
-      const response = await fetch(`/api/backend/monitors?${params.toString()}`, {
-        headers: { Accept: 'application/json' },
-        credentials: 'same-origin',
-        cache: 'no-store',
+      const result = await monitorQueryClient.fetchQuery({
+        queryKey: monitorQueryKeys.list(query),
+        queryFn: ({ signal }) => fetchMonitorPage<Monitor>(query, signal),
+        staleTime: 0,
+        retry: false,
       });
-      const body: unknown = await response.json().catch(() => null);
       if (sequence !== requestSequence) return;
-      if (!response.ok) {
-        const errorBody = body as ApiErrorBody | null;
-        listError = messageFor(response.status, errorBody?.error?.code ?? null);
+      if (!result.ok || !result.page) {
+        listError = messageFor(result.status, result.code);
         return;
       }
-      const result = body as MonitorPage;
-      monitors = Array.isArray(result.data) ? result.data : [];
-      nextCursor = result.page?.next_cursor ?? null;
+      monitors = result.page.data;
+      nextCursor = result.page.page.next_cursor;
     } catch {
       if (sequence === requestSequence) listError = messageFor(0, 'network_error');
     } finally {
@@ -947,122 +936,48 @@
     void bootstrap();
     return () => {
       if (searchTimer) clearTimeout(searchTimer);
+      void monitorQueryClient.cancelQueries({ queryKey: ['monitors', 'list'] });
+      monitorQueryClient.clear();
     };
   });
 </script>
 
 <section class="monitor-workspace" aria-labelledby="monitor-page-title">
   {#if !createOpen}
-  <div class="monitor-page-heading">
-    <div>
-      <p class="eyebrow">YOUR CHECKS</p>
-      <h1 id="monitor-page-title">Monitors</h1>
-      <p class="monitor-page-subtitle">Inspect monitor configuration and control its lifecycle. Health is shown as persisted evidence and field signals—not a guessed overall verdict.</p>
-    </div>
-    <button class="monitor-button monitor-button--primary monitor-create-trigger" type="button" on:click={openCreate} disabled={loadingWorkspaces || !selectedWorkspaceId}>＋ New monitor</button>
-  </div>
-
-  {#if loadingWorkspaces}
-    <div class="monitor-state" aria-live="polite"><span class="monitor-loader" aria-hidden="true"></span>Loading your workspace…</div>
-  {:else if bootError}
-    <div class="monitor-state monitor-state--error" role="alert"><p>{bootError}</p><button class="monitor-button monitor-button--quiet" type="button" on:click={bootstrap}>Try again</button></div>
-  {:else if workspaces.length === 0}
-    <div class="monitor-state monitor-state--empty"><h2>No workspace available</h2><p>Your account is authenticated, but there is no active workspace to inspect.</p></div>
-  {:else}
-    <div class="monitor-toolbar">
-      <label class="monitor-search">
-        <span class="monitor-search__icon" aria-hidden="true">⌕</span>
-        <span class="sr-only">Search monitor names</span>
-        <input bind:value={search} on:input={handleSearchInput} placeholder="Search monitors…" maxlength="200" />
-        {#if search}<button type="button" class="monitor-search__clear" aria-label="Clear search" on:click={() => { search = ''; applyFilters(); }}>×</button>{/if}
-      </label>
-      <div class="monitor-filter"><span>Status</span><StyledSelect label="Status" value={statusFilter} options={[{ value: 'all', label: 'All active' }, { value: 'enabled', label: 'Enabled' }, { value: 'disabled', label: 'Disabled' }, { value: 'archived', label: 'Archived' }]} on:change={(event) => { statusFilter = event.detail.value; applyFilters(); }} /></div>
-      <div class="monitor-filter"><span>Tag</span><StyledSelect label="Tag" value={tagFilter} options={[{ value: '', label: 'All tags' }, ...workspaceTags.map((tag) => ({ value: tag.id, label: tag.name }))]} on:change={(event) => { tagFilter = event.detail.value; applyFilters(); }} /></div>
-      <div class="monitor-filter"><span>Sort by</span><StyledSelect label="Sort by" value={sort} options={[{ value: 'updated_at', label: 'Recently updated' }, { value: 'created_at', label: 'Recently created' }, { value: 'name', label: 'Name' }, { value: 'id', label: 'Default order' }]} on:change={(event) => { sort = event.detail.value; applyFilters(); }} /></div>
-      <button class="monitor-sort-direction" type="button" on:click={() => { direction = direction === 'desc' ? 'asc' : 'desc'; applyFilters(); }} aria-label={`Sort ${direction === 'desc' ? 'ascending' : 'descending'}`} title={`Currently ${direction === 'desc' ? 'descending' : 'ascending'}`}>
-        {direction === 'desc' ? '↓' : '↑'} <span>{direction === 'desc' ? 'Desc' : 'Asc'}</span>
-      </button>
-      <label class="monitor-archived-toggle"><input type="checkbox" bind:checked={includeArchived} on:change={applyFilters} /><span>Include archived</span></label>
-    </div>
-
-    {#if actionError}<div class="monitor-inline-alert" role="alert"><p>{actionError}</p></div>{/if}
-    {#if actionMessage}<div class="monitor-inline-success" role="status">{actionMessage}</div>{/if}
-
-    {#if listError}
-      <div class="monitor-state monitor-state--error" role="alert"><p>{listError}</p><button class="monitor-button monitor-button--quiet" type="button" on:click={() => loadMonitors(cursorStack[pageIndex])}>Try again</button></div>
-    {:else if loadingMonitors && monitors.length === 0}
-      <div class="monitor-state" aria-live="polite"><span class="monitor-loader" aria-hidden="true"></span>Loading monitors…</div>
-    {:else if monitors.length === 0}
-      <div class="monitor-state monitor-state--empty">
-        <span class="monitor-empty-mark" aria-hidden="true">⌁</span>
-        <h2>{search || statusFilter !== 'all' || tagFilter ? 'No monitors match these filters' : 'Nothing to monitor yet'}</h2>
-        <p>{search || statusFilter !== 'all' || tagFilter ? 'Try another search or broaden the status or tag filter.' : 'There are no monitors in this view yet. Create one by defining the fields TrueExit should observe.'}</p>
-        {#if search || statusFilter !== 'all' || tagFilter}<button class="monitor-button monitor-button--quiet" type="button" on:click={() => { search = ''; statusFilter = 'all'; tagFilter = ''; includeArchived = false; applyFilters(); }}>Clear filters</button>{:else}<button class="monitor-button monitor-button--primary" type="button" on:click={openCreate}>Create your first monitor</button>{/if}
-      </div>
-    {:else}
-      <div class="monitor-results-heading"><span>{loadingMonitors ? 'Refreshing…' : `${monitors.length} monitor${monitors.length === 1 ? '' : 's'} on this page`}</span><span>Page {pageIndex + 1}</span></div>
-      <div class="monitor-list" aria-busy={loadingMonitors}>
-        {#each monitors as monitor (monitor.id)}
-          <article class="monitor-row">
-            <div class="monitor-row__main">
-              <div class="monitor-row__identity">
-                <span class={`monitor-status-dot monitor-status-dot--${monitor.status}`} aria-hidden="true"></span>
-                <div class="monitor-row__titleblock">
-                  <div class="monitor-row__titleline">
-                    <h2>{monitor.name}</h2>
-                    <span class={`monitor-status-pill monitor-status-pill--${monitor.status}`}>{monitor.status}</span>
-                  </div>
-                  <p class="monitor-row__description">{monitor.description || 'No description added yet.'}</p>
-                </div>
-              </div>
-              <div class="monitor-row__facts" aria-label="Monitor details">
-                <span><small>Cadence</small><strong>{formatCadence(monitor.cadence_seconds)}</strong></span>
-                <span><small>Configuration</small><strong>v{monitor.current_config_version}</strong></span>
-                <span><small>Last updated</small><strong>{formatDate(monitor.updated_at)}</strong></span>
-              </div>
-            </div>
-            <div class="monitor-row__actions" aria-label={`${monitor.name} actions`}>
-              <a class="monitor-icon-button" href={`/monitors/${encodeURIComponent(monitor.id)}?workspace_id=${encodeURIComponent(selectedWorkspaceId)}`} aria-label={`Investigate ${monitor.name}`} title="Investigate">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4 10 14"/><path d="M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5"/></svg>
-              </a>
-              <button class="monitor-icon-button" type="button" aria-label={`Manage tags for ${monitor.name}`} title="Manage tags" disabled={tagBusy || creating || !!busyMonitorId} on:click={() => openTagManager(monitor)}>
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13 13 20 3 10V3h7z"/><circle cx="7.5" cy="7.5" r="1"/></svg>
-              </button>
-              {#if monitor.status !== 'archived'}
-                <button class="monitor-icon-button" type="button" aria-label={`Edit ${monitor.name}`} title="Edit monitor" disabled={!!busyMonitorId || creating} on:click={() => openEdit(monitor)}>
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5 4 4M4 20l4-.8L19 8a2.1 2.1 0 0 0-3-3L5 16z"/><path d="M13 20h7"/></svg>
-                </button>
-              {/if}
-              {#if monitor.status === 'enabled'}
-                <button class="monitor-icon-button" type="button" aria-label={`Pause ${monitor.name}`} title="Pause monitor" disabled={!!busyMonitorId} on:click={() => runLifecycleAction(monitor, 'pause')}>
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>
-                </button>
-              {:else if monitor.status === 'disabled'}
-                <button class="monitor-icon-button" type="button" aria-label={`Resume ${monitor.name}`} title="Resume monitor" disabled={!!busyMonitorId} on:click={() => runLifecycleAction(monitor, 'resume')}>
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg>
-                </button>
-              {:else}
-                <button class="monitor-icon-button" type="button" aria-label={`Restore ${monitor.name}`} title="Restore monitor" disabled={!!busyMonitorId} on:click={() => runLifecycleAction(monitor, 'restore')}>
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
-                </button>
-              {/if}
-              {#if monitor.status !== 'archived'}
-                <button class="monitor-icon-button monitor-icon-button--danger" type="button" aria-label={`Archive ${monitor.name}`} title="Archive monitor" disabled={!!busyMonitorId} on:click={() => runLifecycleAction(monitor, 'archive')}>
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 10v6M14 10v6"/></svg>
-                </button>
-              {/if}
-            </div>
-          </article>
-        {/each}
-      </div>
-      <nav class="monitor-pagination" aria-label="Monitor list pages">
-        <button class="monitor-button monitor-button--quiet" type="button" on:click={previousPage} disabled={pageIndex === 0 || loadingMonitors}>← Previous</button>
-        <span>Page {pageIndex + 1}</span>
-        <button class="monitor-button monitor-button--quiet" type="button" on:click={nextPage} disabled={!nextCursor || loadingMonitors}>Next →</button>
-      </nav>
-    {/if}
-    <p class="monitor-footnote">Monitor IDs and Ping capabilities are intentionally not displayed. Archived monitors retain evidence and health history; restoring returns them to disabled.</p>
-  {/if}
+    <MonitorInventory
+      workspaceId={selectedWorkspaceId}
+      loadingWorkspaces={loadingWorkspaces}
+      bootError={bootError}
+      hasWorkspace={workspaces.length > 0}
+      loadingMonitors={loadingMonitors}
+      listError={listError}
+      actionError={actionError}
+      actionMessage={actionMessage}
+      monitors={monitors}
+      bind:search={search}
+      bind:statusFilter={statusFilter}
+      bind:tagFilter={tagFilter}
+      bind:sort={sort}
+      bind:direction={direction}
+      bind:includeArchived={includeArchived}
+      workspaceTags={workspaceTags}
+      tagBusy={tagBusy}
+      creating={creating}
+      busyMonitorId={busyMonitorId}
+      nextCursor={nextCursor}
+      pageIndex={pageIndex}
+      onRetryWorkspace={bootstrap}
+      onNewMonitor={openCreate}
+      onSearchInput={handleSearchInput}
+      onApplyFilters={applyFilters}
+      onClearFilters={() => { search = ''; statusFilter = 'all'; tagFilter = ''; includeArchived = false; applyFilters(); }}
+      onRetryList={() => loadMonitors(cursorStack[pageIndex])}
+      onManageTags={openTagManager}
+      onEditMonitor={openEdit}
+      onLifecycleAction={runLifecycleAction}
+      onPreviousPage={previousPage}
+      onNextPage={nextPage}
+    />
   {/if}
 
   {#if createOpen}
