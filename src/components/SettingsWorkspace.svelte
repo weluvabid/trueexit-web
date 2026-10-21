@@ -1,5 +1,6 @@
 <script lang="ts">
   import { can } from '../lib/client/permissions';
+  import ConfirmDialog from './ui/ConfirmDialog.svelte';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
 
@@ -77,6 +78,22 @@
   let createAccountName = '';
   let showCreateWorkspace = false;
   let showCreateAccount = false;
+  type Confirmation = { title: string; description: string; confirmLabel?: string; tone?: 'danger' | 'primary' };
+  let confirmation: Confirmation | null = null;
+  let resolveConfirmation: ((confirmed: boolean) => void) | null = null;
+
+  function askConfirmation(options: Confirmation): Promise<boolean> {
+    if (resolveConfirmation) resolveConfirmation(false);
+    confirmation = options;
+    return new Promise((resolve) => { resolveConfirmation = resolve; });
+  }
+
+  function finishConfirmation(confirmed: boolean) {
+    const resolve = resolveConfirmation;
+    resolveConfirmation = null;
+    confirmation = null;
+    resolve?.(confirmed);
+  }
 
   $: selectedWorkspace = workspaces.find((item) => item.id === selectedWorkspaceId) ?? null;
   $: canManageWorkspace = can(selectedWorkspace, 'workspace.manage');
@@ -266,7 +283,7 @@
 
   async function removeMember(member: Member) {
     if (!selectedWorkspace || member.account_owner || !canManageWorkspace) return;
-    if (!confirm(`Remove ${member.email} from this workspace?`)) return;
+    if (!(await askConfirmation({ title: 'Remove workspace member?', description: `${member.email} will lose access to this workspace. This does not delete their account.`, confirmLabel: 'Remove member', tone: 'danger' }))) return;
     const result = await perform('remove-member', `/workspaces/${encodeURIComponent(selectedWorkspace.id)}/members/${encodeURIComponent(member.user_id)}`, { method: 'DELETE' });
     if (result !== null || !error) {
       members = members.filter((item) => item.user_id !== member.user_id);
@@ -276,7 +293,7 @@
 
   async function revokeInvitation(invitation: Invitation) {
     if (!selectedWorkspace || !canManageWorkspace) return;
-    if (!confirm(`Revoke the invitation for ${invitation.email}?`)) return;
+    if (!(await askConfirmation({ title: 'Revoke invitation?', description: `The pending invitation for ${invitation.email} will no longer be usable.`, confirmLabel: 'Revoke invitation', tone: 'danger' }))) return;
     const result = await perform('revoke-invitation', `/workspaces/${encodeURIComponent(selectedWorkspace.id)}/invitations/${encodeURIComponent(invitation.id)}`, { method: 'DELETE' });
     if (result !== null || !error) {
       invitations = invitations.filter((item) => item.id !== invitation.id);
@@ -397,7 +414,7 @@
 
   async function deleteChannel(channel: Channel) {
     if (!selectedWorkspace || !canManageWorkspace) return;
-    if (!confirm(`Delete destination “${channel.label}”? It must first be unassigned from all monitors.`)) return;
+    if (!(await askConfirmation({ title: 'Delete notification destination?', description: `“${channel.label}” will be removed. It must be unassigned from all monitors first.`, confirmLabel: 'Delete destination', tone: 'danger' }))) return;
     const result = await perform('delete-channel', `/workspaces/${encodeURIComponent(selectedWorkspace.id)}/channels/${encodeURIComponent(channel.id)}`, { method: 'DELETE' });
     if (result !== null || !error) {
       channels = channels.filter((item) => item.id !== channel.id);
@@ -429,7 +446,7 @@
     if (!selectedAccount || !selectedWorkspace?.account_owner) return;
     const userId = newOwnerUserId.trim();
     if (!userId) { error = 'Enter the eligible new owner user ID.'; return; }
-    if (!confirm('Transfer account ownership? You may lose owner privileges after the transfer.')) return;
+    if (!(await askConfirmation({ title: 'Transfer account ownership?', description: 'The new owner will gain account-owner privileges. You may lose your owner privileges after the transfer.', confirmLabel: 'Transfer ownership', tone: 'danger' }))) return;
     const result = await perform('transfer-account', `/accounts/${encodeURIComponent(selectedAccount.account_id)}/transfer`, {
       method: 'POST', body: JSON.stringify({ new_owner_user_id: userId }),
     });
@@ -442,7 +459,7 @@
 
   async function requestClosure() {
     if (!selectedAccount || !selectedWorkspace?.account_owner || !closureConfirm) return;
-    if (!confirm('Schedule this account for closure? Monitoring will stop.')) return;
+    if (!(await askConfirmation({ title: 'Schedule account closure?', description: 'Monitoring will stop when closure is scheduled. Review the recovery date carefully before proceeding.', confirmLabel: 'Schedule closure', tone: 'danger' }))) return;
     const result = await perform<{ scheduled_deletion_at?: string | null; lifecycle_status?: string }>(
       'close-account', `/accounts/${encodeURIComponent(selectedAccount.account_id)}/closure`,
       { method: 'POST', body: JSON.stringify({ confirm: true }) },
@@ -458,7 +475,7 @@
 
   async function cancelClosure() {
     if (!selectedAccount || !selectedWorkspace?.account_owner) return;
-    if (!confirm('Cancel the scheduled account closure?')) return;
+    if (!(await askConfirmation({ title: 'Cancel account closure?', description: 'The scheduled closure will be cancelled and the account will return to its active lifecycle state.', confirmLabel: 'Cancel closure', tone: 'primary' }))) return;
     const result = await perform<{ lifecycle_status?: string }>(
       'cancel-closure', `/accounts/${encodeURIComponent(selectedAccount.account_id)}/closure/cancel`,
       { method: 'POST' },
@@ -499,6 +516,17 @@
 
   {#if error}<div class="settings-alert settings-alert--error" role="alert"><strong>Couldn’t complete that.</strong><span>{error}</span>{#if error.includes('verify your identity')}<a href="/login">Sign in again ↗</a>{/if}</div>{/if}
   {#if notice}<div class="settings-alert settings-alert--success" role="status">{notice}</div>{/if}
+
+  {#if confirmation}
+    <ConfirmDialog
+      title={confirmation.title}
+      description={confirmation.description}
+      confirmLabel={confirmation.confirmLabel ?? 'Confirm'}
+      tone={confirmation.tone ?? 'primary'}
+      on:confirm={() => finishConfirmation(true)}
+      on:cancel={() => finishConfirmation(false)}
+    />
+  {/if}
 
   {#if loading}
     <div class="settings-loading" aria-live="polite"><span class="settings-spinner" aria-hidden="true"></span>Loading your workspace settings…</div>

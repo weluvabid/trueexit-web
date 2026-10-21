@@ -2,6 +2,7 @@
 @import "./dashboard.css";
 @import "./monitors.css";
 @import "./settings.css";
+@import "./components.css";
 
 :root {
   color-scheme: light;

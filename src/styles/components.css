@@ -1,0 +1,125 @@
+/* Shared UI primitives. Components consume the app theme tokens; avoid local hard-coded theme colors. */
+.te-button {
+  --te-button-bg: var(--color-surface);
+  --te-button-fg: var(--color-text);
+  --te-button-border: var(--color-border);
+  display: inline-flex;
+  min-width: 0;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 10px 15px;
+  border: 1px solid var(--te-button-border);
+  border-radius: 12px;
+  background: var(--te-button-bg);
+  color: var(--te-button-fg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 620;
+  line-height: 1.25;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease;
+}
+.te-button:hover:not(:disabled) { border-color: color-mix(in srgb, var(--color-accent) 38%, var(--color-border)); }
+.te-button:active:not(:disabled) { transform: translateY(1px); }
+.te-button:disabled { opacity: .58; cursor: not-allowed; }
+.te-button--primary { --te-button-bg: var(--color-accent); --te-button-fg: #fff; --te-button-border: var(--color-accent); }
+html[data-theme="dark"] .te-button--primary { --te-button-fg: #17121f; }
+.te-button--primary:hover:not(:disabled) { filter: brightness(1.04); }
+.te-button--secondary { --te-button-bg: var(--color-surface); }
+.te-button--ghost { --te-button-bg: transparent; --te-button-border: transparent; }
+.te-button--ghost:hover:not(:disabled) { --te-button-bg: var(--color-surface-secondary); }
+.te-button--danger { --te-button-bg: var(--color-error); --te-button-fg: #fff; --te-button-border: var(--color-error); }
+.te-button--sm { min-height: 34px; padding: 7px 11px; border-radius: 9px; font-size: 12px; }
+.te-button--lg { min-height: 48px; padding: 13px 19px; border-radius: 14px; font-size: 14px; }
+.te-button--full { width: 100%; }
+.te-button__spinner { width: 14px; height: 14px; flex: 0 0 auto; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: te-spin 700ms linear infinite; }
+@keyframes te-spin { to { transform: rotate(360deg); } }
+
+.te-icon-button {
+  display: inline-grid;
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+.te-icon-button:hover:not(:disabled) { border-color: color-mix(in srgb, var(--color-accent) 42%, var(--color-border)); background: var(--color-surface-secondary); color: var(--color-text); }
+.te-icon-button:disabled { opacity: .55; cursor: not-allowed; }
+.te-icon-button svg { width: 19px; height: 19px; }
+
+.te-form-field { display: grid; min-width: 0; gap: 7px; }
+.te-form-field__label { color: var(--color-text); font-size: 12px; font-weight: 650; line-height: 1.4; }
+.te-form-field__required { margin-left: 4px; color: var(--color-error); }
+.te-form-field__hint, .te-form-field__error { margin: 0; font-size: 11px; line-height: 1.55; }
+.te-form-field__hint { color: var(--color-text-muted); }
+.te-form-field__error { color: var(--color-error); }
+.te-form-field--invalid input, .te-form-field--invalid textarea, .te-form-field--invalid select { border-color: var(--color-error) !important; }
+.te-form-field :is(input, textarea, select) { min-width: 0; max-width: 100%; }
+
+.te-status-badge {
+  display: inline-flex;
+  max-width: 100%;
+  min-height: 24px;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-secondary);
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.te-status-badge__dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: currentColor; }
+.te-status-badge--info { border-color: color-mix(in srgb, var(--color-info) 30%, var(--color-border)); background: color-mix(in srgb, var(--color-info) 10%, var(--color-surface)); color: var(--color-info); }
+.te-status-badge--success { border-color: color-mix(in srgb, var(--color-success) 28%, var(--color-border)); background: color-mix(in srgb, var(--color-success) 10%, var(--color-surface)); color: var(--color-success); }
+.te-status-badge--warning { border-color: color-mix(in srgb, var(--color-warning) 30%, var(--color-border)); background: color-mix(in srgb, var(--color-warning) 10%, var(--color-surface)); color: var(--color-warning); }
+.te-status-badge--danger { border-color: color-mix(in srgb, var(--color-error) 30%, var(--color-border)); background: color-mix(in srgb, var(--color-error) 10%, var(--color-surface)); color: var(--color-error); }
+
+.te-empty-state {
+  display: flex;
+  min-width: 0;
+  min-height: 190px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(22px, 4vw, 36px);
+  border: 1px dashed var(--color-border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--color-surface) 76%, transparent);
+  text-align: center;
+}
+.te-empty-state__mark { display: grid; width: 38px; height: 38px; place-items: center; margin-bottom: 13px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-surface); color: var(--color-accent); font-size: 20px; }
+.te-empty-state__title { margin: 0; color: var(--color-text); font-size: 15px; font-weight: 680; letter-spacing: -.02em; }
+.te-empty-state__description { max-width: 440px; margin: 8px 0 0; color: var(--color-text-secondary); font-size: 12px; line-height: 1.7; }
+.te-empty-state__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 9px; margin-top: 18px; }
+
+.te-inline-alert { display: flex; min-width: 0; align-items: flex-start; gap: 11px; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-surface); color: var(--color-text-secondary); font-size: 12px; line-height: 1.6; }
+.te-inline-alert__marker { width: 8px; height: 8px; flex: 0 0 auto; margin-top: 5px; border-radius: 50%; background: var(--color-info); }
+.te-inline-alert__content { min-width: 0; flex: 1; }
+.te-inline-alert__title { display: block; margin-bottom: 2px; color: var(--color-text); font-size: 12px; font-weight: 680; }
+.te-inline-alert--success { border-color: color-mix(in srgb, var(--color-success) 28%, var(--color-border)); }
+.te-inline-alert--success .te-inline-alert__marker { background: var(--color-success); }
+.te-inline-alert--warning { border-color: color-mix(in srgb, var(--color-warning) 28%, var(--color-border)); }
+.te-inline-alert--warning .te-inline-alert__marker { background: var(--color-warning); }
+.te-inline-alert--danger { border-color: color-mix(in srgb, var(--color-error) 28%, var(--color-border)); }
+.te-inline-alert--danger .te-inline-alert__marker { background: var(--color-error); }
+.te-inline-alert__dismiss { display: grid; width: 28px; height: 28px; flex: 0 0 auto; place-items: center; margin: -4px -5px 0 0; border: 0; border-radius: 8px; background: transparent; color: var(--color-text-muted); font-size: 19px; cursor: pointer; }
+.te-inline-alert__dismiss:hover { background: var(--color-surface-secondary); color: var(--color-text); }
+
+@media (prefers-reduced-motion: reduce) {
+  .te-button, .te-icon-button { transition: none; }
+  .te-button__spinner { animation-duration: 1.4s; }
+}
