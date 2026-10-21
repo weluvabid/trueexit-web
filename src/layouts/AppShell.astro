@@ -387,14 +387,21 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
 
         async function bootstrapWorkspace() {
           try {
-            const [meResponse, workspaceResponse] = await Promise.all([
-              fetch('/api/backend/me', { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' }),
+            // Share the same in-flight bootstrap promise used by hydrated page workspaces.
+            // This prevents AppShell and the page component from independently fetching /me and workspaces.
+            const shared = window.__trueExitWorkspaceBootstrapPromise ??= Promise.all([
+              fetch('/api/backend/me', { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' })
+                .then(async (response) => ({ ok: response.ok, status: response.status, body: await response.json().catch(() => null) }))
+                .catch(() => ({ ok: false, status: 0, body: null })),
               fetch('/api/backend/workspaces?limit=50', { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' })
-            ]);
-            if (!workspaceResponse.ok) throw new Error('workspace_load_failed');
-            const workspaceBody = await workspaceResponse.json();
-            const me = meResponse.ok ? await meResponse.json() : null;
-            workspaces = Array.isArray(workspaceBody.data) ? workspaceBody.data : [];
+                .then(async (response) => ({ ok: response.ok, status: response.status, body: await response.json().catch(() => null) }))
+                .catch(() => ({ ok: false, status: 0, body: null }))
+            ]).then(([me, workspaces]) => ({ me, workspaces }));
+            const result = await shared;
+            if (!result.workspaces.ok) throw new Error('workspace_load_failed');
+            const workspaceBody = result.workspaces.body;
+            const me = result.me.ok ? result.me.body : null;
+            workspaces = Array.isArray(workspaceBody?.data) ? workspaceBody.data : [];
             const requested = new URLSearchParams(window.location.search).get('workspace_id');
             let stored = null;
             try { stored = localStorage.getItem(ACTIVE_WORKSPACE_KEY); } catch { /* Storage can be unavailable. */ }

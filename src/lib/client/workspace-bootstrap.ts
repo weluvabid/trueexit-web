@@ -22,7 +22,17 @@ export type BootstrapResource<T> =
   | { ok: true; data: T }
   | { ok: false; status: number; code: string | null };
 
-async function readResource<T>(path: string): Promise<BootstrapResource<T>> {
+type SharedHttpResult = { ok: boolean; status: number; body: unknown; code: string | null };
+type SharedBootstrapResult = { me: SharedHttpResult; workspaces: SharedHttpResult };
+
+declare global {
+  interface Window {
+    /** Shared by the app shell and hydrated page component for this document lifetime. */
+    __trueExitWorkspaceBootstrapPromise?: Promise<SharedBootstrapResult>;
+  }
+}
+
+async function readResource(path: string): Promise<SharedHttpResult> {
   try {
     const response = await fetch(path, {
       method: 'GET',
@@ -30,37 +40,46 @@ async function readResource<T>(path: string): Promise<BootstrapResource<T>> {
       credentials: 'same-origin',
       cache: 'no-store',
     });
-
     const body: unknown = await response.json().catch(() => null);
-    if (!response.ok) {
-      const code =
-        typeof body === 'object' && body !== null && 'error' in body &&
-        typeof body.error === 'object' && body.error !== null && 'code' in body.error &&
-        typeof body.error.code === 'string'
-          ? body.error.code
-          : null;
-      return { ok: false, status: response.status, code };
-    }
-
-    return { ok: true, data: body as T };
+    const code = typeof body === 'object' && body !== null && 'error' in body &&
+      typeof body.error === 'object' && body.error !== null && 'code' in body.error &&
+      typeof body.error.code === 'string' ? body.error.code : null;
+    return { ok: response.ok, status: response.status, body, code };
   } catch {
-    return { ok: false, status: 0, code: 'network_error' };
+    return { ok: false, status: 0, body: null, code: 'network_error' };
   }
 }
 
 /**
- * The single client-side owner for initial identity/workspace loading.
- * The two existing API contracts remain independent and are requested in parallel;
- * a failure in one does not discard the result of the other.
+ * One in-flight bootstrap request pair per document. The app shell and the
+ * hydrated page workspace consume the same promise instead of independently
+ * requesting identity and workspace inventory.
  */
-export async function loadWorkspaceBootstrap(): Promise<{
+export function loadWorkspaceBootstrap(): Promise<{
   me: BootstrapResource<CurrentUserContext>;
   workspaces: BootstrapResource<WorkspacePage>;
 }> {
-  const [me, workspaces] = await Promise.all([
-    readResource<CurrentUserContext>('/api/backend/me'),
-    readResource<WorkspacePage>('/api/backend/workspaces?limit=50'),
-  ]);
+  if (typeof window === 'undefined') {
+    return Promise.all([
+      readResource('/api/backend/me'),
+      readResource('/api/backend/workspaces?limit=50'),
+    ]).then(([me, workspaces]) => normalizeBootstrap(me, workspaces));
+  }
 
-  return { me, workspaces };
+  const shared = window.__trueExitWorkspaceBootstrapPromise ??= Promise.all([
+    readResource('/api/backend/me'),
+    readResource('/api/backend/workspaces?limit=50'),
+  ]).then(([me, workspaces]) => ({ me, workspaces }));
+
+  return shared.then(({ me, workspaces }) => normalizeBootstrap(me, workspaces));
+}
+
+function normalizeBootstrap(me: SharedHttpResult, workspaces: SharedHttpResult): {
+  me: BootstrapResource<CurrentUserContext>;
+  workspaces: BootstrapResource<WorkspacePage>;
+} {
+  return {
+    me: me.ok ? { ok: true, data: me.body as CurrentUserContext } : { ok: false, status: me.status, code: me.code ?? null },
+    workspaces: workspaces.ok ? { ok: true, data: workspaces.body as WorkspacePage } : { ok: false, status: workspaces.status, code: workspaces.code ?? null },
+  };
 }
