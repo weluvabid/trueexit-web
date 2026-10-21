@@ -7,20 +7,21 @@
   import type { Monitor, MonitorStatus } from '../lib/client/monitor-types';
   import { formatMonitorCadence } from '../lib/client/monitor-format';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
+  import { createMutation } from '@tanstack/svelte-query';
   import { createMonitorQueryClient, fetchMonitorPage, fetchMonitorTemplates, monitorQueryKeys, monitorTemplateQueryKeys, type MonitorTemplate } from '../lib/client/monitor-queries';
+  import { createEmptyMonitorDraft, createMonitorDraft, type ChannelKind, type ChannelSelection, type FieldPrimitive, type MonitorField } from '../lib/client/monitor-editor-state';
+  import { createMonitorMutationOptions, editMonitorMutationOptions, lifecycleMonitorMutationOptions, tagMonitorMutationOptions } from '../lib/client/monitor-mutations';
 
   type MonitorConfigVersion = { version: number; cadence_seconds: number; config: { fields: Array<{ name: string; path: string; primitive: number; meta?: Record<string, unknown> }> } };
   type MonitorDetail = Monitor & { config_versions?: MonitorConfigVersion[] };
   const monitorQueryClient = createMonitorQueryClient();
+  const createMonitorMutation = createMutation(() => createMonitorMutationOptions(monitorQueryClient), () => monitorQueryClient);
+  const editMonitorMutation = createMutation(() => editMonitorMutationOptions(monitorQueryClient), () => monitorQueryClient);
+  const tagMonitorMutation = createMutation(() => tagMonitorMutationOptions(monitorQueryClient), () => monitorQueryClient);
+  const lifecycleMonitorMutation = createMutation(() => lifecycleMonitorMutationOptions(monitorQueryClient), () => monitorQueryClient);
   type ApiErrorBody = { error?: { code?: string }; request_id?: string };
   type WorkspaceTag = { id: string; workspace_id: string; name: string; monitor_count: number; created_at: string; updated_at: string };
-  type ChannelKind = 'email' | 'webhook' | 'slack' | 'discord';
   type Channel = { id: string; label: string; type: ChannelKind; enabled: boolean; configured: boolean };
-  type FieldPrimitive = 'size' | 'count' | 'duration' | 'timestamp' | 'boolean' | 'categorical' | 'checksum' | 'text';
-  type MonitorField = { key: number; name: string; path: string; primitive: FieldPrimitive };
-  type ExistingChannelSelection = { kind: 'existing'; channel_id: string; label: string };
-  type NewChannelSelection = { kind: 'new'; type: ChannelKind; label: string; priority: number; enabled: boolean; config: Record<string, string>; displayLabel: string };
-  type ChannelSelection = ExistingChannelSelection | NewChannelSelection;
 
   const primitiveValues: Record<FieldPrimitive, number> = {
     size: 0, count: 1, duration: 2, timestamp: 3, boolean: 4, categorical: 5, checksum: 6, text: 7,
@@ -61,10 +62,6 @@
   let templatesError = '';
   let selectedTemplateId = '';
   let templateApplyMode: 'replace' | 'merge' = 'replace';
-  let cadenceMode: 'interval' | 'cron' = 'interval';
-  let cadenceValue = '5';
-  let cadenceUnit: 'seconds' | 'minutes' | 'hours' = 'minutes';
-  let cronExpression = '*/5 * * * *';
   let cadenceError = '';
   let cadencePreview = 'Every 5 minutes';
   let editingMonitor: MonitorDetail | null = null;
@@ -87,17 +84,11 @@
   let creating = false;
   let createError = '';
   let createMessage = '';
-  let monitorName = '';
-  let monitorDescription = '';
-  let cadenceSeconds = 300;
-  let fields: MonitorField[] = [{ key: 1, name: '', path: '', primitive: 'count' }];
-  let nextFieldKey = 2;
+  let editorDraft = createEmptyMonitorDraft();
   let fieldError = '';
   let channels: Channel[] = [];
   let channelsLoading = false;
   let channelsError = '';
-  let channelSelection: ChannelSelection[] = [];
-  let channelSelectionWorkspaceId = '';
   let selectedExistingChannelId = '';
   let newChannelOpen = false;
   let newChannelType: ChannelKind = 'webhook';
@@ -106,6 +97,30 @@
   let newChannelPriority = 0;
   let newChannelError = '';
   let newChannelHeaders = '';
+
+  function resetEditorDraft() {
+    editorDraft = createEmptyMonitorDraft();
+    editorDraft.channelSelectionWorkspaceId = selectedWorkspaceId;
+    fieldMode = 'fields';
+    jsonDraft = '';
+    jsonError = '';
+    selectedTemplateId = '';
+    templateApplyMode = 'replace';
+    cadenceError = '';
+    cadencePreview = 'Every 5 minutes';
+    fieldError = '';
+    newChannelOpen = false;
+    newChannelType = 'webhook';
+    newChannelLabel = '';
+    newChannelAddress = '';
+    newChannelPriority = 0;
+    newChannelError = '';
+    newChannelHeaders = '';
+    createRequestKey = '';
+    createRequestBody = '';
+    editRequestKey = '';
+    editRequestBody = '';
+  }
 
   function messageFor(status: number, code: string | null): string {
     if (status === 401) return 'Your session needs attention. Sign in again to continue.';
@@ -121,24 +136,19 @@
     return code ? `The request could not be completed (${code}).` : 'The request could not be completed. Please try again.';
   }
 
-  async function parseError(response: Response): Promise<string> {
-    const body = (await response.json().catch(() => null)) as ApiErrorBody | null;
-    return messageFor(response.status, body?.error?.code ?? null);
-  }
-
   function secondsToCadence(seconds: number) {
-    if (seconds % 3600 === 0) { cadenceValue = String(seconds / 3600); cadenceUnit = 'hours'; }
-    else if (seconds % 60 === 0) { cadenceValue = String(seconds / 60); cadenceUnit = 'minutes'; }
-    else { cadenceValue = String(seconds); cadenceUnit = 'seconds'; }
-    cadenceMode = 'interval';
+    if (seconds % 3600 === 0) { editorDraft.cadenceValue = String(seconds / 3600); editorDraft.cadenceUnit = 'hours'; }
+    else if (seconds % 60 === 0) { editorDraft.cadenceValue = String(seconds / 60); editorDraft.cadenceUnit = 'minutes'; }
+    else { editorDraft.cadenceValue = String(seconds); editorDraft.cadenceUnit = 'seconds'; }
+    editorDraft.cadenceMode = 'interval';
     cadencePreview = `Every ${formatMonitorCadence(seconds)}`;
   }
 
   function resolveCadence(): number | null {
     cadenceError = '';
-    if (cadenceMode === 'interval') {
-      const value = Number(cadenceValue);
-      const multiplier = cadenceUnit === 'hours' ? 3600 : cadenceUnit === 'minutes' ? 60 : 1;
+    if (editorDraft.cadenceMode === 'interval') {
+      const value = Number(editorDraft.cadenceValue);
+      const multiplier = editorDraft.cadenceUnit === 'hours' ? 3600 : editorDraft.cadenceUnit === 'minutes' ? 60 : 1;
       const seconds = value * multiplier;
       if (!Number.isSafeInteger(value) || value <= 0 || !Number.isSafeInteger(seconds)) {
         cadenceError = 'Enter a whole, positive interval.';
@@ -151,7 +161,7 @@
       cadencePreview = `Every ${formatMonitorCadence(seconds)}`;
       return seconds;
     }
-    const expression = cronExpression.trim();
+    const expression = editorDraft.cronExpression.trim();
     const secondsMatch = expression.match(/^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*\s+\*$/);
     const minutesMatch = expression.match(/^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/);
     let seconds: number | null = null;
@@ -180,7 +190,7 @@
       }
       if (Array.isArray(node) || node === undefined) return;
       const primitive: FieldPrimitive = typeof node === 'boolean' ? 'boolean' : typeof node === 'number' ? 'count' : node === null ? 'text' : 'text';
-      result.push({ key: nextFieldKey++, name: path.replace(/[^a-zA-Z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 100) || `field_${result.length + 1}`, path, primitive });
+      result.push({ key: editorDraft.nextFieldKey++, name: path.replace(/[^a-zA-Z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 100) || `field_${result.length + 1}`, path, primitive });
     };
     visit(value, prefix);
     if (!result.length) throw new Error('No scalar values were found. Include at least one number, string, boolean, or null value.');
@@ -190,7 +200,7 @@
 
   function syncJsonFromFields() {
     const nested: Record<string, unknown> = {};
-    for (const field of fields) {
+    for (const field of editorDraft.fields) {
       const path = field.path.trim();
       if (!field.name.trim() || !path) throw new Error('Complete or remove blank field rows before switching to JSON.');
       if (path.split('.').some((part) => !part.trim())) throw new Error(`The path “${path}” contains an empty segment.`);
@@ -214,7 +224,7 @@
     try {
       const parsed: unknown = JSON.parse(jsonDraft);
       const discovered = flattenJson(parsed);
-      fields = discovered;
+      editorDraft.fields = discovered;
       fieldError = '';
       jsonError = '';
       fieldMode = 'fields';
@@ -249,14 +259,14 @@
   async function applySelectedTemplate() {
     const template = templates.find((item) => item.id === selectedTemplateId);
     if (!template || !template.fields.length) return;
-    const mapped = template.fields.map((field) => ({ key: nextFieldKey++, name: field.name, path: field.path, primitive: (Object.entries(primitiveValues).find(([, value]) => value === field.primitive)?.[0] ?? 'text') as FieldPrimitive }));
-    if (mapped.length > 50 || (templateApplyMode === 'merge' && fields.length + mapped.length > 50)) { templatesError = 'The resulting configuration would exceed the 50-field limit. Choose a smaller template or replace the current fields.'; return; }
+    const mapped = template.fields.map((field) => ({ key: editorDraft.nextFieldKey++, name: field.name, path: field.path, primitive: (Object.entries(primitiveValues).find(([, value]) => value === field.primitive)?.[0] ?? 'text') as FieldPrimitive }));
+    if (mapped.length > 50 || (templateApplyMode === 'merge' && editorDraft.fields.length + mapped.length > 50)) { templatesError = 'The resulting configuration would exceed the 50-field limit. Choose a smaller template or replace the current fields.'; return; }
     if (templateApplyMode === 'merge') {
-      const existing = new Set(fields.map((field) => field.path));
+      const existing = new Set(editorDraft.fields.map((field) => field.path));
       const duplicates = mapped.filter((field) => existing.has(field.path));
       if (duplicates.length) { templatesError = `Cannot merge because these paths already exist: ${duplicates.map((field) => field.path).join(', ')}.`; return; }
-      fields = [...fields, ...mapped];
-    } else fields = mapped;
+      editorDraft.fields = [...editorDraft.fields, ...mapped];
+    } else editorDraft.fields = mapped;
     fieldError = '';
     templatesError = '';
     fieldMode = 'fields';
@@ -264,7 +274,7 @@
 
   $: selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null;
   $: canManageChannels = can(selectedWorkspace, 'workspace.destinations.manage');
-  $: availableChannels = channels.filter((channel) => channel.enabled && !channelSelection.some((item) => item.kind === 'existing' && item.channel_id === channel.id));
+  $: availableChannels = channels.filter((channel) => channel.enabled && !editorDraft.channelSelection.some((item) => item.kind === 'existing' && item.channel_id === channel.id));
 
   async function loadWorkspaceTags(): Promise<boolean> {
     if (!selectedWorkspaceId) {
@@ -359,24 +369,21 @@
     }
     tagBusy = true;
     tagError = '';
-    const monitorName = taggingMonitor.name;
+    const taggedMonitorName = taggingMonitor.name;
     const requestBody = JSON.stringify({ workspace_id: selectedWorkspaceId, tag_ids: monitorTagIds, create_tags: newTagNames });
     if (!tagRequestKey || tagRequestBody !== requestBody) {
       tagRequestKey = crypto.randomUUID();
       tagRequestBody = requestBody;
     }
     try {
-      const response = await fetch(`/api/backend/monitors/${encodeURIComponent(taggingMonitor.id)}/tags`, {
-        method: 'PUT',
-        credentials: 'same-origin',
-        cache: 'no-store',
-        headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'Idempotency-Key': tagRequestKey },
-        body: requestBody,
+      const result = await tagMonitorMutation.mutateAsync({
+        workspaceId: selectedWorkspaceId,
+        monitorId: taggingMonitor.id,
+        requestBody,
+        idempotencyKey: tagRequestKey,
       });
-      const body: unknown = await response.json().catch(() => null);
-      if (!response.ok) {
-        const errorBody = body as ApiErrorBody | null;
-        tagError = messageFor(response.status, errorBody?.error?.code ?? null);
+      if (!result.ok) {
+        tagError = messageFor(result.status, result.code);
         return;
       }
       tagModalOpen = false;
@@ -384,7 +391,7 @@
       tagRequestKey = '';
       tagRequestBody = '';
       actionError = '';
-      actionMessage = `Tags updated for “${monitorName}”.`;
+      actionMessage = `Tags updated for “${taggedMonitorName}”.`;
       await Promise.all([loadWorkspaceTags(), loadMonitors(null)]);
     } catch {
       tagError = messageFor(0, 'network_error');
@@ -397,14 +404,11 @@
   async function openCreate() {
     if (initialMode === 'inventory') { window.location.href = `/monitors/new?workspace_id=${encodeURIComponent(selectedWorkspaceId)}`; return; }
     editingMonitor = null;
+    resetEditorDraft();
     createOpen = true;
     createError = '';
     createMessage = '';
     channelsError = '';
-    if (channelSelectionWorkspaceId !== selectedWorkspaceId) {
-      channelSelection = [];
-      channelSelectionWorkspaceId = selectedWorkspaceId;
-    }
     channels = [];
     selectedExistingChannelId = '';
     if (!selectedWorkspaceId) return;
@@ -435,24 +439,20 @@
     newChannelOpen = false;
     createError = '';
     editingMonitor = null;
+    resetEditorDraft();
   }
 
   async function openEdit(monitor: Monitor) {
     if (initialMode === 'inventory') { window.location.href = `/monitors/${encodeURIComponent(monitor.id)}/edit?workspace_id=${encodeURIComponent(selectedWorkspaceId)}`; return; }
     if (busyMonitorId || creating) return;
     editingMonitor = monitor as MonitorDetail;
-    editRequestKey = '';
-    editRequestBody = '';
+    resetEditorDraft();
     createError = '';
     createMessage = '';
     fieldError = '';
     channelsError = '';
     channels = [];
     selectedExistingChannelId = '';
-    if (channelSelectionWorkspaceId !== selectedWorkspaceId) {
-      channelSelection = [];
-      channelSelectionWorkspaceId = selectedWorkspaceId;
-    }
     createOpen = true;
     creating = true;
     try {
@@ -490,22 +490,24 @@
       }
       const selectedIds = (channelBody as { channel_ids?: string[] } | null)?.channel_ids ?? [];
       channels = Array.isArray(destinationBody) ? destinationBody as Channel[] : [];
-      channelSelection = selectedIds.flatMap((id) => {
+      const channelSelection = selectedIds.flatMap((id) => {
         const channel = channels.find((item) => item.id === id);
         return channel ? [{ kind: 'existing' as const, channel_id: channel.id, label: channel.label }] : [];
       });
-      selectedExistingChannelId = availableChannels[0]?.id ?? '';
-      monitorName = detail.name;
-      monitorDescription = detail.description ?? '';
-      cadenceSeconds = currentConfig.cadence_seconds;
-      secondsToCadence(currentConfig.cadence_seconds);
-      fields = currentConfig.config.fields.map((field, index) => ({
-        key: index + 1,
+      const draftFields = currentConfig.config.fields.map((field) => ({
         name: field.name,
         path: field.path,
         primitive: (Object.entries(primitiveValues).find(([, value]) => value === field.primitive)?.[0] ?? 'text') as FieldPrimitive,
       }));
-      nextFieldKey = fields.length + 1;
+      editorDraft = createMonitorDraft({
+        name: detail.name,
+        description: detail.description,
+        fields: draftFields,
+        channelSelection,
+        workspaceId: selectedWorkspaceId,
+      });
+      selectedExistingChannelId = availableChannels[0]?.id ?? '';
+      secondsToCadence(currentConfig.cadence_seconds);
       editingMonitor = detail;
     } catch {
       createError = messageFor(0, 'network_error');
@@ -515,22 +517,22 @@
   }
 
   function addField() {
-    if (fields.length >= 50) return;
-    fields = [...fields, { key: nextFieldKey++, name: '', path: '', primitive: 'count' }];
+    if (editorDraft.fields.length >= 50) return;
+    editorDraft.fields = [...editorDraft.fields, { key: editorDraft.nextFieldKey++, name: '', path: '', primitive: 'count' }];
     fieldError = '';
   }
 
   function removeField(key: number) {
-    if (fields.length <= 1) return;
-    fields = fields.filter((field) => field.key !== key);
+    if (editorDraft.fields.length <= 1) return;
+    editorDraft.fields = editorDraft.fields.filter((field) => field.key !== key);
     fieldError = '';
   }
 
   function addExistingChannel() {
-    if (!selectedExistingChannelId || channelSelection.length >= 25) return;
+    if (!selectedExistingChannelId || editorDraft.channelSelection.length >= 25) return;
     const channel = channels.find((item) => item.id === selectedExistingChannelId);
-    if (!channel || channelSelection.some((item) => item.kind === 'existing' && item.channel_id === channel.id)) return;
-    channelSelection = [...channelSelection, { kind: 'existing', channel_id: channel.id, label: channel.label }];
+    if (!channel || editorDraft.channelSelection.some((item) => item.kind === 'existing' && item.channel_id === channel.id)) return;
+    editorDraft.channelSelection = [...editorDraft.channelSelection, { kind: 'existing', channel_id: channel.id, label: channel.label }];
     selectedExistingChannelId = availableChannels.find((item) => item.id !== channel.id)?.id ?? '';
   }
 
@@ -540,7 +542,7 @@
       newChannelError = 'Only a workspace owner or admin can configure a new destination. You can still select an existing destination.';
       return;
     }
-    if (channelSelection.length >= 25) {
+    if (editorDraft.channelSelection.length >= 25) {
       newChannelError = 'A monitor can select at most 25 destinations.';
       return;
     }
@@ -585,7 +587,7 @@
         }
       }
     }
-    channelSelection = [...channelSelection, {
+    editorDraft.channelSelection = [...editorDraft.channelSelection, {
       kind: 'new', type: newChannelType, label, priority: newChannelPriority, enabled: true, config, displayLabel: label,
     }];
     newChannelLabel = '';
@@ -596,7 +598,7 @@
   }
 
   function removeChannelSelection(index: number) {
-    channelSelection = channelSelection.filter((_, itemIndex) => itemIndex !== index);
+    editorDraft.channelSelection = editorDraft.channelSelection.filter((_, itemIndex) => itemIndex !== index);
   }
 
   function buildMonitorConfig() {
@@ -604,7 +606,7 @@
     const names = new Set<string>();
     const paths = new Set<string>();
     const configuredFields: Record<string, unknown>[] = [];
-    for (const field of fields) {
+    for (const field of editorDraft.fields) {
       const name = field.name.trim();
       const path = field.path.trim();
       if (!name || !path || path.split('.').some((part) => !part.trim())) {
@@ -648,12 +650,12 @@
     createError = '';
     createMessage = '';
     if (fieldMode === 'json') { applyJsonDraft(); if (fieldMode === 'json') return; }
-    const name = monitorName.trim();
+    const name = editorDraft.name.trim();
     if (!name || name.length > 200) {
       createError = 'Enter a monitor name between 1 and 200 characters.';
       return;
     }
-    if (monitorDescription.length > 2000) {
+    if (editorDraft.description.length > 2000) {
       createError = 'Description must be 2,000 characters or fewer.';
       return;
     }
@@ -662,14 +664,14 @@
     const config = buildMonitorConfig();
     if (!config) return;
 
-    const payloadChannels = channelSelection.map((selection) => {
+    const payloadChannels = editorDraft.channelSelection.map((selection) => {
       if (selection.kind === 'existing') return { kind: 'existing', channel_id: selection.channel_id };
       return { kind: 'new', type: selection.type, label: selection.label, priority: selection.priority, enabled: selection.enabled, config: selection.config };
     });
     const payload = {
       workspace_id: selectedWorkspaceId,
       name,
-      description: monitorDescription.trim(),
+      description: editorDraft.description.trim(),
       cadence_seconds: resolvedCadence,
       config,
       channels: payloadChannels,
@@ -682,29 +684,19 @@
     }
     creating = true;
     try {
-      const response = await fetch('/api/backend/monitors', {
-        method: 'POST', credentials: 'same-origin', cache: 'no-store',
-        headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'Idempotency-Key': createRequestKey },
-        body: requestBody,
+      const result = await createMonitorMutation.mutateAsync({
+        workspaceId: selectedWorkspaceId,
+        requestBody,
+        idempotencyKey: createRequestKey,
       });
-      const body: unknown = await response.json().catch(() => null);
-      if (!response.ok) {
-        const errorBody = body as ApiErrorBody | null;
-        createError = response.status === 422 && errorBody?.error?.code === 'invalid_monitor_config'
+      if (!result.ok) {
+        createError = result.status === 422 && result.code === 'invalid_monitor_config'
           ? 'TrueExit rejected this field configuration. Check field names, paths, and primitive choices.'
-          : messageFor(response.status, errorBody?.error?.code ?? null);
+          : messageFor(result.status, result.code);
         return;
       }
-      const created = body as Monitor;
-      monitorName = '';
-      monitorDescription = '';
-      cadenceSeconds = 300;
-      fields = [{ key: nextFieldKey++, name: '', path: '', primitive: 'count' }];
-      channelSelection = [];
-      channelSelectionWorkspaceId = selectedWorkspaceId;
-      newChannelOpen = false;
-      createRequestKey = '';
-      createRequestBody = '';
+      const created = result.body as Monitor;
+      resetEditorDraft();
       if (initialMode !== 'inventory') { window.location.href = `/monitors?workspace_id=${encodeURIComponent(selectedWorkspaceId)}`; return; }
       createOpen = false;
       search = '';
@@ -730,12 +722,12 @@
     createError = '';
     createMessage = '';
     if (fieldMode === 'json') { applyJsonDraft(); if (fieldMode === 'json') return; }
-    const name = monitorName.trim();
+    const name = editorDraft.name.trim();
     if (!name || name.length > 200) {
       createError = 'Enter a monitor name between 1 and 200 characters.';
       return;
     }
-    if (monitorDescription.length > 2000) {
+    if (editorDraft.description.length > 2000) {
       createError = 'Description must be 2,000 characters or fewer.';
       return;
     }
@@ -743,13 +735,13 @@
     if (resolvedCadence === null) return;
     const config = buildMonitorConfig();
     if (!config) return;
-    const channelsPayload = channelSelection.map((selection) => selection.kind === 'existing'
+    const channelsPayload = editorDraft.channelSelection.map((selection) => selection.kind === 'existing'
       ? { kind: 'existing', channel_id: selection.channel_id }
       : { kind: 'new', type: selection.type, label: selection.label, priority: selection.priority, enabled: selection.enabled, config: selection.config });
     const payload = {
       expected_updated_at: original.updated_at,
       name,
-      description: monitorDescription.trim(),
+      description: editorDraft.description.trim(),
       cadence_seconds: resolvedCadence,
       config,
       channels: channelsPayload,
@@ -761,25 +753,18 @@
     }
     creating = true;
     try {
-      const response = await fetch(`/api/backend/monitors/${encodeURIComponent(original.id)}?workspace_id=${encodeURIComponent(selectedWorkspaceId)}`, {
-        method: 'PATCH',
-        credentials: 'same-origin',
-        cache: 'no-store',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-          'Idempotency-Key': editRequestKey,
-        },
-        body: requestBody,
+      const result = await editMonitorMutation.mutateAsync({
+        workspaceId: selectedWorkspaceId,
+        monitorId: original.id,
+        requestBody,
+        idempotencyKey: editRequestKey,
       });
-      const body: unknown = await response.json().catch(() => null);
-      if (!response.ok) {
-        const errorBody = body as ApiErrorBody | null;
-        createError = response.status === 409
+      if (!result.ok) {
+        createError = result.status === 409
           ? 'This monitor changed while you were editing it. Close this form, reopen Edit monitor, and review the latest version before saving again.'
-          : response.status === 422 && errorBody?.error?.code === 'invalid_monitor_config'
+          : result.status === 422 && result.code === 'invalid_monitor_config'
             ? 'TrueExit rejected this field configuration. Check field names, paths, and value types.'
-            : messageFor(response.status, errorBody?.error?.code ?? null);
+            : messageFor(result.status, result.code);
         return;
       }
       if (initialMode !== 'inventory') { window.location.href = `/monitors?workspace_id=${encodeURIComponent(selectedWorkspaceId)}`; return; }
@@ -896,17 +881,14 @@
     actionError = '';
     actionMessage = '';
     try {
-      const response = await fetch(`/api/backend/monitors/${encodeURIComponent(monitor.id)}/${action}?workspace_id=${encodeURIComponent(selectedWorkspaceId)}`, {
-        method: 'POST',
-        credentials: 'same-origin',
-        cache: 'no-store',
-        headers: {
-          Accept: 'application/json',
-          'Idempotency-Key': crypto.randomUUID(),
-        },
+      const result = await lifecycleMonitorMutation.mutateAsync({
+        workspaceId: selectedWorkspaceId,
+        monitorId: monitor.id,
+        action,
+        idempotencyKey: crypto.randomUUID(),
       });
-      if (!response.ok) {
-        actionError = await parseError(response);
+      if (!result.ok) {
+        actionError = messageFor(result.status, result.code);
         return;
       }
       actionMessage = `${monitor.name}: ${labels[action].toLowerCase()} completed.`;
@@ -983,7 +965,7 @@
   {#if createOpen}
       <section class="monitor-create-modal monitor-create-page" aria-labelledby="monitor-create-title">
         <header class="monitor-create-modal__header">
-          <div><p class="eyebrow">{editingMonitor ? 'EDIT CHECK' : 'NEW CHECK'}</p><h2 id="monitor-create-title">{editingMonitor ? 'Refine your signal.' : 'Give your signal a shape.'}</h2><p>{editingMonitor ? 'Update the fields, cadence, and notification destinations for this monitor.' : 'Define the fields TrueExit should observe. A monitor always needs at least one valid field.'}</p></div>
+          <div><p class="eyebrow">{editingMonitor ? 'EDIT CHECK' : 'NEW CHECK'}</p><h2 id="monitor-create-title">{editingMonitor ? 'Refine your signal.' : 'Give your signal a shape.'}</h2><p>{editingMonitor ? 'Update the fields, cadence, and notification destinations for this monitor.' : 'Define the editorDraft.fields TrueExit should observe. A monitor always needs at least one valid field.'}</p></div>
           <button class="monitor-button monitor-button--quiet" type="button" on:click={closeCreate} disabled={creating}>← Back to monitors</button>
         </header>
         {#if createError}<div class="monitor-inline-alert" role="alert">{createError}</div>{/if}
@@ -994,17 +976,17 @@
           <div class="monitor-create-section">
             <div class="monitor-create-section__heading"><span>01</span><div><h3>Monitor details</h3><p>Make it recognisable to your team.</p></div></div>
             <div class="monitor-form-grid">
-              <label class="monitor-form-field monitor-form-field--wide"><span>Name <b>*</b></span><input bind:value={monitorName} maxlength="200" required placeholder="e.g. Payments pipeline" autocomplete="off" /></label>
-              <label class="monitor-form-field monitor-form-field--wide"><span>Description <small>Optional</small></span><textarea bind:value={monitorDescription} maxlength="2000" rows="2" placeholder="What should this check tell you?"></textarea></label>
-              <div class="monitor-cadence-control"><span class="monitor-cadence-label">Check cadence</span><div class="monitor-field-modes monitor-field-modes--compact" role="tablist" aria-label="Cadence input mode"><button type="button" role="tab" aria-selected={cadenceMode === 'interval'} class:active={cadenceMode === 'interval'} on:click={() => { cadenceMode = 'interval'; cadenceError = ''; }}>Interval</button><button type="button" role="tab" aria-selected={cadenceMode === 'cron'} class:active={cadenceMode === 'cron'} on:click={() => { cadenceMode = 'cron'; cadenceError = ''; }}>Cron</button></div>
-                {#if cadenceMode === 'interval'}<div class="monitor-cadence-input"><label class="monitor-form-field"><span class="sr-only">Interval amount</span><input type="number" min="1" step="1" bind:value={cadenceValue} on:input={() => { resolveCadence(); }} /></label><label class="monitor-form-field"><span class="sr-only">Interval unit</span><select bind:value={cadenceUnit}><option value="seconds">Seconds</option><option value="minutes">Minutes</option><option value="hours">Hours</option></select></label></div><small class="monitor-form-hint">Minimum interval: 15 seconds.</small>
-                {:else}<label class="monitor-form-field"><span>Cron expression</span><input bind:value={cronExpression} on:input={() => { resolveCadence(); }} placeholder="*/30 * * * * *" spellcheck="false" /><small>Fixed intervals only. Seconds syntax: <code>*/30 * * * * *</code>; minutes syntax: <code>*/5 * * * *</code>.</small></label>{/if}
-                {#if cadenceError}<p class="monitor-form-error" role="alert">{cadenceError}</p>{:else}<p class="monitor-cadence-preview">Resolved schedule <strong>{cadenceMode === 'interval' ? `Every ${cadenceValue || '…'} ${cadenceUnit}` : cadencePreview}</strong></p>{/if}</div>
+              <label class="monitor-form-field monitor-form-field--wide"><span>Name <b>*</b></span><input bind:value={editorDraft.name} maxlength="200" required placeholder="e.g. Payments pipeline" autocomplete="off" /></label>
+              <label class="monitor-form-field monitor-form-field--wide"><span>Description <small>Optional</small></span><textarea bind:value={editorDraft.description} maxlength="2000" rows="2" placeholder="What should this check tell you?"></textarea></label>
+              <div class="monitor-cadence-control"><span class="monitor-cadence-label">Check cadence</span><div class="monitor-field-modes monitor-field-modes--compact" role="tablist" aria-label="Cadence input mode"><button type="button" role="tab" aria-selected={editorDraft.cadenceMode === 'interval'} class:active={editorDraft.cadenceMode === 'interval'} on:click={() => { editorDraft.cadenceMode = 'interval'; cadenceError = ''; }}>Interval</button><button type="button" role="tab" aria-selected={editorDraft.cadenceMode === 'cron'} class:active={editorDraft.cadenceMode === 'cron'} on:click={() => { editorDraft.cadenceMode = 'cron'; cadenceError = ''; }}>Cron</button></div>
+                {#if editorDraft.cadenceMode === 'interval'}<div class="monitor-cadence-input"><label class="monitor-form-field"><span class="sr-only">Interval amount</span><input type="number" min="1" step="1" bind:value={editorDraft.cadenceValue} on:input={() => { resolveCadence(); }} /></label><label class="monitor-form-field"><span class="sr-only">Interval unit</span><select bind:value={editorDraft.cadenceUnit}><option value="seconds">Seconds</option><option value="minutes">Minutes</option><option value="hours">Hours</option></select></label></div><small class="monitor-form-hint">Minimum interval: 15 seconds.</small>
+                {:else}<label class="monitor-form-field"><span>Cron expression</span><input bind:value={editorDraft.cronExpression} on:input={() => { resolveCadence(); }} placeholder="*/30 * * * * *" spellcheck="false" /><small>Fixed intervals only. Seconds syntax: <code>*/30 * * * * *</code>; minutes syntax: <code>*/5 * * * *</code>.</small></label>{/if}
+                {#if cadenceError}<p class="monitor-form-error" role="alert">{cadenceError}</p>{:else}<p class="monitor-cadence-preview">Resolved schedule <strong>{editorDraft.cadenceMode === 'interval' ? `Every ${editorDraft.cadenceValue || '…'} ${editorDraft.cadenceUnit}` : cadencePreview}</strong></p>{/if}</div>
             </div>
           </div>
 
           <div class="monitor-create-section">
-            <div class="monitor-create-section__heading"><span>02</span><div><h3>Observed fields <b>*</b></h3><p>Map each field to a value in the JSON payload your process will send to Ping.</p></div><button class="monitor-button monitor-button--quiet" type="button" on:click={addField} disabled={fields.length >= 50}>＋ Add field</button></div>
+            <div class="monitor-create-section__heading"><span>02</span><div><h3>Observed fields <b>*</b></h3><p>Map each field to a value in the JSON payload your process will send to Ping.</p></div><button class="monitor-button monitor-button--quiet" type="button" on:click={addField} disabled={editorDraft.fields.length >= 50}>＋ Add field</button></div>
             <div class="monitor-field-modes" role="tablist" aria-label="Field configuration method">
               <button type="button" role="tab" aria-selected={fieldMode === 'json'} class:active={fieldMode === 'json'} on:click={() => { try { syncJsonFromFields(); fieldMode = 'json'; } catch (error) { jsonError = error instanceof Error ? error.message : 'Resolve conflicting paths first.'; } }}>JSON <small>Paste an object</small></button>
               <button type="button" role="tab" aria-selected={fieldMode === 'fields'} class:active={fieldMode === 'fields'} on:click={() => { if (fieldMode === 'json' && jsonDraft.trim()) applyJsonDraft(); else fieldMode = 'fields'; }}>Fields <small>Edit paths</small></button>
@@ -1019,22 +1001,22 @@
   }
 }`}></textarea><small id="monitor-json-help">Paste a representative object. Nested paths are discovered automatically; sample values are used to infer types, not submitted as monitor data.</small></label>
                 {#if jsonError}<p class="monitor-form-error" role="alert">{jsonError}</p>{/if}
-                <div class="monitor-json-actions"><span>{fields.filter((field) => field.path.trim()).length} configured fields currently in the draft</span><button type="button" class="monitor-button monitor-button--primary" on:click={applyJsonDraft}>Parse JSON into fields <span aria-hidden="true">→</span></button></div>
+                <div class="monitor-json-actions"><span>{editorDraft.fields.filter((field) => field.path.trim()).length} configured fields currently in the draft</span><button type="button" class="monitor-button monitor-button--primary" on:click={applyJsonDraft}>Parse JSON into fields <span aria-hidden="true">→</span></button></div>
               </div>
             {:else if fieldMode === 'templates'}
               <div class="monitor-template-mode"><p>Templates provide reusable field names, JSON paths, and interpretation types. They do not change cadence, tags, or destinations.</p>
                 {#if templatesError}<p class="monitor-form-error" role="alert">{templatesError}</p>{/if}
                 {#if templatesLoading}<p class="monitor-form-hint">Loading templates…</p>{:else if templates.length === 0}<div class="monitor-template-empty"><strong>No templates available</strong><span>Create a reusable field template first, or use JSON to discover fields from a sample payload.</span><a href="/templates">Open Templates ↗</a></div>{:else}
-                  <div class="monitor-template-picker"><label class="monitor-form-field"><span>Choose a template</span><select bind:value={selectedTemplateId}><option value="">Select a template…</option>{#each templates as template (template.id)}<option value={template.id}>{template.name} · {template.fields.length} fields</option>{/each}</select></label><label class="monitor-form-field"><span>Apply method</span><select bind:value={templateApplyMode}><option value="replace">Replace current fields</option><option value="merge">Merge with current fields</option></select></label></div>
+                  <div class="monitor-template-picker"><label class="monitor-form-field"><span>Choose a template</span><select bind:value={selectedTemplateId}><option value="">Select a template…</option>{#each templates as template (template.id)}<option value={template.id}>{template.name} · {template.fields.length} editorDraft.fields</option>{/each}</select></label><label class="monitor-form-field"><span>Apply method</span><select bind:value={templateApplyMode}><option value="replace">Replace current fields</option><option value="merge">Merge with current fields</option></select></label></div>
                   {#if selectedTemplateId}<div class="monitor-template-preview">{#each templates.find((template) => template.id === selectedTemplateId)?.fields ?? [] as field}<div><span><strong>{field.name}</strong><code>{field.path}</code></span><small>{primitiveLabels[(Object.entries(primitiveValues).find(([, value]) => value === field.primitive)?.[0] ?? 'text') as FieldPrimitive]}</small></div>{/each}</div><button type="button" class="monitor-button monitor-button--primary" on:click={applySelectedTemplate}>Apply template to draft →</button>{/if}
                 {/if}
               </div>
             {:else}
-              <div class="monitor-fields-toolbar"><p>Enter nested JSON paths directly. Use Tab to move through each row; no nested-field builder required.</p><button class="monitor-button monitor-button--quiet" type="button" on:click={addField} disabled={fields.length >= 50}>＋ Add field</button></div>
+              <div class="monitor-fields-toolbar"><p>Enter nested JSON paths directly. Use Tab to move through each row; no nested-field builder required.</p><button class="monitor-button monitor-button--quiet" type="button" on:click={addField} disabled={editorDraft.fields.length >= 50}>＋ Add field</button></div>
               <div class="monitor-field-list">
-                {#each fields as field, index (field.key)}
+                {#each editorDraft.fields as field, index (field.key)}
                   <div class="monitor-field-card">
-                    <div class="monitor-field-card__top"><span>FIELD {String(index + 1).padStart(2, '0')}</span>{#if fields.length > 1}<button type="button" class="monitor-remove-link" on:click={() => removeField(field.key)}>Remove</button>{/if}</div>
+                    <div class="monitor-field-card__top"><span>FIELD {String(index + 1).padStart(2, '0')}</span>{#if editorDraft.fields.length > 1}<button type="button" class="monitor-remove-link" on:click={() => removeField(field.key)}>Remove</button>{/if}</div>
                     <div class="monitor-form-grid monitor-form-grid--field">
                       <label class="monitor-form-field"><span>Field name <b>*</b></span><input bind:value={field.name} maxlength="100" required placeholder="processed_rows" /></label>
                       <label class="monitor-form-field"><span>JSON path <b>*</b></span><input bind:value={field.path} maxlength="200" required placeholder="backup.processed_rows" /><small>Dot-separated path in the submitted JSON.</small></label>
@@ -1051,10 +1033,10 @@
             <div class="monitor-create-section__heading"><span>03</span><div><h3>Notification destinations</h3><p>Optional. Select saved destinations or configure one inline.</p></div></div>
             {#if channelsError}<p class="monitor-form-error" role="alert">{channelsError}</p>{/if}
             {#if channelsLoading}<p class="monitor-form-hint">Loading workspace destinations…</p>{:else if availableChannels.length > 0}
-              <div class="monitor-channel-add"><label class="monitor-form-field"><span>Saved destination</span><select bind:value={selectedExistingChannelId}><option value="">Choose a destination…</option>{#each availableChannels as channel (channel.id)}<option value={channel.id}>{channel.label} · {channel.type}</option>{/each}</select></label><button class="monitor-button monitor-button--quiet" type="button" on:click={addExistingChannel} disabled={!selectedExistingChannelId || channelSelection.length >= 25}>Add destination</button></div>
+              <div class="monitor-channel-add"><label class="monitor-form-field"><span>Saved destination</span><select bind:value={selectedExistingChannelId}><option value="">Choose a destination…</option>{#each availableChannels as channel (channel.id)}<option value={channel.id}>{channel.label} · {channel.type}</option>{/each}</select></label><button class="monitor-button monitor-button--quiet" type="button" on:click={addExistingChannel} disabled={!selectedExistingChannelId || editorDraft.channelSelection.length >= 25}>Add destination</button></div>
             {:else}<p class="monitor-form-hint">No saved destinations available to select.</p>{/if}
-            {#if channelSelection.length > 0}
-              <div class="monitor-selected-channels" aria-label="Selected notification destinations">{#each channelSelection as selection, index}<div class="monitor-selected-channel"><span class="monitor-selected-channel__icon" aria-hidden="true">{selection.kind === 'existing' ? '↗' : '＋'}</span><span><strong>{selection.kind === 'existing' ? selection.label : selection.displayLabel}</strong><small>{selection.kind === 'existing' ? 'Saved destination' : `New ${selection.type} destination`}</small></span><button type="button" aria-label={`Remove ${selection.kind === 'existing' ? selection.label : selection.displayLabel}`} on:click={() => removeChannelSelection(index)}>×</button></div>{/each}</div>
+            {#if editorDraft.channelSelection.length > 0}
+              <div class="monitor-selected-channels" aria-label="Selected notification destinations">{#each editorDraft.channelSelection as selection, index}<div class="monitor-selected-channel"><span class="monitor-selected-channel__icon" aria-hidden="true">{selection.kind === 'existing' ? '↗' : '＋'}</span><span><strong>{selection.kind === 'existing' ? selection.label : selection.displayLabel}</strong><small>{selection.kind === 'existing' ? 'Saved destination' : `New ${selection.type} destination`}</small></span><button type="button" aria-label={`Remove ${selection.kind === 'existing' ? selection.label : selection.displayLabel}`} on:click={() => removeChannelSelection(index)}>×</button></div>{/each}</div>
             {/if}
             {#if canManageChannels}
               <button class="monitor-inline-configure" type="button" on:click={() => { newChannelOpen = !newChannelOpen; newChannelError = ''; }}>{newChannelOpen ? '− Close channel setup' : '＋ Add a channel'}</button>
