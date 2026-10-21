@@ -6,12 +6,13 @@
   import MonitorInventory from './MonitorInventory.svelte';
   import type { Monitor, MonitorStatus } from '../lib/client/monitor-types';
   import { formatMonitorCadence } from '../lib/client/monitor-format';
-  import { buildMonitorConfig, resolveMonitorCadence, validateMonitorIdentity } from '../lib/client/monitor-editor-validation';
+  import { prepareMonitorSubmission, resolveMonitorCadence } from '../lib/client/monitor-editor-validation';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import { createMutation } from '@tanstack/svelte-query';
-  import { createMonitorQueryClient, fetchMonitorPage, fetchMonitorTemplates, monitorQueryKeys, monitorTemplateQueryKeys, type MonitorTemplate } from '../lib/client/monitor-queries';
-  import { createEmptyMonitorDraft, createMonitorDraft, type ChannelKind, type ChannelSelection, type FieldPrimitive, type MonitorField } from '../lib/client/monitor-editor-state';
+  import { createMonitorQueryClient, fetchMonitorPage, fetchMonitorTemplates, fetchWorkspaceTags, fetchMonitorTags, fetchWorkspaceChannels, fetchMonitorDetail, fetchMonitorChannelIds, monitorQueryKeys, monitorTemplateQueryKeys, monitorResourceQueryKeys, type MonitorTemplate, type WorkspaceTag, type MonitorChannel } from '../lib/client/monitor-queries';
+  import { createEmptyMonitorDraft, createMonitorDraft, type ChannelKind, type FieldPrimitive } from '../lib/client/monitor-editor-state';
   import { createMonitorMutationOptions, editMonitorMutationOptions, lifecycleMonitorMutationOptions, tagMonitorMutationOptions } from '../lib/client/monitor-mutations';
+  import { buildMonitorJsonDraft, parseMonitorJsonDraft } from '../lib/client/monitor-field-editor';
 
   type MonitorConfigVersion = { version: number; cadence_seconds: number; config: { fields: Array<{ name: string; path: string; primitive: number; meta?: Record<string, unknown> }> } };
   type MonitorDetail = Monitor & { config_versions?: MonitorConfigVersion[] };
@@ -20,15 +21,11 @@
   const editMonitorMutation = createMutation(() => editMonitorMutationOptions(monitorQueryClient), () => monitorQueryClient);
   const tagMonitorMutation = createMutation(() => tagMonitorMutationOptions(monitorQueryClient), () => monitorQueryClient);
   const lifecycleMonitorMutation = createMutation(() => lifecycleMonitorMutationOptions(monitorQueryClient), () => monitorQueryClient);
-  type ApiErrorBody = { error?: { code?: string }; request_id?: string };
-  type WorkspaceTag = { id: string; workspace_id: string; name: string; monitor_count: number; created_at: string; updated_at: string };
-  type Channel = { id: string; label: string; type: ChannelKind; enabled: boolean; configured: boolean };
+  type Channel = MonitorChannel;
 
   const primitiveValues: Record<FieldPrimitive, number> = {
     size: 0, count: 1, duration: 2, timestamp: 3, boolean: 4, categorical: 5, checksum: 6, text: 7,
   };
-  const CHECKSUM_ALGORITHM_SHA256 = 0;
-  const CHECKSUM_ENCODING_HEXADECIMAL = 0;
   const primitiveLabels: Record<FieldPrimitive, string> = {
     size: 'Size', count: 'Count', duration: 'Duration', timestamp: 'Timestamp',
     boolean: 'Boolean', categorical: 'Categorical', checksum: 'Checksum', text: 'Text',
@@ -53,6 +50,9 @@
   let actionMessage = '';
   let busyMonitorId = '';
   let requestSequence = 0;
+  let editorLoadSequence = 0;
+  let tagLoadSequence = 0;
+  let templateLoadSequence = 0;
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let createOpen = initialMode !== 'inventory';
   let fieldMode: 'json' | 'fields' | 'templates' = 'fields';
@@ -103,6 +103,7 @@
     editorDraft = createEmptyMonitorDraft();
     editorDraft.channelSelectionWorkspaceId = selectedWorkspaceId;
     fieldMode = 'fields';
+    channelsLoading = false;
     jsonDraft = '';
     jsonError = '';
     selectedTemplateId = '';
@@ -153,51 +154,16 @@
   }
 
 
-  function flattenJson(value: unknown, prefix = ''): MonitorField[] {
-    const result: MonitorField[] = [];
-    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Paste a JSON object at the top level.');
-    const visit = (node: unknown, path: string) => {
-      if (node && typeof node === 'object' && !Array.isArray(node)) {
-        for (const [key, child] of Object.entries(node as Record<string, unknown>)) visit(child, path ? `${path}.${key}` : key);
-        return;
-      }
-      if (Array.isArray(node) || node === undefined) return;
-      const primitive: FieldPrimitive = typeof node === 'boolean' ? 'boolean' : typeof node === 'number' ? 'count' : node === null ? 'text' : 'text';
-      result.push({ key: editorDraft.nextFieldKey++, name: path.replace(/[^a-zA-Z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 100) || `field_${result.length + 1}`, path, primitive });
-    };
-    visit(value, prefix);
-    if (!result.length) throw new Error('No scalar values were found. Include at least one number, string, boolean, or null value.');
-    if (result.length > 50) throw new Error('This editor supports up to 50 fields.');
-    return result;
-  }
-
   function syncJsonFromFields() {
-    const nested: Record<string, unknown> = {};
-    for (const field of editorDraft.fields) {
-      const path = field.path.trim();
-      if (!field.name.trim() || !path) throw new Error('Complete or remove blank field rows before switching to JSON.');
-      if (path.split('.').some((part) => !part.trim())) throw new Error(`The path “${path}” contains an empty segment.`);
-      const parts = path.split('.');
-      let cursor: Record<string, unknown> = nested;
-      for (let index = 0; index < parts.length - 1; index += 1) {
-        const part = parts[index];
-        if (!part || (cursor[part] !== undefined && (!cursor[part] || typeof cursor[part] !== 'object' || Array.isArray(cursor[part])))) throw new Error(`The path “${path}” conflicts with another field.`);
-        cursor[part] = cursor[part] ?? {};
-        cursor = cursor[part] as Record<string, unknown>;
-      }
-      const leaf = parts[parts.length - 1];
-      if (!leaf || cursor[leaf] !== undefined) throw new Error(`The path “${path}” is duplicated or conflicts with another field.`);
-      cursor[leaf] = field.primitive === 'boolean' ? true : field.primitive === 'count' || field.primitive === 'size' || field.primitive === 'duration' ? 0 : field.primitive === 'timestamp' ? '2026-01-01T00:00:00Z' : field.primitive === 'checksum' ? 'sha256-example' : 'example';
-    }
-    jsonDraft = JSON.stringify(nested, null, 2);
+    jsonDraft = buildMonitorJsonDraft(editorDraft.fields);
     jsonError = '';
   }
 
   function applyJsonDraft() {
     try {
-      const parsed: unknown = JSON.parse(jsonDraft);
-      const discovered = flattenJson(parsed);
-      editorDraft.fields = discovered;
+      const parsed = parseMonitorJsonDraft(jsonDraft, editorDraft.nextFieldKey);
+      editorDraft.fields = parsed.fields;
+      editorDraft.nextFieldKey = parsed.nextFieldKey;
       fieldError = '';
       jsonError = '';
       fieldMode = 'fields';
@@ -207,25 +173,33 @@
   }
 
   async function loadTemplates() {
-    if (!selectedWorkspaceId) return;
+    const workspaceId = selectedWorkspaceId;
+    const sequence = ++templateLoadSequence;
+    if (!workspaceId) {
+      templates = [];
+      templatesLoading = false;
+      return;
+    }
     templatesLoading = true;
     templatesError = '';
     try {
       const result = await monitorQueryClient.fetchQuery({
-        queryKey: monitorTemplateQueryKeys.workspaceList(selectedWorkspaceId),
-        queryFn: ({ signal }) => fetchMonitorTemplates(selectedWorkspaceId, signal),
+        queryKey: monitorTemplateQueryKeys.workspaceList(workspaceId),
+        queryFn: ({ signal }) => fetchMonitorTemplates(workspaceId, signal),
         staleTime: 30_000,
         retry: false,
       });
+      if (sequence !== templateLoadSequence || workspaceId !== selectedWorkspaceId) return;
       if (!result.ok) {
         templatesError = messageFor(result.status, result.code);
+        await monitorQueryClient.invalidateQueries({ queryKey: monitorTemplateQueryKeys.workspaceList(workspaceId) });
         return;
       }
       templates = result.data;
     } catch {
-      templatesError = messageFor(0, 'network_error');
+      if (sequence === templateLoadSequence) templatesError = messageFor(0, 'network_error');
     } finally {
-      templatesLoading = false;
+      if (sequence === templateLoadSequence) templatesLoading = false;
     }
   }
 
@@ -250,19 +224,24 @@
   $: availableChannels = channels.filter((channel) => channel.enabled && !editorDraft.channelSelection.some((item) => item.kind === 'existing' && item.channel_id === channel.id));
 
   async function loadWorkspaceTags(): Promise<boolean> {
-    if (!selectedWorkspaceId) {
+    const workspaceId = selectedWorkspaceId;
+    if (!workspaceId) {
       workspaceTags = [];
       return false;
     }
     try {
-      const response = await fetch(`/api/backend/workspaces/${encodeURIComponent(selectedWorkspaceId)}/tags`, {
-        headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store',
+      const result = await monitorQueryClient.fetchQuery({
+        queryKey: monitorResourceQueryKeys.workspaceTags(workspaceId),
+        queryFn: ({ signal }) => fetchWorkspaceTags(workspaceId, signal),
+        staleTime: 30_000,
+        retry: false,
       });
-      const body: unknown = await response.json().catch(() => null);
-      if (!response.ok) return false;
-      if (Array.isArray(body)) workspaceTags = body as WorkspaceTag[];
-      else if (body && typeof body === 'object' && 'data' in body && Array.isArray(body.data)) workspaceTags = body.data as WorkspaceTag[];
-      else return false;
+      if (workspaceId !== selectedWorkspaceId) return false;
+      if (!result.ok || !result.data) {
+        await monitorQueryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceTags(workspaceId) });
+        return false;
+      }
+      workspaceTags = result.data;
       return true;
     } catch {
       // Tags are an optional organization layer; do not block monitor inventory on their availability.
@@ -272,6 +251,8 @@
 
   async function openTagManager(monitor: Monitor) {
     if (tagBusy || creating || busyMonitorId) return;
+    const workspaceId = selectedWorkspaceId;
+    const requestSequenceForTags = ++tagLoadSequence;
     taggingMonitor = monitor;
     monitorTagIds = [];
     newTagNames = [];
@@ -284,27 +265,32 @@
     tagBusy = true;
     try {
       const tagsLoaded = await loadWorkspaceTags();
+      if (requestSequenceForTags !== tagLoadSequence || workspaceId !== selectedWorkspaceId) return;
       if (!tagsLoaded) {
         tagError = 'Workspace tags could not be loaded. Close this panel and try again; no changes have been made.';
         return;
       }
-      const response = await fetch(`/api/backend/monitors/${encodeURIComponent(monitor.id)}/tags?workspace_id=${encodeURIComponent(selectedWorkspaceId)}`, {
-        headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store',
+      const result = await monitorQueryClient.fetchQuery({
+        queryKey: monitorResourceQueryKeys.monitorTags(workspaceId, monitor.id),
+        queryFn: ({ signal }) => fetchMonitorTags(workspaceId, monitor.id, signal),
+        staleTime: 0,
+        retry: false,
       });
-      const body: unknown = await response.json().catch(() => null);
-      if (!response.ok) {
-        const errorBody = body as ApiErrorBody | null;
-        tagError = messageFor(response.status, errorBody?.error?.code ?? null);
+      if (requestSequenceForTags !== tagLoadSequence || workspaceId !== selectedWorkspaceId) return;
+      if (!result.ok) {
+        tagError = messageFor(result.status, result.code);
+        await monitorQueryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorTags(workspaceId, monitor.id) });
         return;
       }
-      const assigned = Array.isArray(body) ? body as WorkspaceTag[] : (body && typeof body === 'object' && 'data' in body && Array.isArray(body.data) ? body.data as WorkspaceTag[] : []);
-      monitorTagIds = assigned.map((tag) => tag.id);
+      monitorTagIds = result.data.map((tag) => tag.id);
       tagReady = true;
     } catch {
-      tagError = messageFor(0, 'network_error');
-      tagReady = false;
+      if (requestSequenceForTags === tagLoadSequence) {
+        tagError = messageFor(0, 'network_error');
+        tagReady = false;
+      }
     } finally {
-      tagBusy = false;
+      if (requestSequenceForTags === tagLoadSequence) tagBusy = false;
     }
   }
 
@@ -376,6 +362,7 @@
 
   async function openCreate() {
     if (initialMode === 'inventory') { window.location.href = `/monitors/new?workspace_id=${encodeURIComponent(selectedWorkspaceId)}`; return; }
+    ++editorLoadSequence;
     editingMonitor = null;
     resetEditorDraft();
     createOpen = true;
@@ -385,28 +372,34 @@
     channels = [];
     selectedExistingChannelId = '';
     if (!selectedWorkspaceId) return;
+    const workspaceId = selectedWorkspaceId;
+    const sequence = editorLoadSequence;
     channelsLoading = true;
     try {
-      const response = await fetch(`/api/backend/workspaces/${encodeURIComponent(selectedWorkspaceId)}/channels`, {
-        headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store',
+      const result = await monitorQueryClient.fetchQuery({
+        queryKey: monitorResourceQueryKeys.workspaceChannels(workspaceId),
+        queryFn: ({ signal }) => fetchWorkspaceChannels(workspaceId, signal),
+        staleTime: 30_000,
+        retry: false,
       });
-      const body: unknown = await response.json().catch(() => null);
-      if (!response.ok) {
-        const errorBody = body as ApiErrorBody | null;
-        channelsError = messageFor(response.status, errorBody?.error?.code ?? null);
+      if (sequence !== editorLoadSequence || workspaceId !== selectedWorkspaceId) return;
+      if (!result.ok) {
+        channelsError = messageFor(result.status, result.code);
+        await monitorQueryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceChannels(workspaceId) });
         return;
       }
-      channels = Array.isArray(body) ? body as Channel[] : [];
-      selectedExistingChannelId = availableChannels[0]?.id ?? '';
+      channels = result.data;
+      selectedExistingChannelId = channels.find((channel) => channel.enabled)?.id ?? '';
     } catch {
-      channelsError = messageFor(0, 'network_error');
+      if (sequence === editorLoadSequence) channelsError = messageFor(0, 'network_error');
     } finally {
-      channelsLoading = false;
+      if (sequence === editorLoadSequence) channelsLoading = false;
     }
   }
 
   function closeCreate() {
     if (creating) return;
+    ++editorLoadSequence;
     if (initialMode !== 'inventory') { window.location.href = `/monitors?workspace_id=${encodeURIComponent(selectedWorkspaceId)}`; return; }
     createOpen = false;
     newChannelOpen = false;
@@ -418,6 +411,8 @@
   async function openEdit(monitor: Monitor) {
     if (initialMode === 'inventory') { window.location.href = `/monitors/${encodeURIComponent(monitor.id)}/edit?workspace_id=${encodeURIComponent(selectedWorkspaceId)}`; return; }
     if (busyMonitorId || creating) return;
+    const workspaceId = selectedWorkspaceId;
+    const sequence = ++editorLoadSequence;
     editingMonitor = monitor as MonitorDetail;
     resetEditorDraft();
     createError = '';
@@ -429,41 +424,50 @@
     createOpen = true;
     creating = true;
     try {
-      const detailUrl = `/api/backend/monitors/${encodeURIComponent(monitor.id)}?workspace_id=${encodeURIComponent(selectedWorkspaceId)}`;
-      const channelsUrl = `/api/backend/monitors/${encodeURIComponent(monitor.id)}/channels?workspace_id=${encodeURIComponent(selectedWorkspaceId)}`;
-      const destinationsUrl = `/api/backend/workspaces/${encodeURIComponent(selectedWorkspaceId)}/channels`;
-      const [detailResponse, channelResponse, destinationsResponse] = await Promise.all([
-        fetch(detailUrl, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' }),
-        fetch(channelsUrl, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' }),
-        fetch(destinationsUrl, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' }),
+      const [detailResult, channelIdsResult, destinationsResult] = await Promise.all([
+        monitorQueryClient.fetchQuery({
+          queryKey: monitorResourceQueryKeys.monitorDetail(workspaceId, monitor.id),
+          queryFn: ({ signal }) => fetchMonitorDetail<MonitorDetail>(workspaceId, monitor.id, signal),
+          staleTime: 0,
+          retry: false,
+        }),
+        monitorQueryClient.fetchQuery({
+          queryKey: monitorResourceQueryKeys.monitorChannels(workspaceId, monitor.id),
+          queryFn: ({ signal }) => fetchMonitorChannelIds(workspaceId, monitor.id, signal),
+          staleTime: 0,
+          retry: false,
+        }),
+        monitorQueryClient.fetchQuery({
+          queryKey: monitorResourceQueryKeys.workspaceChannels(workspaceId),
+          queryFn: ({ signal }) => fetchWorkspaceChannels(workspaceId, signal),
+          staleTime: 30_000,
+          retry: false,
+        }),
       ]);
-      const detailBody: unknown = await detailResponse.json().catch(() => null);
-      if (!detailResponse.ok) {
-        const errorBody = detailBody as ApiErrorBody | null;
-        createError = messageFor(detailResponse.status, errorBody?.error?.code ?? null);
+      if (sequence !== editorLoadSequence || workspaceId !== selectedWorkspaceId) return;
+      if (!detailResult.ok || !detailResult.data) {
+        createError = messageFor(detailResult.status, detailResult.code);
+        await monitorQueryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorDetail(workspaceId, monitor.id) });
         return;
       }
-      const detail = detailBody as MonitorDetail;
+      const detail = detailResult.data;
       const currentConfig = detail.config_versions?.find((version) => version.version === detail.current_config_version);
       if (!currentConfig || !Array.isArray(currentConfig.config?.fields) || currentConfig.config.fields.length === 0) {
         createError = 'The current monitor configuration could not be loaded safely. Nothing has been changed.';
         return;
       }
-      const channelBody: unknown = await channelResponse.json().catch(() => null);
-      if (!channelResponse.ok) {
-        const errorBody = channelBody as ApiErrorBody | null;
-        createError = messageFor(channelResponse.status, errorBody?.error?.code ?? null);
+      if (!channelIdsResult.ok) {
+        createError = messageFor(channelIdsResult.status, channelIdsResult.code);
+        await monitorQueryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorChannels(workspaceId, monitor.id) });
         return;
       }
-      const destinationBody: unknown = await destinationsResponse.json().catch(() => null);
-      if (!destinationsResponse.ok) {
-        const errorBody = destinationBody as ApiErrorBody | null;
-        createError = messageFor(destinationsResponse.status, errorBody?.error?.code ?? null);
+      if (!destinationsResult.ok) {
+        createError = messageFor(destinationsResult.status, destinationsResult.code);
+        await monitorQueryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceChannels(workspaceId) });
         return;
       }
-      const selectedIds = (channelBody as { channel_ids?: string[] } | null)?.channel_ids ?? [];
-      channels = Array.isArray(destinationBody) ? destinationBody as Channel[] : [];
-      const channelSelection = selectedIds.flatMap((id) => {
+      channels = destinationsResult.data;
+      const channelSelection = channelIdsResult.data.flatMap((id) => {
         const channel = channels.find((item) => item.id === id);
         return channel ? [{ kind: 'existing' as const, channel_id: channel.id, label: channel.label }] : [];
       });
@@ -477,15 +481,15 @@
         description: detail.description,
         fields: draftFields,
         channelSelection,
-        workspaceId: selectedWorkspaceId,
+        workspaceId,
       });
-      selectedExistingChannelId = availableChannels[0]?.id ?? '';
+      selectedExistingChannelId = channels.find((channel) => channel.enabled && !channelSelection.some((selection) => selection.channel_id === channel.id))?.id ?? '';
       secondsToCadence(currentConfig.cadence_seconds);
       editingMonitor = detail;
     } catch {
-      createError = messageFor(0, 'network_error');
+      if (sequence === editorLoadSequence) createError = messageFor(0, 'network_error');
     } finally {
-      creating = false;
+      if (sequence === editorLoadSequence) creating = false;
     }
   }
 
@@ -585,21 +589,17 @@
     createError = '';
     createMessage = '';
     if (fieldMode === 'json') { applyJsonDraft(); if (fieldMode === 'json') return; }
-    const identity = validateMonitorIdentity(editorDraft.name, editorDraft.description);
-    if (!identity.ok) {
-      createError = identity.error;
+    const validation = prepareMonitorSubmission(editorDraft);
+    if (!validation.ok) {
+      cadenceError = validation.field === 'cadence' ? validation.error : '';
+      fieldError = validation.field === 'fields' ? validation.error : '';
+      if (validation.field === 'identity') createError = validation.error;
       return;
     }
-    const name = identity.name;
-    const cadence = resolveMonitorCadence(editorDraft);
-    cadenceError = cadence.ok ? '' : cadence.error;
-    if (!cadence.ok) return;
-    cadencePreview = cadence.preview;
-    const configResult = buildMonitorConfig(editorDraft.fields);
-    fieldError = configResult.ok ? '' : configResult.error;
-    if (!configResult.ok) return;
-    const resolvedCadence = cadence.seconds;
-    const config = configResult.config;
+    cadenceError = '';
+    fieldError = '';
+    const { name, description, cadenceSeconds: resolvedCadence, cadencePreview: resolvedPreview, config } = validation;
+    cadencePreview = resolvedPreview;
 
     const payloadChannels = editorDraft.channelSelection.map((selection) => {
       if (selection.kind === 'existing') return { kind: 'existing', channel_id: selection.channel_id };
@@ -608,7 +608,7 @@
     const payload = {
       workspace_id: selectedWorkspaceId,
       name,
-      description: identity.description,
+      description,
       cadence_seconds: resolvedCadence,
       config,
       channels: payloadChannels,
@@ -659,28 +659,24 @@
     createError = '';
     createMessage = '';
     if (fieldMode === 'json') { applyJsonDraft(); if (fieldMode === 'json') return; }
-    const identity = validateMonitorIdentity(editorDraft.name, editorDraft.description);
-    if (!identity.ok) {
-      createError = identity.error;
+    const validation = prepareMonitorSubmission(editorDraft);
+    if (!validation.ok) {
+      cadenceError = validation.field === 'cadence' ? validation.error : '';
+      fieldError = validation.field === 'fields' ? validation.error : '';
+      if (validation.field === 'identity') createError = validation.error;
       return;
     }
-    const name = identity.name;
-    const cadence = resolveMonitorCadence(editorDraft);
-    cadenceError = cadence.ok ? '' : cadence.error;
-    if (!cadence.ok) return;
-    cadencePreview = cadence.preview;
-    const configResult = buildMonitorConfig(editorDraft.fields);
-    fieldError = configResult.ok ? '' : configResult.error;
-    if (!configResult.ok) return;
-    const resolvedCadence = cadence.seconds;
-    const config = configResult.config;
+    cadenceError = '';
+    fieldError = '';
+    const { name, description, cadenceSeconds: resolvedCadence, cadencePreview: resolvedPreview, config } = validation;
+    cadencePreview = resolvedPreview;
     const channelsPayload = editorDraft.channelSelection.map((selection) => selection.kind === 'existing'
       ? { kind: 'existing', channel_id: selection.channel_id }
       : { kind: 'new', type: selection.type, label: selection.label, priority: selection.priority, enabled: selection.enabled, config: selection.config });
     const payload = {
       expected_updated_at: original.updated_at,
       name,
-      description: identity.description,
+      description,
       cadence_seconds: resolvedCadence,
       config,
       channels: channelsPayload,
@@ -857,7 +853,7 @@
     void bootstrap();
     return () => {
       if (searchTimer) clearTimeout(searchTimer);
-      void monitorQueryClient.cancelQueries({ queryKey: ['monitors', 'list'] });
+      void monitorQueryClient.cancelQueries();
       monitorQueryClient.clear();
     };
   });

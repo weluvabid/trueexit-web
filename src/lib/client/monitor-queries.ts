@@ -154,3 +154,96 @@ export async function fetchMonitorTemplates(
     })),
   };
 }
+
+export type WorkspaceTag = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  monitor_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MonitorChannel = {
+  id: string;
+  label: string;
+  type: 'email' | 'webhook' | 'slack' | 'discord';
+  enabled: boolean;
+  configured: boolean;
+};
+
+export type ApiResource<T> = {
+  ok: boolean;
+  status: number;
+  code: string | null;
+  data: T;
+};
+
+function responseErrorCode(body: unknown): string | null {
+  if (!body || typeof body !== 'object' || !('error' in body)) return null;
+  const error = (body as { error?: { code?: unknown } }).error;
+  return typeof error?.code === 'string' ? error.code : null;
+}
+
+async function fetchApiResource<T>(url: string, signal: AbortSignal, parse: (body: unknown) => T): Promise<ApiResource<T>> {
+  try {
+    const response = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal,
+    });
+    const body: unknown = await response.json().catch(() => null);
+    return {
+      ok: response.ok,
+      status: response.status,
+      code: responseErrorCode(body),
+      data: response.ok ? parse(body) : parse(null),
+    };
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw error;
+    return { ok: false, status: 0, code: 'network_error', data: parse(null) };
+  }
+}
+
+function unwrapArray<T>(body: unknown): T[] {
+  if (Array.isArray(body)) return body as T[];
+  if (body && typeof body === 'object' && 'data' in body && Array.isArray(body.data)) return body.data as T[];
+  return [];
+}
+
+export const monitorResourceQueryKeys = {
+  workspaceTags: (workspaceId: string) => ['monitor-workspace', workspaceId, 'tags'] as const,
+  monitorTags: (workspaceId: string, monitorId: string) => ['monitor-workspace', workspaceId, 'monitor-tags', monitorId] as const,
+  workspaceChannels: (workspaceId: string) => ['monitor-workspace', workspaceId, 'channels'] as const,
+  monitorDetail: (workspaceId: string, monitorId: string) => ['monitor-workspace', workspaceId, 'detail', monitorId] as const,
+  monitorChannels: (workspaceId: string, monitorId: string) => ['monitor-workspace', workspaceId, 'monitor-channels', monitorId] as const,
+};
+
+export function fetchWorkspaceTags(workspaceId: string, signal: AbortSignal): Promise<ApiResource<WorkspaceTag[] | null>> {
+  return fetchApiResource(`/api/backend/workspaces/${encodeURIComponent(workspaceId)}/tags`, signal, (body) => {
+    if (Array.isArray(body)) return body as WorkspaceTag[];
+    if (body && typeof body === 'object' && 'data' in body && Array.isArray(body.data)) return body.data as WorkspaceTag[];
+    return null;
+  });
+}
+
+export function fetchMonitorTags(workspaceId: string, monitorId: string, signal: AbortSignal): Promise<ApiResource<WorkspaceTag[]>> {
+  return fetchApiResource(`/api/backend/monitors/${encodeURIComponent(monitorId)}/tags?workspace_id=${encodeURIComponent(workspaceId)}`, signal, (body) => unwrapArray<WorkspaceTag>(body));
+}
+
+export function fetchWorkspaceChannels(workspaceId: string, signal: AbortSignal): Promise<ApiResource<MonitorChannel[]>> {
+  return fetchApiResource(`/api/backend/workspaces/${encodeURIComponent(workspaceId)}/channels`, signal, (body) => Array.isArray(body) ? body as MonitorChannel[] : []);
+}
+
+export function fetchMonitorDetail<TMonitor>(workspaceId: string, monitorId: string, signal: AbortSignal): Promise<ApiResource<TMonitor | null>> {
+  return fetchApiResource(`/api/backend/monitors/${encodeURIComponent(monitorId)}?workspace_id=${encodeURIComponent(workspaceId)}`, signal, (body) => body && typeof body === 'object' ? body as TMonitor : null);
+}
+
+export function fetchMonitorChannelIds(workspaceId: string, monitorId: string, signal: AbortSignal): Promise<ApiResource<string[]>> {
+  return fetchApiResource(`/api/backend/monitors/${encodeURIComponent(monitorId)}/channels?workspace_id=${encodeURIComponent(workspaceId)}`, signal, (body) => {
+    if (!body || typeof body !== 'object' || !('channel_ids' in body)) return [];
+    const ids = (body as { channel_ids?: unknown }).channel_ids;
+    return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [];
+  });
+}

@@ -132,3 +132,35 @@ export function buildMonitorConfig(fields: MonitorField[]): MonitorConfigValidat
   }
   return { ok: true, config: { fields: configuredFields } };
 }
+
+export type MonitorSubmissionValidation =
+  | {
+      ok: true;
+      name: string;
+      description: string;
+      cadenceSeconds: number;
+      cadencePreview: string;
+      config: { fields: Record<string, unknown>[] };
+    }
+  | { ok: false; field: 'identity' | 'cadence' | 'fields'; error: string };
+
+/** Runs the same business validation for create and edit submissions. */
+export function prepareMonitorSubmission(draft: MonitorEditorDraft): MonitorSubmissionValidation {
+  const identity = validateMonitorIdentity(draft.name, draft.description);
+  if (!identity.ok) return { ok: false, field: 'identity', error: identity.error };
+
+  const cadence = resolveMonitorCadence(draft);
+  if (!cadence.ok) return { ok: false, field: 'cadence', error: cadence.error };
+
+  const configuration = buildMonitorConfig(draft.fields);
+  if (!configuration.ok) return { ok: false, field: 'fields', error: configuration.error };
+
+  return {
+    ok: true,
+    name: identity.name,
+    description: identity.description,
+    cadenceSeconds: cadence.seconds,
+    cadencePreview: cadence.preview,
+    config: configuration.config,
+  };
+}
