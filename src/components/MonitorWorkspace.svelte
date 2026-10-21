@@ -6,6 +6,7 @@
   import MonitorInventory from './MonitorInventory.svelte';
   import type { Monitor, MonitorStatus } from '../lib/client/monitor-types';
   import { formatMonitorCadence } from '../lib/client/monitor-format';
+  import { buildMonitorConfig, resolveMonitorCadence, validateMonitorIdentity } from '../lib/client/monitor-editor-validation';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import { createMutation } from '@tanstack/svelte-query';
   import { createMonitorQueryClient, fetchMonitorPage, fetchMonitorTemplates, monitorQueryKeys, monitorTemplateQueryKeys, type MonitorTemplate } from '../lib/client/monitor-queries';
@@ -144,41 +145,6 @@
     cadencePreview = `Every ${formatMonitorCadence(seconds)}`;
   }
 
-  function resolveCadence(): number | null {
-    cadenceError = '';
-    if (editorDraft.cadenceMode === 'interval') {
-      const value = Number(editorDraft.cadenceValue);
-      const multiplier = editorDraft.cadenceUnit === 'hours' ? 3600 : editorDraft.cadenceUnit === 'minutes' ? 60 : 1;
-      const seconds = value * multiplier;
-      if (!Number.isSafeInteger(value) || value <= 0 || !Number.isSafeInteger(seconds)) {
-        cadenceError = 'Enter a whole, positive interval.';
-        return null;
-      }
-      if (seconds < 15) {
-        cadenceError = 'The minimum interval is 15 seconds.';
-        return null;
-      }
-      cadencePreview = `Every ${formatMonitorCadence(seconds)}`;
-      return seconds;
-    }
-    const expression = editorDraft.cronExpression.trim();
-    const secondsMatch = expression.match(/^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*\s+\*$/);
-    const minutesMatch = expression.match(/^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/);
-    let seconds: number | null = null;
-    if (secondsMatch) {
-      const step = Number(secondsMatch[1]);
-      if ([15, 20, 30].includes(step)) seconds = step;
-    } else if (minutesMatch) {
-      const step = Number(minutesMatch[1]);
-      if (step > 0 && step <= 60 && 60 % step === 0) seconds = step * 60;
-    }
-    if (!seconds || !Number.isSafeInteger(seconds) || seconds < 15) {
-      cadenceError = 'Use a fixed-interval expression such as */30 * * * * * (seconds) or */5 * * * * (minutes). The minimum interval is 15 seconds.';
-      return null;
-    }
-    cadencePreview = `Every ${formatMonitorCadence(seconds)} · ${secondsMatch ? 'seconds-level cron' : 'minute-level cron'}`;
-    return seconds;
-  }
 
   function flattenJson(value: unknown, prefix = ''): MonitorField[] {
     const result: MonitorField[] = [];
@@ -601,44 +567,6 @@
     editorDraft.channelSelection = editorDraft.channelSelection.filter((_, itemIndex) => itemIndex !== index);
   }
 
-  function buildMonitorConfig() {
-    const seen = new Set<string>();
-    const names = new Set<string>();
-    const paths = new Set<string>();
-    const configuredFields: Record<string, unknown>[] = [];
-    for (const field of editorDraft.fields) {
-      const name = field.name.trim();
-      const path = field.path.trim();
-      if (!name || !path || path.split('.').some((part) => !part.trim())) {
-        fieldError = 'Every field needs a name and a dot-separated JSON path.';
-        return null;
-      }
-      if (names.has(name)) {
-        fieldError = `Field name “${name}” is repeated. Field names must be unique.`;
-        return null;
-      }
-      names.add(name);
-      if (paths.has(path)) { fieldError = `JSON path “${path}” is repeated. Each configured field needs a unique path.`; return null; }
-      if ([...paths].some((existing) => existing.startsWith(`${path}.`) || path.startsWith(`${existing}.`))) { fieldError = `JSON path “${path}” conflicts with a parent or child field path.`; return null; }
-      paths.add(path);
-      if (field.primitive === 'timestamp') {
-        if (seen.has('timestamp')) {
-          fieldError = 'Only one Timestamp field can be configured.';
-          return null;
-        }
-        seen.add('timestamp');
-      }
-      const item: Record<string, unknown> = { name, path, primitive: primitiveValues[field.primitive] };
-      if (field.primitive === 'checksum') item.meta = { checksum: { algorithm: CHECKSUM_ALGORITHM_SHA256, encoding: CHECKSUM_ENCODING_HEXADECIMAL } };
-      configuredFields.push(item);
-    }
-    if (configuredFields.length === 0) {
-      fieldError = 'Add at least one configured field before creating this monitor.';
-      return null;
-    }
-    fieldError = '';
-    return { fields: configuredFields };
-  }
 
   async function createMonitor(event: SubmitEvent) {
     event.preventDefault();
@@ -650,19 +578,21 @@
     createError = '';
     createMessage = '';
     if (fieldMode === 'json') { applyJsonDraft(); if (fieldMode === 'json') return; }
-    const name = editorDraft.name.trim();
-    if (!name || name.length > 200) {
-      createError = 'Enter a monitor name between 1 and 200 characters.';
+    const identity = validateMonitorIdentity(editorDraft.name, editorDraft.description);
+    if (!identity.ok) {
+      createError = identity.error;
       return;
     }
-    if (editorDraft.description.length > 2000) {
-      createError = 'Description must be 2,000 characters or fewer.';
-      return;
-    }
-    const resolvedCadence = resolveCadence();
-    if (resolvedCadence === null) return;
-    const config = buildMonitorConfig();
-    if (!config) return;
+    const name = identity.name;
+    const cadence = resolveMonitorCadence(editorDraft);
+    cadenceError = cadence.ok ? '' : cadence.error;
+    if (!cadence.ok) return;
+    cadencePreview = cadence.preview;
+    const configResult = buildMonitorConfig(editorDraft.fields);
+    fieldError = configResult.ok ? '' : configResult.error;
+    if (!configResult.ok) return;
+    const resolvedCadence = cadence.seconds;
+    const config = configResult.config;
 
     const payloadChannels = editorDraft.channelSelection.map((selection) => {
       if (selection.kind === 'existing') return { kind: 'existing', channel_id: selection.channel_id };
@@ -671,7 +601,7 @@
     const payload = {
       workspace_id: selectedWorkspaceId,
       name,
-      description: editorDraft.description.trim(),
+      description: identity.description,
       cadence_seconds: resolvedCadence,
       config,
       channels: payloadChannels,
@@ -722,26 +652,28 @@
     createError = '';
     createMessage = '';
     if (fieldMode === 'json') { applyJsonDraft(); if (fieldMode === 'json') return; }
-    const name = editorDraft.name.trim();
-    if (!name || name.length > 200) {
-      createError = 'Enter a monitor name between 1 and 200 characters.';
+    const identity = validateMonitorIdentity(editorDraft.name, editorDraft.description);
+    if (!identity.ok) {
+      createError = identity.error;
       return;
     }
-    if (editorDraft.description.length > 2000) {
-      createError = 'Description must be 2,000 characters or fewer.';
-      return;
-    }
-    const resolvedCadence = resolveCadence();
-    if (resolvedCadence === null) return;
-    const config = buildMonitorConfig();
-    if (!config) return;
+    const name = identity.name;
+    const cadence = resolveMonitorCadence(editorDraft);
+    cadenceError = cadence.ok ? '' : cadence.error;
+    if (!cadence.ok) return;
+    cadencePreview = cadence.preview;
+    const configResult = buildMonitorConfig(editorDraft.fields);
+    fieldError = configResult.ok ? '' : configResult.error;
+    if (!configResult.ok) return;
+    const resolvedCadence = cadence.seconds;
+    const config = configResult.config;
     const channelsPayload = editorDraft.channelSelection.map((selection) => selection.kind === 'existing'
       ? { kind: 'existing', channel_id: selection.channel_id }
       : { kind: 'new', type: selection.type, label: selection.label, priority: selection.priority, enabled: selection.enabled, config: selection.config });
     const payload = {
       expected_updated_at: original.updated_at,
       name,
-      description: editorDraft.description.trim(),
+      description: identity.description,
       cadence_seconds: resolvedCadence,
       config,
       channels: channelsPayload,
