@@ -1,8 +1,9 @@
 <script lang="ts">
   import { can } from '../lib/client/permissions';
-  import ConfirmDialog from './ui/ConfirmDialog.svelte';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
+
+  export let mode: 'workspace' | 'account' = 'workspace';
 
   type Account = {
     account_id: string;
@@ -49,10 +50,10 @@
   let invitations: Invitation[] = [];
   let channels: Channel[] = [];
   let loading = true;
-  let refreshing = false;
   let error = '';
   let notice = '';
-  let section: 'workspace' | 'people' | 'destinations' | 'account' = 'workspace';
+  let section: 'workspace' | 'people' | 'destinations' | 'profile' | 'preferences' | 'security' | 'account' = 'workspace';
+  let appearancePreference = 'system';
   let busyKey = '';
   let workspaceName = '';
   let newWorkspaceName = '';
@@ -78,22 +79,6 @@
   let createAccountName = '';
   let showCreateWorkspace = false;
   let showCreateAccount = false;
-  type Confirmation = { title: string; description: string; confirmLabel?: string; tone?: 'danger' | 'primary' };
-  let confirmation: Confirmation | null = null;
-  let resolveConfirmation: ((confirmed: boolean) => void) | null = null;
-
-  function askConfirmation(options: Confirmation): Promise<boolean> {
-    if (resolveConfirmation) resolveConfirmation(false);
-    confirmation = options;
-    return new Promise((resolve) => { resolveConfirmation = resolve; });
-  }
-
-  function finishConfirmation(confirmed: boolean) {
-    const resolve = resolveConfirmation;
-    resolveConfirmation = null;
-    confirmation = null;
-    resolve?.(confirmed);
-  }
 
   $: selectedWorkspace = workspaces.find((item) => item.id === selectedWorkspaceId) ?? null;
   $: canManageWorkspace = can(selectedWorkspace, 'workspace.manage');
@@ -206,12 +191,6 @@
     if (failed && !error) error = errorMessage(failed.response.status, getErrorCode(failed.body));
   }
 
-  async function refresh() {
-    refreshing = true;
-    await loadAll(true);
-    refreshing = false;
-    if (!error) notice = 'Settings refreshed.';
-  }
 
   async function selectWorkspace() {
     try { localStorage.setItem('trueexit.active-workspace-id', selectedWorkspaceId); } catch { /* Storage may be unavailable. */ }
@@ -283,7 +262,7 @@
 
   async function removeMember(member: Member) {
     if (!selectedWorkspace || member.account_owner || !canManageWorkspace) return;
-    if (!(await askConfirmation({ title: 'Remove workspace member?', description: `${member.email} will lose access to this workspace. This does not delete their account.`, confirmLabel: 'Remove member', tone: 'danger' }))) return;
+    if (!confirm(`Remove ${member.email} from this workspace?`)) return;
     const result = await perform('remove-member', `/workspaces/${encodeURIComponent(selectedWorkspace.id)}/members/${encodeURIComponent(member.user_id)}`, { method: 'DELETE' });
     if (result !== null || !error) {
       members = members.filter((item) => item.user_id !== member.user_id);
@@ -293,7 +272,7 @@
 
   async function revokeInvitation(invitation: Invitation) {
     if (!selectedWorkspace || !canManageWorkspace) return;
-    if (!(await askConfirmation({ title: 'Revoke invitation?', description: `The pending invitation for ${invitation.email} will no longer be usable.`, confirmLabel: 'Revoke invitation', tone: 'danger' }))) return;
+    if (!confirm(`Revoke the invitation for ${invitation.email}?`)) return;
     const result = await perform('revoke-invitation', `/workspaces/${encodeURIComponent(selectedWorkspace.id)}/invitations/${encodeURIComponent(invitation.id)}`, { method: 'DELETE' });
     if (result !== null || !error) {
       invitations = invitations.filter((item) => item.id !== invitation.id);
@@ -414,7 +393,7 @@
 
   async function deleteChannel(channel: Channel) {
     if (!selectedWorkspace || !canManageWorkspace) return;
-    if (!(await askConfirmation({ title: 'Delete notification destination?', description: `“${channel.label}” will be removed. It must be unassigned from all monitors first.`, confirmLabel: 'Delete destination', tone: 'danger' }))) return;
+    if (!confirm(`Delete destination “${channel.label}”? It must first be unassigned from all monitors.`)) return;
     const result = await perform('delete-channel', `/workspaces/${encodeURIComponent(selectedWorkspace.id)}/channels/${encodeURIComponent(channel.id)}`, { method: 'DELETE' });
     if (result !== null || !error) {
       channels = channels.filter((item) => item.id !== channel.id);
@@ -446,7 +425,7 @@
     if (!selectedAccount || !selectedWorkspace?.account_owner) return;
     const userId = newOwnerUserId.trim();
     if (!userId) { error = 'Enter the eligible new owner user ID.'; return; }
-    if (!(await askConfirmation({ title: 'Transfer account ownership?', description: 'The new owner will gain account-owner privileges. You may lose your owner privileges after the transfer.', confirmLabel: 'Transfer ownership', tone: 'danger' }))) return;
+    if (!confirm('Transfer account ownership? You may lose owner privileges after the transfer.')) return;
     const result = await perform('transfer-account', `/accounts/${encodeURIComponent(selectedAccount.account_id)}/transfer`, {
       method: 'POST', body: JSON.stringify({ new_owner_user_id: userId }),
     });
@@ -459,7 +438,7 @@
 
   async function requestClosure() {
     if (!selectedAccount || !selectedWorkspace?.account_owner || !closureConfirm) return;
-    if (!(await askConfirmation({ title: 'Schedule account closure?', description: 'Monitoring will stop when closure is scheduled. Review the recovery date carefully before proceeding.', confirmLabel: 'Schedule closure', tone: 'danger' }))) return;
+    if (!confirm('Schedule this account for closure? Monitoring will stop.')) return;
     const result = await perform<{ scheduled_deletion_at?: string | null; lifecycle_status?: string }>(
       'close-account', `/accounts/${encodeURIComponent(selectedAccount.account_id)}/closure`,
       { method: 'POST', body: JSON.stringify({ confirm: true }) },
@@ -475,7 +454,7 @@
 
   async function cancelClosure() {
     if (!selectedAccount || !selectedWorkspace?.account_owner) return;
-    if (!(await askConfirmation({ title: 'Cancel account closure?', description: 'The scheduled closure will be cancelled and the account will return to its active lifecycle state.', confirmLabel: 'Cancel closure', tone: 'primary' }))) return;
+    if (!confirm('Cancel the scheduled account closure?')) return;
     const result = await perform<{ lifecycle_status?: string }>(
       'cancel-closure', `/accounts/${encodeURIComponent(selectedAccount.account_id)}/closure/cancel`,
       { method: 'POST' },
@@ -494,7 +473,24 @@
     return Number.isNaN(date.getTime()) ? 'Date unavailable' : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
   }
 
-  onMount(() => { void loadAll(); });
+  function saveAppearance(event: Event) {
+    const target = event.currentTarget as HTMLSelectElement;
+    appearancePreference = target.value;
+    const resolved = appearancePreference === 'system'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : appearancePreference;
+    document.documentElement.dataset.theme = resolved;
+    document.documentElement.dataset.themePreference = appearancePreference;
+    document.documentElement.style.colorScheme = resolved;
+    document.querySelector('[data-theme-color]')?.setAttribute('content', resolved === 'dark' ? '#09090d' : '#f6f6f9');
+    try { localStorage.setItem('trueexit.appearance', appearancePreference); } catch { /* Preference still applies for this page. */ }
+  }
+
+  onMount(() => {
+    appearancePreference = document.documentElement.dataset.themePreference || 'system';
+    if (mode === 'account') section = 'profile';
+    void loadAll();
+  });
 </script>
 
 <svelte:head>
@@ -505,54 +501,49 @@
 <section class="settings-workspace">
   <header class="settings-intro">
     <div>
-      <p class="eyebrow"><span class="eyebrow__dash"></span>CONTROL ROOM</p>
-      <h1>Everything in <span>its place.</span></h1>
-      <p class="settings-intro__copy">Shape your workspace, control access, and keep notification routes ready.</p>
+      <p class="eyebrow"><span class="eyebrow__dash"></span>{mode === 'account' ? 'YOUR ACCOUNT' : 'WORKSPACE CONTROL'}</p>
+      <h1>{mode === 'account' ? 'Your account,' : 'Everything in'} <span>{mode === 'account' ? 'your terms.' : 'its place.'}</span></h1>
+      <p class="settings-intro__copy">{mode === 'account' ? 'Manage your personal preferences and account-level actions. Workspace access stays with Workspace Settings.' : 'Manage workspace details, people, and notification destinations in one place.'}</p>
     </div>
-    <button class="settings-button settings-button--quiet" type="button" on:click={refresh} disabled={loading || refreshing}>
-      {refreshing ? 'Refreshing…' : '↻ Refresh'}
-    </button>
   </header>
 
   {#if error}<div class="settings-alert settings-alert--error" role="alert"><strong>Couldn’t complete that.</strong><span>{error}</span>{#if error.includes('verify your identity')}<a href="/login">Sign in again ↗</a>{/if}</div>{/if}
   {#if notice}<div class="settings-alert settings-alert--success" role="status">{notice}</div>{/if}
 
-  {#if confirmation}
-    <ConfirmDialog
-      title={confirmation.title}
-      description={confirmation.description}
-      confirmLabel={confirmation.confirmLabel ?? 'Confirm'}
-      tone={confirmation.tone ?? 'primary'}
-      on:confirm={() => finishConfirmation(true)}
-      on:cancel={() => finishConfirmation(false)}
-    />
-  {/if}
-
   {#if loading}
-    <div class="settings-loading" aria-live="polite"><span class="settings-spinner" aria-hidden="true"></span>Loading your workspace settings…</div>
+    <div class="settings-loading" aria-live="polite"><span class="settings-spinner" aria-hidden="true"></span>{mode === 'account' ? 'Loading account settings…' : 'Loading workspace settings…'}</div>
   {:else}
-    <div class="settings-context">
-      <label class="settings-field settings-context__select"><span>Workspace</span>
-        <select bind:value={selectedWorkspaceId} on:change={selectWorkspace}>
-          {#each workspaces as workspace (workspace.id)}<option value={workspace.id}>{workspace.name}{workspace.personal ? ' · Personal' : ''}</option>{/each}
-        </select>
-      </label>
-      <div class="settings-context__meta">
-        <span class="settings-context__badge">{selectedWorkspace?.personal ? 'PERSONAL' : selectedWorkspace?.account_owner ? 'ACCOUNT OWNER' : (selectedWorkspace?.role ?? 'READ ONLY').toUpperCase()}</span>
-        <span>{workspaces.length} workspace{workspaces.length === 1 ? '' : 's'} available</span>
-      </div>
-    </div>
-
     <div class="settings-layout">
       <nav class="settings-tabs" aria-label="Settings sections">
-        <button class:active={section === 'workspace'} type="button" on:click={() => section = 'workspace'}><span>01</span> Workspace</button>
-        <button class:active={section === 'people'} type="button" on:click={() => section = 'people'}><span>02</span> People & access</button>
-        <button class:active={section === 'destinations'} type="button" on:click={() => section = 'destinations'}><span>03</span> Destinations</button>
-        <button class:active={section === 'account'} type="button" on:click={() => section = 'account'}><span>04</span> Account lifecycle</button>
+        {#if mode === 'workspace'}
+          <button class:active={section === 'workspace'} type="button" on:click={() => section = 'workspace'}><span>01</span> General</button>
+          <button class:active={section === 'people'} type="button" on:click={() => section = 'people'}><span>02</span> Members & access</button>
+          <button class:active={section === 'destinations'} type="button" on:click={() => section = 'destinations'}><span>03</span> Destinations</button>
+        {:else}
+          <button class:active={section === 'profile'} type="button" on:click={() => section = 'profile'}><span>01</span> Profile</button>
+          <button class:active={section === 'preferences'} type="button" on:click={() => section = 'preferences'}><span>02</span> Preferences</button>
+          <button class:active={section === 'security'} type="button" on:click={() => section = 'security'}><span>03</span> Security</button>
+          <button class:active={section === 'account'} type="button" on:click={() => section = 'account'}><span>04</span> Account lifecycle</button>
+        {/if}
       </nav>
 
       <div class="settings-content">
-        {#if section === 'workspace'}
+        {#if mode === 'account' && section === 'profile'}
+          <section class="settings-card">
+            <div class="settings-card__heading"><div><p class="settings-kicker">PROFILE</p><h2>Your identity, without duplicate records.</h2><p>TrueExit uses your signed-in identity for account access. Profile editing is not exposed by the current account API, so this page does not offer fields that cannot be saved.</p></div><span class="settings-card__symbol">◎</span></div>
+            <div class="settings-profile-row"><span class="settings-profile-avatar">TE</span><div><strong>Signed-in identity</strong><p>Managed by your authentication provider</p></div><span class="settings-readonly-pill">READ ONLY</span></div>
+          </section>
+        {:else if mode === 'account' && section === 'preferences'}
+          <section class="settings-card">
+            <div class="settings-card__heading"><div><p class="settings-kicker">PREFERENCES</p><h2>Make TrueExit feel right.</h2><p>Choose how the interface appears on this device. Your preference is stored locally and does not change workspace data.</p></div><span class="settings-card__symbol">◐</span></div>
+            <label class="settings-field settings-preference-field"><span>Appearance</span><select bind:value={appearancePreference} on:change={saveAppearance}><option value="system">Use system setting</option><option value="light">Light</option><option value="dark">Dark</option></select><small>Applies immediately, including the application shell.</small></label>
+          </section>
+        {:else if mode === 'account' && section === 'security'}
+          <section class="settings-card">
+            <div class="settings-card__heading"><div><p class="settings-kicker">SECURITY</p><h2>Account access stays deliberate.</h2><p>Authentication credentials and session management are handled by the sign-in provider. TrueExit does not currently expose password, session, or MFA management APIs here.</p></div><span class="settings-card__symbol">⌁</span></div>
+            <div class="settings-security-note"><strong>Protected account actions</strong><p>Ownership transfer and account closure may require recent identity verification. If verification is required, TrueExit will stop the action and ask you to sign in again.</p></div>
+          </section>
+        {:else if section === 'workspace'}
           <section class="settings-card">
             <div class="settings-card__heading"><div><p class="settings-kicker">WORKSPACE IDENTITY</p><h2>Give this space a name.</h2><p>Make it easy for your team to recognise the environment they’re working in.</p></div><span class="settings-card__symbol">⌘</span></div>
             <form class="settings-form" on:submit={renameWorkspace}>
@@ -565,7 +556,7 @@
             <div class="settings-card__heading"><div><p class="settings-kicker">WORKSPACE DIRECTORY</p><h2>Keep work separated.</h2><p>Create a workspace inside an account you own, without leaving settings.</p></div><span class="settings-card__symbol">＋</span></div>
             {#if !showCreateWorkspace}
               <button class="settings-button settings-button--quiet" type="button" on:click={() => showCreateWorkspace = true} disabled={!ownedAccounts.length}>＋ Create workspace</button>
-              {#if !ownedAccounts.length}<p class="settings-note">Creating a team workspace requires an account you own. You can create an account in Account lifecycle.</p>{/if}
+              {#if !ownedAccounts.length}<p class="settings-note">Creating a team workspace requires an account you own. Use Account Settings to create or manage an account.</p>{/if}
             {:else}
               <form class="settings-form" on:submit={createWorkspace}>
                 <label class="settings-field"><span>Workspace name</span><input bind:value={newWorkspaceName} maxlength="120" required placeholder="Production operations" /></label>
@@ -636,16 +627,16 @@
               </form>
             {/if}
           </section>
-        {:else}
+        {:else if section === 'account'}
           <section class="settings-card">
             <div class="settings-card__heading"><div><p class="settings-kicker">ACCOUNT STATUS</p><h2>Know where your account stands.</h2><p>Account actions are restricted to the account owner and may require recent identity verification.</p></div><span class="settings-card__symbol">◈</span></div>
             {#if selectedAccount}
               <div class="settings-account-status"><div><span>Lifecycle status</span><strong>{selectedAccount.lifecycle_status.replaceAll('_', ' ')}</strong></div><div><span>Scheduled deletion</span><strong>{formatDate(selectedAccount.scheduled_deletion_at)}</strong></div><div><span>Billing cancellation</span><strong>{selectedAccount.billing_cancellation_status ?? 'Not reported'}</strong></div></div>
               {#if selectedWorkspace?.account_owner}
                 {#if selectedAccount.scheduled_deletion_at || selectedAccount.lifecycle_status.includes('closure')}
-                  <div class="settings-danger-zone"><div><h3>Closure is scheduled.</h3><p>Monitoring has stopped for this account. If the recovery window is still open, you can cancel the scheduled closure.</p></div><button class="settings-button settings-button--primary" type="button" on:click={cancelClosure} disabled={!!busyKey}>{busyKey === 'cancel-closure' ? 'Cancelling…' : 'Cancel closure'}</button></div>
+                  <div class="settings-danger-zone settings-danger-zone--closure"><div class="settings-danger-zone__copy"><h3>Closure is scheduled.</h3><p>Monitoring has stopped for this account. If the recovery window is still open, you can cancel the scheduled closure.</p></div><button class="settings-button settings-button--primary" type="button" on:click={cancelClosure} disabled={!!busyKey}>{busyKey === 'cancel-closure' ? 'Cancelling…' : 'Cancel closure'}</button></div>
                 {:else}
-                  <div class="settings-danger-zone"><div><h3>Schedule account closure</h3><p>This stops monitoring and schedules deletion. Billing cancellation status is reported by the API; do not assume a billing provider action has completed.</p><label class="settings-check"><input bind:checked={closureConfirm} type="checkbox" /><span>I understand monitoring will stop and this account will be scheduled for deletion.</span></label></div><button class="settings-button settings-button--danger" type="button" on:click={requestClosure} disabled={!closureConfirm || !!busyKey}>{busyKey === 'close-account' ? 'Scheduling…' : 'Schedule closure'}</button></div>
+                  <div class="settings-danger-zone settings-danger-zone--closure"><div class="settings-danger-zone__copy"><h3>Schedule account closure</h3><p>This stops monitoring and schedules deletion. Billing cancellation status is reported by the API; do not assume a billing provider action has completed.</p><label class="settings-check"><input bind:checked={closureConfirm} type="checkbox" /><span>I understand monitoring will stop and this account will be scheduled for deletion.</span></label></div><button class="settings-button settings-button--danger" type="button" on:click={requestClosure} disabled={!closureConfirm || !!busyKey}>{busyKey === 'close-account' ? 'Scheduling…' : 'Schedule closure'}</button></div>
                 {/if}
                 <form class="settings-form settings-transfer-form" on:submit={transferOwnership}>
                   <div><p class="settings-kicker">OWNERSHIP</p><h3>Transfer account ownership</h3><p>Enter the eligible user ID provided by your identity or workspace administration workflow.</p></div>
