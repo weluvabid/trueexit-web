@@ -146,6 +146,13 @@
   }
 
 
+  function resolveCadence() {
+    const cadence = resolveMonitorCadence(editorDraft);
+    cadenceError = cadence.ok ? '' : cadence.error;
+    if (cadence.ok) cadencePreview = cadence.preview;
+  }
+
+
   function flattenJson(value: unknown, prefix = ''): MonitorField[] {
     const result: MonitorField[] = [];
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Paste a JSON object at the top level.');
