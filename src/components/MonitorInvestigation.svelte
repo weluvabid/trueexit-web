@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fetchSharedGet } from '../lib/client/shared-http-query';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import '../styles/investigation.css';
@@ -74,7 +75,7 @@
 
   async function readResource<T>(path: string): Promise<Resource<T>> {
     try {
-      const response = await fetch(path, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
+      const response = await fetchSharedGet(path, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok) {
         const error = body as ApiFailure | null;

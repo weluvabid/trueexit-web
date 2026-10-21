@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fetchSharedGet } from '../lib/client/shared-http-query';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
 
@@ -78,7 +79,7 @@
     if (!workspaceId) return;
     loadingDashboard = true;
     try {
-      const response = await fetch(`/api/backend/workspaces/${encodeURIComponent(workspaceId)}/dashboard`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
+      const response = await fetchSharedGet(`/api/backend/workspaces/${encodeURIComponent(workspaceId)}/dashboard`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
       const body: unknown = await response.json().catch(() => null);
       if (sequence !== requestSequence) return;
       if (!response.ok) { const error = body as { error?: { code?: string } } | null; dashboardError = messageForCode(error?.error?.code ?? null, response.status); return; }
@@ -93,7 +94,7 @@
     const cursor = append ? monitorCursor : null;
     const query = new URLSearchParams({ workspace_id: workspaceId, limit: '50', sort: 'name', direction: 'asc' });
     if (cursor) query.set('cursor', cursor);
-    const response = await fetch(`/api/backend/monitors?${query}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
+    const response = await fetchSharedGet(`/api/backend/monitors?${query}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
     if (parentSequence !== requestSequence) return;
     if (!response.ok) return; // Summary remains usable if the optional inventory request fails.
     const page = await response.json() as Page<MonitorItem>;
@@ -125,7 +126,7 @@
     loadingDetail = true; detailError = '';
     try {
       const query = new URLSearchParams({ workspace_id: selectedWorkspaceId, limit: '50', sort: 'name', direction: 'asc' });
-      const response = await fetch(`/api/backend/monitors?${query}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
+      const response = await fetchSharedGet(`/api/backend/monitors?${query}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
       if (!response.ok) throw new Error(messageForCode(null, response.status));
       const page = await response.json() as Page<MonitorItem>;
       detailItems = (page.data ?? []).map((x) => x as unknown as Record<string, unknown>); monitorCursor = page.page?.next_cursor ?? null; detailHasMore = !!monitorCursor;
@@ -137,7 +138,7 @@
     loadingDetail = true;
     try {
       const query = new URLSearchParams({ workspace_id: selectedWorkspaceId, limit: '50', sort: 'name', direction: 'asc', cursor: monitorCursor });
-      const response = await fetch(`/api/backend/monitors?${query}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
+      const response = await fetchSharedGet(`/api/backend/monitors?${query}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
       if (!response.ok) throw new Error('Could not load the next page.');
       const page = await response.json() as Page<MonitorItem>;
       detailItems = [...detailItems, ...(page.data ?? []).map((x) => x as unknown as Record<string, unknown>)]; monitorCursor = page.page?.next_cursor ?? null; detailHasMore = !!monitorCursor;
@@ -149,7 +150,7 @@
     try {
       const query = new URLSearchParams({ workspace_id: selectedWorkspaceId, limit: '50', outcome: 'all' });
       if (view === 'signals') { const from = new Date(Date.now() - 24 * 60 * 60 * 1000); query.set('from', from.toISOString()); }
-      const response = await fetch(`/api/backend/evidence?${query}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
+      const response = await fetchSharedGet(`/api/backend/evidence?${query}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
       if (!response.ok) throw new Error(messageForCode(null, response.status));
       const page = await response.json() as Page<Record<string, unknown>>;
       detailItems = page.data ?? []; evidenceCursor = page.page?.next_cursor ?? null; detailHasMore = !!evidenceCursor;

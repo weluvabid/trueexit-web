@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fetchSharedGet, invalidateSharedGetCache } from '../lib/client/shared-http-query';
   import { can } from '../lib/client/permissions';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
@@ -87,7 +88,7 @@
     if (query.trim()) params.set('q', query.trim());
     if (next) params.set('cursor', next);
     try {
-      const response = await fetch(`/api/backend/templates?${params}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
+      const response = await fetchSharedGet(`/api/backend/templates?${params}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
       const body = await response.json().catch(() => null) as Page<Template> | ApiError | null;
       if (current !== sequence) return;
       if (!response.ok) { const e = body as ApiError | null; listError = errorMessage(response.status, e?.error?.code ?? null); return; }
@@ -126,7 +127,7 @@
     discoveryError = ''; discoveryWarnings = []; discovered = []; selectedDiscovered = [];
     // Load the latest version before editing to avoid silently overwriting a concurrent update.
     try {
-      const response = await fetch(`/api/backend/templates/${encodeURIComponent(template.id)}?workspace_id=${encodeURIComponent(workspaceId)}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
+      const response = await fetchSharedGet(`/api/backend/templates/${encodeURIComponent(template.id)}?workspace_id=${encodeURIComponent(workspaceId)}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
       const body = await response.json().catch(() => null) as Template | ApiError | null;
       if (!response.ok) { formError = errorMessage(response.status, (body as ApiError | null)?.error?.code ?? null); return; }
       const latest = body as Template;
@@ -199,6 +200,7 @@
         ? await fetch('/api/backend/templates', { method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: idempotencyHeaders(), body: JSON.stringify(payload) })
         : await fetch(`/api/backend/templates/${encodeURIComponent(editing!.id)}`, { method: 'PATCH', credentials: 'same-origin', cache: 'no-store', headers: idempotencyHeaders(), body: JSON.stringify({ ...payload, expected_version: editing!.version }) });
       if (!response.ok) { formError = await readError(response); return; }
+      void invalidateSharedGetCache();
       formOpen = false; notice = mode === 'create' ? 'Template created.' : 'Template updated.';
       cursorStack = [null]; pageIndex = 0; await loadTemplates(null);
     } catch { formError = errorMessage(0, 'network_error'); }
@@ -208,7 +210,7 @@
   async function showDetail(template: Template) {
     detail = null; detailError = ''; detailLoading = true;
     try {
-      const response = await fetch(`/api/backend/templates/${encodeURIComponent(template.id)}?workspace_id=${encodeURIComponent(workspaceId)}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
+      const response = await fetchSharedGet(`/api/backend/templates/${encodeURIComponent(template.id)}?workspace_id=${encodeURIComponent(workspaceId)}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
       const body = await response.json().catch(() => null) as Template | ApiError | null;
       if (!response.ok) { detailError = errorMessage(response.status, (body as ApiError | null)?.error?.code ?? null); return; }
       detail = body as Template;
@@ -222,6 +224,7 @@
     try {
       const response = await fetch(`/api/backend/templates/${encodeURIComponent(target.id)}?workspace_id=${encodeURIComponent(workspaceId)}`, { method: 'DELETE', credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json', 'Idempotency-Key': crypto.randomUUID() } });
       if (!response.ok) { formError = await readError(response); return; }
+      void invalidateSharedGetCache();
       pendingDelete = null; detail = null; notice = 'Template deleted. Existing monitors are unchanged.';
       cursorStack = [null]; pageIndex = 0; await loadTemplates(null);
     } catch { formError = errorMessage(0, 'network_error'); }

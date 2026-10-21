@@ -2,6 +2,7 @@
   import { can } from '../lib/client/permissions';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
+  import { fetchSharedGet, invalidateSharedGetCache } from '../lib/client/shared-http-query';
 
   export let mode: 'workspace' | 'account' = 'workspace';
 
@@ -118,10 +119,12 @@
     headers.set('Accept', 'application/json');
     if (init.body !== undefined && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
     if (!['GET', 'HEAD'].includes(method) && !headers.has('Idempotency-Key')) headers.set('Idempotency-Key', crypto.randomUUID());
-    const response = await fetch(`/api/backend${path}`, {
-      ...init, headers, credentials: 'same-origin', cache: 'no-store',
-    });
+    const requestInit: RequestInit = { ...init, headers, credentials: 'same-origin', cache: 'no-store' };
+    const response = method === 'GET'
+      ? await fetchSharedGet(`/api/backend${path}`, requestInit)
+      : await fetch(`/api/backend${path}`, requestInit);
     const body = response.status === 204 ? null : await response.json().catch(() => null);
+    if (!['GET', 'HEAD'].includes(method) && response.ok) void invalidateSharedGetCache();
     return { response, body };
   }
 

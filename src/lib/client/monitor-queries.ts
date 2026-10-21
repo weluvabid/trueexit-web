@@ -1,3 +1,4 @@
+import { fetchSharedGet } from './shared-http-query';
 import { QueryClient } from '@tanstack/svelte-query';
 
 export type MonitorListQuery = {
@@ -73,7 +74,7 @@ export async function fetchMonitorPage<TMonitor>(
   if (query.includeArchived || query.status === 'archived') params.set('include_archived', 'true');
   if (query.cursor) params.set('cursor', query.cursor);
 
-  const response = await fetch(`/api/backend/monitors?${params.toString()}`, {
+  const response = await fetchSharedGet(`/api/backend/monitors?${params.toString()}`, {
     headers: { Accept: 'application/json' },
     credentials: 'same-origin',
     cache: 'no-store',
@@ -123,7 +124,7 @@ export async function fetchMonitorTemplates(
   workspaceId: string,
   signal: AbortSignal,
 ): Promise<MonitorTemplatesResponse> {
-  const response = await fetch(`/api/backend/templates?workspace_id=${encodeURIComponent(workspaceId)}&limit=100`, {
+  const response = await fetchSharedGet(`/api/backend/templates?workspace_id=${encodeURIComponent(workspaceId)}&limit=100`, {
     headers: { Accept: 'application/json' },
     credentials: 'same-origin',
     cache: 'no-store',
@@ -187,7 +188,7 @@ function responseErrorCode(body: unknown): string | null {
 
 async function fetchApiResource<T>(url: string, signal: AbortSignal, parse: (body: unknown) => T): Promise<ApiResource<T>> {
   try {
-    const response = await fetch(url, {
+    const response = await fetchSharedGet(url, {
       headers: { Accept: 'application/json' },
       credentials: 'same-origin',
       cache: 'no-store',

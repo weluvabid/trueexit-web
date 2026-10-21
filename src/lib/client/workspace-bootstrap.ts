@@ -1,3 +1,5 @@
+import { fetchSharedGet } from './shared-http-query';
+
 export interface CurrentUserContext {
   user_id: string;
   owned_account_ids: string[];
@@ -34,7 +36,7 @@ declare global {
 
 async function readResource(path: string): Promise<SharedHttpResult> {
   try {
-    const response = await fetch(path, {
+    const response = await fetchSharedGet(path, {
       method: 'GET',
       headers: { Accept: 'application/json' },
       credentials: 'same-origin',
