@@ -1,0 +1,11 @@
+---
+import AppShell from '../../../layouts/AppShell.astro';
+import MonitorWorkspace from '../../../components/MonitorWorkspace.svelte';
+const { auth } = Astro.locals;
+const monitorId = Astro.params.id;
+if (!auth.user) return auth.redirectToSignIn();
+if (!monitorId) return new Response('Monitor not found', { status: 404 });
+---
+<AppShell title="Edit monitor" description="Update a TrueExit monitor's fields, cadence, and destinations.">
+  <MonitorWorkspace client:load initialMode="edit" monitorId={monitorId} />
+</AppShell>

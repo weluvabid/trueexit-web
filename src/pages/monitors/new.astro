@@ -1,0 +1,9 @@
+---
+import AppShell from '../../layouts/AppShell.astro';
+import MonitorWorkspace from '../../components/MonitorWorkspace.svelte';
+const { auth } = Astro.locals;
+if (!auth.user) return auth.redirectToSignIn();
+---
+<AppShell title="Create monitor" description="Define the fields, cadence, and destinations for a TrueExit monitor.">
+  <MonitorWorkspace client:load initialMode="create" />
+</AppShell>
