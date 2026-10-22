@@ -35,15 +35,6 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
         }
       })();
     </script>
-    <style is:global>
-      /* Theme icons use an explicit class state, not the HTML hidden attribute. */
-      .theme-icon {
-        display: none !important;
-      }
-      .theme-icon.is-active {
-        display: block !important;
-      }
-    </style>
     <title>{title} · TrueExit</title>
   </head>
   <body>
