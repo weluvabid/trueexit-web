@@ -88,7 +88,13 @@
         selectedWorkspaceId = resolveWorkspaceId(workspaces, [readActiveWorkspaceId()]);
       }
       writeActiveWorkspaceId(selectedWorkspaceId);
-      if (hasCachedAccounts && generation === loadGeneration) loading = false;
+
+      // Workspace settings do not depend on the accounts request completing.
+      // Render the workspace controls once bootstrap resolves, then hydrate
+      // account-specific controls as /accounts returns. This also prevents a
+      // non-critical account endpoint failure from blocking the whole page.
+      if (generation === loadGeneration) loading = false;
+
       const accountsResult = await request('/accounts');
       if (generation !== loadGeneration) return;
       if (accountsResult.response.ok) accounts = listSettingsData<Account>(accountsResult.body);
