@@ -89,14 +89,37 @@
     await loadMonitorPage(false, workspaceId, requestSequence);
   }
 
+  async function fetchDashboardPage<T>(resource: 'monitors' | 'evidence', params: URLSearchParams): Promise<Page<T>> {
+    const workspaceId = params.get('workspace_id') ?? '';
+    const queryIdentity = params.toString();
+    return queryClient.fetchQuery({
+      queryKey: ['dashboard-page', workspaceId, resource, queryIdentity] as const,
+      staleTime: 15_000,
+      queryFn: async ({ signal }) => {
+        const response = await fetch(`/api/backend/${resource}?${params.toString()}`, {
+          headers: { Accept: 'application/json' },
+          credentials: 'same-origin',
+          cache: 'no-store',
+          signal,
+        });
+        const body: unknown = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(messageForCode(null, response.status));
+        return body as Page<T>;
+      },
+    });
+  }
+
   async function loadMonitorPage(append = false, workspaceId = selectedWorkspaceId, parentSequence = requestSequence) {
     const cursor = append ? monitorCursor : null;
     const query = new URLSearchParams({ workspace_id: workspaceId, limit: '50', sort: 'name', direction: 'asc' });
     if (cursor) query.set('cursor', cursor);
-    const response = await fetchSharedGet(`/api/backend/monitors?${query}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
+    let page: Page<MonitorItem>;
+    try {
+      page = await fetchDashboardPage<MonitorItem>('monitors', query);
+    } catch {
+      return; // Summary remains usable if the optional inventory request fails.
+    }
     if (disposed || parentSequence !== requestSequence || workspaceId !== selectedWorkspaceId) return;
-    if (!response.ok) return; // Summary remains usable if the optional inventory request fails.
-    const page = await response.json() as Page<MonitorItem>;
     if (disposed || parentSequence !== requestSequence || workspaceId !== selectedWorkspaceId) return;
     monitors = append ? [...monitors, ...(page.data ?? [])] : (page.data ?? []);
     monitorCursor = page.page?.next_cursor ?? null;
@@ -147,9 +170,7 @@
     detailError = '';
     try {
       const query = new URLSearchParams({ workspace_id: workspaceId, limit: '50', sort: 'name', direction: 'asc' });
-      const response = await fetchSharedGet(`/api/backend/monitors?${query}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
-      if (!response.ok) throw new Error(messageForCode(null, response.status));
-      const page = await response.json() as Page<MonitorItem>;
+      const page = await fetchDashboardPage<MonitorItem>('monitors', query);
       if (disposed || sequence !== detailSequence || workspaceId !== selectedWorkspaceId || view !== 'monitors') return;
       detailItems = (page.data ?? []).map((x) => x as unknown as Record<string, unknown>);
       monitorCursor = page.page?.next_cursor ?? null;
@@ -168,9 +189,7 @@
     loadingDetail = true;
     try {
       const query = new URLSearchParams({ workspace_id: workspaceId, limit: '50', sort: 'name', direction: 'asc', cursor });
-      const response = await fetchSharedGet(`/api/backend/monitors?${query}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
-      if (!response.ok) throw new Error('Could not load the next page.');
-      const page = await response.json() as Page<MonitorItem>;
+      const page = await fetchDashboardPage<MonitorItem>('monitors', query);
       if (disposed || sequence !== detailSequence || workspaceId !== selectedWorkspaceId || view !== 'monitors') return;
       detailItems = [...detailItems, ...(page.data ?? []).map((x) => x as unknown as Record<string, unknown>)];
       monitorCursor = page.page?.next_cursor ?? null;
@@ -193,9 +212,7 @@
         ? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
         : null;
       if (evidenceFrom) query.set('from', evidenceFrom);
-      const response = await fetchSharedGet(`/api/backend/evidence?${query}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
-      if (!response.ok) throw new Error(messageForCode(null, response.status));
-      const page = await response.json() as Page<Record<string, unknown>>;
+      const page = await fetchDashboardPage<Record<string, unknown>>('evidence', query);
       if (disposed || sequence !== detailSequence || workspaceId !== selectedWorkspaceId || view !== targetView) return;
       detailItems = page.data ?? [];
       evidenceCursor = page.page?.next_cursor ?? null;
@@ -217,9 +234,7 @@
     try {
       const query = new URLSearchParams({ workspace_id: workspaceId, limit: '50', outcome: 'all', cursor });
       if (evidenceFrom) query.set('from', evidenceFrom);
-      const response = await fetchSharedGet(`/api/backend/evidence?${query}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
-      if (!response.ok) throw new Error(messageForCode(null, response.status));
-      const page = await response.json() as Page<Record<string, unknown>>;
+      const page = await fetchDashboardPage<Record<string, unknown>>('evidence', query);
       if (disposed || sequence !== detailSequence || workspaceId !== selectedWorkspaceId || view !== targetView) return;
       detailItems = [...detailItems, ...(page.data ?? [])];
       evidenceCursor = page.page?.next_cursor ?? null;

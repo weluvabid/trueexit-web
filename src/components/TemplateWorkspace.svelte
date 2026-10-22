@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { fetchSharedGet, invalidateSharedGetCache } from '../lib/client/shared-http-query';
+  import { getSharedQueryClient } from '../lib/client/query-client';
+  import { templateQueryKeys } from '../lib/client/template-queries';
   import { fetchTemplatePage, fetchTemplateDetail, TemplateQueryError } from '../lib/client/template-queries';
   import { getApiErrorCode } from '../lib/client/api-response';
   import { can } from '../lib/client/permissions';
@@ -11,6 +12,8 @@
   import { validateTemplateDraft } from '../lib/client/template-validation';
   import { templateErrorMessage } from '../lib/client/template-errors';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
+
+  const queryClient = getSharedQueryClient();
 
   type Template = {
     id: string; owner_user_id: string | null; kind: 'built_in' | 'custom'; name: string;
@@ -238,7 +241,10 @@
         if (operation === mutationSequence) formError = message;
         return;
       }
-      await invalidateSharedGetCache();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: templateQueryKeys.all }),
+        queryClient.invalidateQueries({ queryKey: ['monitor-templates'] }),
+      ]);
       if (operation !== mutationSequence) return;
       formOpen = false;
       notice = targetMode === 'create' ? 'Template created.' : 'Template updated.';
@@ -292,7 +298,10 @@
         if (operation === mutationSequence) formError = message;
         return;
       }
-      await invalidateSharedGetCache();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: templateQueryKeys.all }),
+        queryClient.invalidateQueries({ queryKey: ['monitor-templates'] }),
+      ]);
       if (operation !== mutationSequence) return;
       pendingDelete = null;
       detail = null;

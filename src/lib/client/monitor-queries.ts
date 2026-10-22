@@ -1,4 +1,3 @@
-import { fetchSharedGet } from './shared-http-query';
 import { getApiErrorCode, getApiList } from './api-response';
 
 export class MonitorQueryError extends Error {
@@ -88,7 +87,7 @@ export async function fetchMonitorPage<TMonitor>(
   if (query.includeArchived || query.status === 'archived') params.set('include_archived', 'true');
   if (query.cursor) params.set('cursor', query.cursor);
 
-  const response = await fetchSharedGet(`/api/backend/monitors?${params.toString()}`, {
+  const response = await fetch(`/api/backend/monitors?${params.toString()}`, {
     headers: { Accept: 'application/json' },
     credentials: 'same-origin',
     cache: 'no-store',
@@ -135,7 +134,7 @@ export async function fetchMonitorTemplates(
   workspaceId: string,
   signal: AbortSignal,
 ): Promise<MonitorTemplatesResponse> {
-  const response = await fetchSharedGet(`/api/backend/templates?workspace_id=${encodeURIComponent(workspaceId)}&limit=100`, {
+  const response = await fetch(`/api/backend/templates?workspace_id=${encodeURIComponent(workspaceId)}&limit=100`, {
     headers: { Accept: 'application/json' },
     credentials: 'same-origin',
     cache: 'no-store',
@@ -186,7 +185,7 @@ export type ApiResource<T> = {
 
 async function fetchApiResource<T>(url: string, signal: AbortSignal, parse: (body: unknown) => T): Promise<ApiResource<T>> {
   try {
-    const response = await fetchSharedGet(url, {
+    const response = await fetch(url, {
       headers: { Accept: 'application/json' },
       credentials: 'same-origin',
       cache: 'no-store',

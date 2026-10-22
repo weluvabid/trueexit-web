@@ -1,4 +1,4 @@
-import { fetchSharedGet } from './shared-http-query';
+import { getSharedQueryClient } from './query-client';
 
 export type ApiFailure = { error?: { code?: string }; request_id?: string };
 export type Resource<T> = { ok: true; data: T } | { ok: false; status: number; code: string | null };
@@ -19,18 +19,36 @@ export function buildInvestigationApiPath(workspaceId: string, path: string, ext
 
 export async function readInvestigationResource<T>(path: string): Promise<Resource<T>> {
   try {
-    const response = await fetchSharedGet(path, {
-      headers: { Accept: 'application/json' },
-      credentials: 'same-origin',
-      cache: 'no-store',
+    const data = await getSharedQueryClient().fetchQuery({
+      queryKey: ['investigation-resource', path] as const,
+      staleTime: 15_000,
+      retry: false,
+      queryFn: async ({ signal }): Promise<T> => {
+        const response = await fetch(path, {
+          headers: { Accept: 'application/json' },
+          credentials: 'same-origin',
+          cache: 'no-store',
+          signal,
+        });
+        const body: unknown = await response.json().catch(() => null);
+        if (!response.ok) {
+          const error = body as ApiFailure | null;
+          const code = error?.error?.code ?? null;
+          throw new InvestigationQueryError(
+            getInvestigationErrorMessage(response.status, code),
+            response.status,
+            code,
+          );
+        }
+        return body as T;
+      },
     });
-    const body: unknown = await response.json().catch(() => null);
-    if (!response.ok) {
-      const error = body as ApiFailure | null;
-      return { ok: false, status: response.status, code: error?.error?.code ?? null };
+    return { ok: true, data };
+  } catch (error) {
+    if (error instanceof InvestigationQueryError) {
+      return { ok: false, status: error.status, code: error.code };
     }
-    return { ok: true, data: body as T };
-  } catch {
+    if (error instanceof Error && error.name === 'AbortError') throw error;
     return { ok: false, status: 0, code: 'network_error' };
   }
 }

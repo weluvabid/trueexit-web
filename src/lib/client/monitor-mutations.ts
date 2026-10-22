@@ -1,4 +1,3 @@
-import { invalidateSharedGetCache } from './shared-http-query';
 import { getApiErrorCode } from './api-response';
 import type { QueryClient } from '@tanstack/svelte-query';
 import { monitorQueryKeys, monitorResourceQueryKeys } from './monitor-queries';
@@ -52,9 +51,10 @@ export function createMonitorMutationOptions(queryClient: QueryClient) {
       sendMonitorMutation('/api/backend/monitors', 'POST', variables.requestBody, variables.idempotencyKey),
     onSuccess: async (result: MonitorMutationResult, variables: CreateMonitorVariables) => {
       if (result.ok) {
-        await invalidateSharedGetCache();
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: monitorQueryKeys.workspaceLists(variables.workspaceId) }),
+          queryClient.invalidateQueries({ queryKey: ['dashboard-page', variables.workspaceId, 'monitors'] }),
+          queryClient.invalidateQueries({ queryKey: ['dashboard', 'overview', variables.workspaceId] }),
           queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceChannels(variables.workspaceId) }),
         ]);
       }
@@ -73,9 +73,10 @@ export function editMonitorMutationOptions(queryClient: QueryClient) {
       ),
     onSuccess: async (result: MonitorMutationResult, variables: EditMonitorVariables) => {
       if (result.ok) {
-        await invalidateSharedGetCache();
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: monitorQueryKeys.workspaceLists(variables.workspaceId) }),
+          queryClient.invalidateQueries({ queryKey: ['dashboard-page', variables.workspaceId, 'monitors'] }),
+          queryClient.invalidateQueries({ queryKey: ['dashboard', 'overview', variables.workspaceId] }),
           queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorDetail(variables.workspaceId, variables.monitorId) }),
           queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorChannels(variables.workspaceId, variables.monitorId) }),
           queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceChannels(variables.workspaceId) }),
@@ -107,9 +108,10 @@ export function tagMonitorMutationOptions(queryClient: QueryClient) {
       ),
     onSuccess: async (result: MonitorMutationResult, variables: TagMonitorVariables) => {
       if (result.ok) {
-        await invalidateSharedGetCache();
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: monitorQueryKeys.workspaceLists(variables.workspaceId) }),
+          queryClient.invalidateQueries({ queryKey: ['dashboard-page', variables.workspaceId, 'monitors'] }),
+          queryClient.invalidateQueries({ queryKey: ['dashboard', 'overview', variables.workspaceId] }),
           queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceTags(variables.workspaceId) }),
           queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorTags(variables.workspaceId, variables.monitorId) }),
         ]);
@@ -143,10 +145,11 @@ export function lifecycleMonitorMutationOptions(queryClient: QueryClient) {
     },
     onSuccess: async (result: MonitorMutationResult, variables: LifecycleMonitorVariables) => {
       if (result.ok) {
-        await invalidateSharedGetCache();
-        await queryClient.invalidateQueries({
-          queryKey: monitorQueryKeys.workspaceLists(variables.workspaceId),
-        });
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: monitorQueryKeys.workspaceLists(variables.workspaceId) }),
+          queryClient.invalidateQueries({ queryKey: ['dashboard-page', variables.workspaceId, 'monitors'] }),
+          queryClient.invalidateQueries({ queryKey: ['dashboard', 'overview', variables.workspaceId] }),
+        ]);
       }
     },
   };
