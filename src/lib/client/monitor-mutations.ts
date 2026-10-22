@@ -1,4 +1,5 @@
 import { invalidateSharedGetCache } from './shared-http-query';
+import { getApiErrorCode } from './api-response';
 import type { QueryClient } from '@tanstack/svelte-query';
 import { monitorQueryKeys, monitorResourceQueryKeys } from './monitor-queries';
 
@@ -37,13 +38,10 @@ async function sendMonitorMutation(
     body: requestBody,
   });
   const body: unknown = await response.json().catch(() => null);
-  const error = body && typeof body === 'object' && 'error' in body
-    ? (body as { error?: { code?: unknown } }).error
-    : null;
   return {
     ok: response.ok,
     status: response.status,
-    code: typeof error?.code === 'string' ? error.code : null,
+    code: getApiErrorCode(body),
     body,
   };
 }
@@ -142,7 +140,7 @@ export function lifecycleMonitorMutationOptions(queryClient: QueryClient) {
       return {
         ok: response.ok,
         status: response.status,
-        code: typeof error?.code === 'string' ? error.code : null,
+        code: getApiErrorCode(body),
         body,
       };
     },

@@ -1,4 +1,8 @@
-import type { FieldDefinition } from './template-types';
+import type { FieldDefinition, Primitive } from './template-types';
+
+const TEMPLATE_TIMESTAMP_PRIMITIVE: Primitive = 3;
+const MIN_TEMPLATE_PRIMITIVE = 0;
+const MAX_TEMPLATE_PRIMITIVE = 7;
 
 export type TemplateDraft = {
   name: string;
@@ -16,10 +20,10 @@ export function validateTemplateDraft({ name, description, fields }: TemplateDra
 
   const names = valid.map((field) => field.name.trim());
   if (new Set(names).size !== names.length) return 'Field names must be unique.';
-  if (valid.filter((field) => field.primitive === 3).length > 1) {
+  if (valid.filter((field) => field.primitive === TEMPLATE_TIMESTAMP_PRIMITIVE).length > 1) {
     return 'Only one field can use the Timestamp primitive.';
   }
-  if (valid.some((field) => !Number.isInteger(field.primitive) || field.primitive < 0 || field.primitive > 7)) {
+  if (valid.some((field) => !Number.isInteger(field.primitive) || field.primitive < MIN_TEMPLATE_PRIMITIVE || field.primitive > MAX_TEMPLATE_PRIMITIVE)) {
     return 'Choose a valid primitive for every field.';
   }
 

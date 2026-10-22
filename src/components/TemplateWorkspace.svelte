@@ -1,5 +1,6 @@
 <script lang="ts">
   import { fetchSharedGet, invalidateSharedGetCache } from '../lib/client/shared-http-query';
+  import { getApiErrorCode } from '../lib/client/api-response';
   import { can } from '../lib/client/permissions';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
@@ -66,7 +67,7 @@
 
   async function readError(response: Response): Promise<string> {
     const body = await response.json().catch(() => null) as ApiError | null;
-    return templateErrorMessage(response.status, body?.error?.code ?? null);
+    return templateErrorMessage(response.status, getApiErrorCode(body));
   }
 
   function idempotencyHeaders(): HeadersInit {

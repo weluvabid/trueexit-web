@@ -10,9 +10,10 @@
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import { createMutation } from '@tanstack/svelte-query';
   import { createMonitorQueryClient, fetchMonitorPage, fetchMonitorTemplates, fetchWorkspaceTags, fetchMonitorTags, fetchWorkspaceChannels, fetchMonitorDetail, fetchMonitorChannelIds, monitorQueryKeys, monitorTemplateQueryKeys, monitorResourceQueryKeys, type MonitorTemplate, type WorkspaceTag, type MonitorChannel } from '../lib/client/monitor-queries';
-  import { createEmptyMonitorDraft, createMonitorDraft, type ChannelKind, type FieldPrimitive } from '../lib/client/monitor-editor-state';
+  import { createEmptyMonitorDraft, createMonitorDraft, serializeMonitorChannelSelection, type ChannelKind, type FieldPrimitive } from '../lib/client/monitor-editor-state';
   import { createMonitorMutationOptions, editMonitorMutationOptions, lifecycleMonitorMutationOptions, tagMonitorMutationOptions } from '../lib/client/monitor-mutations';
   import { buildMonitorJsonDraft, parseMonitorJsonDraft } from '../lib/client/monitor-field-editor';
+  import { buildNotificationChannelConfig } from '../lib/client/settings-channel-config';
 
   type MonitorConfigVersion = { version: number; cadence_seconds: number; config: { fields: Array<{ name: string; path: string; primitive: number; meta?: Record<string, unknown> }> } };
   type MonitorDetail = Monitor & { config_versions?: MonitorConfigVersion[] };
@@ -523,49 +524,27 @@
       newChannelError = 'A monitor can select at most 25 destinations.';
       return;
     }
+
     const label = newChannelLabel.trim();
     if (!label || label.length > 80) {
       newChannelError = 'Enter a destination label between 1 and 80 characters.';
       return;
     }
-    let config: Record<string, string>;
-    if (newChannelType === 'email') {
-      const recipient = newChannelAddress.trim();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient) || recipient.length > 320) {
-        newChannelError = 'Enter a valid recipient email address.';
-        return;
-      }
-      config = { to: recipient };
-    } else {
-      const url = newChannelAddress.trim();
-      try {
-        const parsed = new URL(url);
-        if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.hash || !parsed.hostname) throw new Error('invalid');
-        if (newChannelType === 'slack' && !(['hooks.slack.com', 'hooks.slack-gov.com'].includes(parsed.hostname.toLowerCase()) && parsed.pathname.startsWith('/services/'))) throw new Error('invalid');
-        if (newChannelType === 'discord' && !(['discord.com', 'discordapp.com'].includes(parsed.hostname.toLowerCase()) && parsed.pathname.startsWith('/api/webhooks/'))) throw new Error('invalid');
-        config = { url };
-      } catch {
-        newChannelError = newChannelType === 'slack'
-          ? 'Use a Slack incoming webhook URL from hooks.slack.com/services/….'
-          : newChannelType === 'discord'
-            ? 'Use a Discord webhook URL from discord.com/api/webhooks/….'
-            : 'Enter a valid HTTPS destination URL.';
-        return;
-      }
-      if (newChannelHeaders.trim()) {
-        try {
-          const parsedHeaders: unknown = JSON.parse(newChannelHeaders);
-          if (!parsedHeaders || Array.isArray(parsedHeaders) || typeof parsedHeaders !== 'object' || Object.values(parsedHeaders).some((value) => typeof value !== 'string')) throw new Error('invalid');
-          config.headers = JSON.stringify(parsedHeaders) as unknown as string;
-          config = { ...config, ...({ headers: parsedHeaders } as unknown as Record<string, string>) };
-        } catch {
-          newChannelError = 'Custom headers must be a JSON object whose values are strings.';
-          return;
-        }
-      }
+
+    const result = buildNotificationChannelConfig(newChannelType, newChannelAddress, newChannelHeaders);
+    if (!result.ok) {
+      newChannelError = result.error;
+      return;
     }
+
     editorDraft.channelSelection = [...editorDraft.channelSelection, {
-      kind: 'new', type: newChannelType, label, priority: newChannelPriority, enabled: true, config, displayLabel: label,
+      kind: 'new',
+      type: newChannelType,
+      label,
+      priority: newChannelPriority,
+      enabled: true,
+      config: result.config,
+      displayLabel: label,
     }];
     newChannelLabel = '';
     newChannelAddress = '';
@@ -601,10 +580,7 @@
     const { name, description, cadenceSeconds: resolvedCadence, cadencePreview: resolvedPreview, config } = validation;
     cadencePreview = resolvedPreview;
 
-    const payloadChannels = editorDraft.channelSelection.map((selection) => {
-      if (selection.kind === 'existing') return { kind: 'existing', channel_id: selection.channel_id };
-      return { kind: 'new', type: selection.type, label: selection.label, priority: selection.priority, enabled: selection.enabled, config: selection.config };
-    });
+    const payloadChannels = serializeMonitorChannelSelection(editorDraft.channelSelection);
     const payload = {
       workspace_id: selectedWorkspaceId,
       name,
@@ -670,9 +646,7 @@
     fieldError = '';
     const { name, description, cadenceSeconds: resolvedCadence, cadencePreview: resolvedPreview, config } = validation;
     cadencePreview = resolvedPreview;
-    const channelsPayload = editorDraft.channelSelection.map((selection) => selection.kind === 'existing'
-      ? { kind: 'existing', channel_id: selection.channel_id }
-      : { kind: 'new', type: selection.type, label: selection.label, priority: selection.priority, enabled: selection.enabled, config: selection.config });
+    const channelsPayload = serializeMonitorChannelSelection(editorDraft.channelSelection);
     const payload = {
       expected_updated_at: original.updated_at,
       name,

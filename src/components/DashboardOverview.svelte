@@ -1,5 +1,6 @@
 <script lang="ts">
   import { fetchSharedGet } from '../lib/client/shared-http-query';
+  import { getApiErrorCode } from '../lib/client/api-response';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
 
@@ -82,7 +83,7 @@
       const response = await fetchSharedGet(`/api/backend/workspaces/${encodeURIComponent(workspaceId)}/dashboard`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
       const body: unknown = await response.json().catch(() => null);
       if (sequence !== requestSequence) return;
-      if (!response.ok) { const error = body as { error?: { code?: string } } | null; dashboardError = messageForCode(error?.error?.code ?? null, response.status); return; }
+      if (!response.ok) { dashboardError = messageForCode(getApiErrorCode(body), response.status); return; }
       dashboard = body as DashboardResponse;
       // The dashboard endpoint is authoritative for enabled/disabled totals. Fetch a first monitor page for inventory and pagination.
       await loadMonitorPage(false, workspaceId, sequence);

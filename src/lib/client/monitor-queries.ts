@@ -1,4 +1,5 @@
 import { fetchSharedGet } from './shared-http-query';
+import { getApiErrorCode, getApiList } from './api-response';
 import { QueryClient } from '@tanstack/svelte-query';
 
 export type MonitorListQuery = {
@@ -180,12 +181,6 @@ export type ApiResource<T> = {
   data: T;
 };
 
-function responseErrorCode(body: unknown): string | null {
-  if (!body || typeof body !== 'object' || !('error' in body)) return null;
-  const error = (body as { error?: { code?: unknown } }).error;
-  return typeof error?.code === 'string' ? error.code : null;
-}
-
 async function fetchApiResource<T>(url: string, signal: AbortSignal, parse: (body: unknown) => T): Promise<ApiResource<T>> {
   try {
     const response = await fetchSharedGet(url, {
@@ -198,7 +193,7 @@ async function fetchApiResource<T>(url: string, signal: AbortSignal, parse: (bod
     return {
       ok: response.ok,
       status: response.status,
-      code: responseErrorCode(body),
+      code: getApiErrorCode(body),
       data: response.ok ? parse(body) : parse(null),
     };
   } catch (error) {
@@ -207,11 +202,6 @@ async function fetchApiResource<T>(url: string, signal: AbortSignal, parse: (bod
   }
 }
 
-function unwrapArray<T>(body: unknown): T[] {
-  if (Array.isArray(body)) return body as T[];
-  if (body && typeof body === 'object' && 'data' in body && Array.isArray(body.data)) return body.data as T[];
-  return [];
-}
 
 export const monitorResourceQueryKeys = {
   workspaceTags: (workspaceId: string) => ['monitor-workspace', workspaceId, 'tags'] as const,
@@ -230,7 +220,7 @@ export function fetchWorkspaceTags(workspaceId: string, signal: AbortSignal): Pr
 }
 
 export function fetchMonitorTags(workspaceId: string, monitorId: string, signal: AbortSignal): Promise<ApiResource<WorkspaceTag[]>> {
-  return fetchApiResource(`/api/backend/monitors/${encodeURIComponent(monitorId)}/tags?workspace_id=${encodeURIComponent(workspaceId)}`, signal, (body) => unwrapArray<WorkspaceTag>(body));
+  return fetchApiResource(`/api/backend/monitors/${encodeURIComponent(monitorId)}/tags?workspace_id=${encodeURIComponent(workspaceId)}`, signal, (body) => getApiList<WorkspaceTag>(body));
 }
 
 export function fetchWorkspaceChannels(workspaceId: string, signal: AbortSignal): Promise<ApiResource<MonitorChannel[]>> {

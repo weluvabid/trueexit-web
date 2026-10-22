@@ -2,7 +2,7 @@ export type ChannelKind = 'email' | 'webhook' | 'slack' | 'discord';
 export type FieldPrimitive = 'size' | 'count' | 'duration' | 'timestamp' | 'boolean' | 'categorical' | 'checksum' | 'text';
 export type MonitorField = { key: number; name: string; path: string; primitive: FieldPrimitive };
 export type ExistingChannelSelection = { kind: 'existing'; channel_id: string; label: string };
-export type NewChannelSelection = { kind: 'new'; type: ChannelKind; label: string; priority: number; enabled: boolean; config: Record<string, string>; displayLabel: string };
+export type NewChannelSelection = { kind: 'new'; type: ChannelKind; label: string; priority: number; enabled: boolean; config: Record<string, unknown>; displayLabel: string };
 export type ChannelSelection = ExistingChannelSelection | NewChannelSelection;
 
 export type MonitorEditorDraft = {
@@ -51,4 +51,17 @@ export function createMonitorDraft(input: {
     channelSelection: input.channelSelection,
     channelSelectionWorkspaceId: input.workspaceId,
   };
+}
+
+export function serializeMonitorChannelSelection(selection: ChannelSelection[]) {
+  return selection.map((item) => item.kind === 'existing'
+    ? { kind: 'existing' as const, channel_id: item.channel_id }
+    : {
+        kind: 'new' as const,
+        type: item.type,
+        label: item.label,
+        priority: item.priority,
+        enabled: item.enabled,
+        config: item.config,
+      });
 }
