@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { invalidateSharedGetCache } from '../../lib/client/shared-http-query';
   import './SettingsDestinationManager.css';
   import { getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../../lib/client/settings-api';
   import { buildNotificationChannelConfig, type NotificationChannelKind } from '../../lib/client/settings-channel-config';
@@ -38,10 +37,7 @@
   }
 
   async function request(path: string, init: RequestInit = {}) {
-    const result = await requestSettingsApi(path, init);
-    const method = (init.method ?? 'GET').toUpperCase();
-    if (!['GET', 'HEAD'].includes(method) && result.response.ok) void invalidateSharedGetCache();
-    return result;
+    return requestSettingsApi(path, init);
   }
 
   async function perform<T = unknown>(key: string, path: string, init: RequestInit = {}): Promise<T | null> {

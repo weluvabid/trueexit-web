@@ -52,7 +52,7 @@ export function createMonitorMutationOptions(queryClient: QueryClient) {
       sendMonitorMutation('/api/backend/monitors', 'POST', variables.requestBody, variables.idempotencyKey),
     onSuccess: async (result: MonitorMutationResult, variables: CreateMonitorVariables) => {
       if (result.ok) {
-        void invalidateSharedGetCache();
+        await invalidateSharedGetCache();
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: monitorQueryKeys.workspaceLists(variables.workspaceId) }),
           queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceChannels(variables.workspaceId) }),
@@ -73,7 +73,7 @@ export function editMonitorMutationOptions(queryClient: QueryClient) {
       ),
     onSuccess: async (result: MonitorMutationResult, variables: EditMonitorVariables) => {
       if (result.ok) {
-        void invalidateSharedGetCache();
+        await invalidateSharedGetCache();
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: monitorQueryKeys.workspaceLists(variables.workspaceId) }),
           queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorDetail(variables.workspaceId, variables.monitorId) }),
@@ -107,7 +107,7 @@ export function tagMonitorMutationOptions(queryClient: QueryClient) {
       ),
     onSuccess: async (result: MonitorMutationResult, variables: TagMonitorVariables) => {
       if (result.ok) {
-        void invalidateSharedGetCache();
+        await invalidateSharedGetCache();
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: monitorQueryKeys.workspaceLists(variables.workspaceId) }),
           queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceTags(variables.workspaceId) }),
@@ -146,7 +146,7 @@ export function lifecycleMonitorMutationOptions(queryClient: QueryClient) {
     },
     onSuccess: async (result: MonitorMutationResult, variables: LifecycleMonitorVariables) => {
       if (result.ok) {
-        void invalidateSharedGetCache();
+        await invalidateSharedGetCache();
         await queryClient.invalidateQueries({
           queryKey: monitorQueryKeys.workspaceLists(variables.workspaceId),
         });

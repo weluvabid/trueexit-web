@@ -2,7 +2,6 @@
   import { can } from '../lib/client/permissions';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
-  import { invalidateSharedGetCache } from '../lib/client/shared-http-query';
   import { getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../lib/client/settings-api';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
   import SettingsSectionNavigation from './settings/SettingsSectionNavigation.svelte';
@@ -43,10 +42,7 @@
   $: ownedAccounts = accounts;
 
   async function request(path: string, init: RequestInit = {}): Promise<{ response: Response; body: unknown }> {
-    const method = (init.method ?? 'GET').toUpperCase();
-    const result = await requestSettingsApi(path, init);
-    if (!['GET', 'HEAD'].includes(method) && result.response.ok) void invalidateSharedGetCache();
-    return result;
+    return requestSettingsApi(path, init);
   }
 
   async function perform<T = unknown>(key: string, path: string, init: RequestInit = {}): Promise<T | null> {

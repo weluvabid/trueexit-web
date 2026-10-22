@@ -1,4 +1,4 @@
-import { fetchSharedGet } from './shared-http-query';
+import { fetchSharedGet, invalidateSharedGetCache } from './shared-http-query';
 import { getApiErrorCode, getApiList } from './api-response';
 
 export const listSettingsData = getApiList;
@@ -38,5 +38,9 @@ export async function requestSettingsApi(
     ? await fetchSharedGet(`/api/backend${path}`, requestInit)
     : await fetch(`/api/backend${path}`, requestInit);
   const body = response.status === 204 ? null : await response.json().catch(() => null);
+  if (!['GET', 'HEAD'].includes(method) && response.ok) {
+    // Invalidate before returning so callers cannot immediately refresh from stale shared data.
+    await invalidateSharedGetCache();
+  }
   return { response, body };
 }
