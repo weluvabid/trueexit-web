@@ -11,10 +11,9 @@
   import { prepareMonitorSubmission, resolveMonitorCadence } from '../lib/client/monitor-editor-validation';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import { createMutation } from '@tanstack/svelte-query';
-  import { createMonitorQueryClient, fetchMonitorPage, fetchMonitorTemplates, fetchWorkspaceTags, fetchMonitorTags, fetchWorkspaceChannels, fetchMonitorDetail, fetchMonitorChannelIds, monitorQueryKeys, monitorTemplateQueryKeys, monitorResourceQueryKeys, type MonitorTemplate, type WorkspaceTag, type MonitorChannel } from '../lib/client/monitor-queries';
+  import { createMonitorQueryClient, fetchMonitorPage, fetchWorkspaceTags, fetchMonitorTags, fetchWorkspaceChannels, fetchMonitorDetail, fetchMonitorChannelIds, monitorQueryKeys, monitorResourceQueryKeys, type WorkspaceTag, type MonitorChannel } from '../lib/client/monitor-queries';
   import { createEmptyMonitorDraft, createMonitorDraft, serializeMonitorChannelSelection, type ChannelKind, type FieldPrimitive } from '../lib/client/monitor-editor-state';
   import { createMonitorMutationOptions, editMonitorMutationOptions, lifecycleMonitorMutationOptions, tagMonitorMutationOptions } from '../lib/client/monitor-mutations';
-  import { buildMonitorJsonDraft, parseMonitorJsonDraft } from '../lib/client/monitor-field-editor';
   import { buildNotificationChannelConfig } from '../lib/client/settings-channel-config';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
 
@@ -60,14 +59,7 @@
   let templateLoadSequence = 0;
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let createOpen = initialMode !== 'inventory';
-  let fieldMode: 'json' | 'fields' | 'templates' = 'fields';
-  let jsonDraft = '';
-  let jsonError = '';
-  let templates: MonitorTemplate[] = [];
-  let templatesLoading = false;
-  let templatesError = '';
-  let selectedTemplateId = '';
-  let templateApplyMode: 'replace' | 'merge' = 'replace';
+  let fieldConfiguration: InstanceType<typeof MonitorFieldConfiguration>;
   let cadenceError = '';
   let cadencePreview = 'Every 5 minutes';
   let editingMonitor: MonitorDetail | null = null;
@@ -107,12 +99,8 @@
   function resetEditorDraft() {
     editorDraft = createEmptyMonitorDraft();
     editorDraft.channelSelectionWorkspaceId = selectedWorkspaceId;
-    fieldMode = 'fields';
+    fieldConfiguration?.reset();
     channelsLoading = false;
-    jsonDraft = '';
-    jsonError = '';
-    selectedTemplateId = '';
-    templateApplyMode = 'replace';
     cadenceError = '';
     cadencePreview = 'Every 5 minutes';
     fieldError = '';
@@ -162,71 +150,6 @@
     if (cadence.ok) cadencePreview = cadence.preview;
   }
 
-
-  function syncJsonFromFields() {
-    jsonDraft = buildMonitorJsonDraft(editorDraft.fields);
-    jsonError = '';
-  }
-
-  function applyJsonDraft() {
-    try {
-      const parsed = parseMonitorJsonDraft(jsonDraft, editorDraft.nextFieldKey);
-      editorDraft.fields = parsed.fields;
-      editorDraft.nextFieldKey = parsed.nextFieldKey;
-      fieldError = '';
-      jsonError = '';
-      fieldMode = 'fields';
-    } catch (error) {
-      jsonError = error instanceof Error ? error.message : 'Check the JSON and try again.';
-    }
-  }
-
-  async function loadTemplates() {
-    const workspaceId = selectedWorkspaceId;
-    const sequence = ++templateLoadSequence;
-    if (!workspaceId) {
-      templates = [];
-      templatesLoading = false;
-      return;
-    }
-    templatesLoading = true;
-    templatesError = '';
-    try {
-      const result = await monitorQueryClient.fetchQuery({
-        queryKey: monitorTemplateQueryKeys.workspaceList(workspaceId),
-        queryFn: ({ signal }) => fetchMonitorTemplates(workspaceId, signal),
-        staleTime: 30_000,
-        retry: false,
-      });
-      if (sequence !== templateLoadSequence || workspaceId !== selectedWorkspaceId) return;
-      if (!result.ok) {
-        templatesError = messageFor(result.status, result.code);
-        await monitorQueryClient.invalidateQueries({ queryKey: monitorTemplateQueryKeys.workspaceList(workspaceId) });
-        return;
-      }
-      templates = result.data;
-    } catch {
-      if (sequence === templateLoadSequence) templatesError = messageFor(0, 'network_error');
-    } finally {
-      if (sequence === templateLoadSequence) templatesLoading = false;
-    }
-  }
-
-  async function applySelectedTemplate() {
-    const template = templates.find((item) => item.id === selectedTemplateId);
-    if (!template || !template.fields.length) return;
-    const mapped = template.fields.map((field) => ({ key: editorDraft.nextFieldKey++, name: field.name, path: field.path, primitive: (Object.entries(primitiveValues).find(([, value]) => value === field.primitive)?.[0] ?? 'text') as FieldPrimitive }));
-    if (mapped.length > 50 || (templateApplyMode === 'merge' && editorDraft.fields.length + mapped.length > 50)) { templatesError = 'The resulting configuration would exceed the 50-field limit. Choose a smaller template or replace the current fields.'; return; }
-    if (templateApplyMode === 'merge') {
-      const existing = new Set(editorDraft.fields.map((field) => field.path));
-      const duplicates = mapped.filter((field) => existing.has(field.path));
-      if (duplicates.length) { templatesError = `Cannot merge because these paths already exist: ${duplicates.map((field) => field.path).join(', ')}.`; return; }
-      editorDraft.fields = [...editorDraft.fields, ...mapped];
-    } else editorDraft.fields = mapped;
-    fieldError = '';
-    templatesError = '';
-    fieldMode = 'fields';
-  }
 
   $: selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null;
   $: canManageChannels = can(selectedWorkspace, 'workspace.destinations.manage');
@@ -512,18 +435,6 @@
     }
   }
 
-  function addField() {
-    if (editorDraft.fields.length >= 50) return;
-    editorDraft.fields = [...editorDraft.fields, { key: editorDraft.nextFieldKey++, name: '', path: '', primitive: 'count' }];
-    fieldError = '';
-  }
-
-  function removeField(key: number) {
-    if (editorDraft.fields.length <= 1) return;
-    editorDraft.fields = editorDraft.fields.filter((field) => field.key !== key);
-    fieldError = '';
-  }
-
   function addExistingChannel() {
     if (!selectedExistingChannelId || editorDraft.channelSelection.length >= 25) return;
     const channel = channels.find((item) => item.id === selectedExistingChannelId);
@@ -585,7 +496,7 @@
     }
     createError = '';
     createMessage = '';
-    if (fieldMode === 'json') { applyJsonDraft(); if (fieldMode === 'json') return; }
+    if (!fieldConfiguration?.applyPendingJson()) return;
     const validation = prepareMonitorSubmission(editorDraft);
     if (!validation.ok) {
       cadenceError = validation.field === 'cadence' ? validation.error : '';
@@ -655,7 +566,7 @@
     if (!original || creating || !workspaceId) return;
     createError = '';
     createMessage = '';
-    if (fieldMode === 'json') { applyJsonDraft(); if (fieldMode === 'json') return; }
+    if (!fieldConfiguration?.applyPendingJson()) return;
     const validation = prepareMonitorSubmission(editorDraft);
     if (!validation.ok) {
       cadenceError = validation.field === 'cadence' ? validation.error : '';
@@ -933,22 +844,10 @@
           </div>
 
           <MonitorFieldConfiguration
+            bind:this={fieldConfiguration}
             draft={editorDraft}
-            bind:fieldMode
-            bind:jsonDraft
-            bind:jsonError
+            workspaceId={selectedWorkspaceId}
             bind:fieldError
-            {templates}
-            {templatesLoading}
-            {templatesError}
-            bind:selectedTemplateId
-            bind:templateApplyMode
-            onAddField={addField}
-            onRemoveField={removeField}
-            onSyncJsonFromFields={syncJsonFromFields}
-            onApplyJsonDraft={applyJsonDraft}
-            onLoadTemplates={loadTemplates}
-            onApplyTemplate={applySelectedTemplate}
           />
 
           <div class="monitor-create-section">
