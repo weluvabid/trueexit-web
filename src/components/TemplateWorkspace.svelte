@@ -38,6 +38,8 @@
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let sequence = 0;
   let detailSequence = 0;
+  let editSequence = 0;
+  let discoverySequence = 0;
   let formOpen = false;
   let mode: Mode = 'create';
   let formTab: 'json' | 'fields' = 'json';
@@ -115,6 +117,9 @@
   }
 
   function openCreate() {
+    editSequence += 1;
+    discoverySequence += 1;
+    discovering = false;
     mode = 'create'; editing = null; name = ''; description = '';
     fields = [{ name: '', path: '', primitive: 1 }]; formError = ''; notice = ''; formTab = 'json'; formOpen = true;
     discoveryError = ''; discoveryWarnings = []; discovered = []; selectedDiscovered = [];
@@ -122,18 +127,27 @@
 
   async function openEdit(template: Template) {
     if (template.kind === 'built_in') return;
+    const current = ++editSequence;
+    discoverySequence += 1;
+    discovering = false;
+    const targetWorkspaceId = workspaceId;
     formError = ''; notice = ''; formTab = 'fields'; formOpen = true; mode = 'edit'; editing = template;
     name = template.name; description = template.description ?? '';
     fields = template.fields.map((field) => ({ ...field }));
     discoveryError = ''; discoveryWarnings = []; discovered = []; selectedDiscovered = [];
     // Load the latest version before editing to avoid silently overwriting a concurrent update.
     try {
-      const response = await fetchSharedGet(`/api/backend/templates/${encodeURIComponent(template.id)}?workspace_id=${encodeURIComponent(workspaceId)}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
+      const response = await fetchSharedGet(`/api/backend/templates/${encodeURIComponent(template.id)}?workspace_id=${encodeURIComponent(targetWorkspaceId)}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
       const body = await response.json().catch(() => null) as Template | ApiError | null;
+      if (current !== editSequence || !formOpen || mode !== 'edit' || editing?.id !== template.id || workspaceId !== targetWorkspaceId) return;
       if (!response.ok) { formError = errorMessage(response.status, (body as ApiError | null)?.error?.code ?? null); return; }
       const latest = body as Template;
       editing = latest; name = latest.name; description = latest.description ?? ''; fields = latest.fields.map((field) => ({ ...field }));
-    } catch { formError = errorMessage(0, 'network_error'); }
+    } catch {
+      if (current === editSequence && formOpen && mode === 'edit' && editing?.id === template.id && workspaceId === targetWorkspaceId) {
+        formError = errorMessage(0, 'network_error');
+      }
+    }
   }
 
   function addField() { fields = [...fields, { name: '', path: '', primitive: 1 }]; }
@@ -248,7 +262,13 @@
   function handleSearchInput() { if (searchTimer) clearTimeout(searchTimer); searchTimer = setTimeout(runSearch, 250); }
   function nextPage() { if (!nextCursor || loading) return; cursorStack = [...cursorStack.slice(0, pageIndex + 1), nextCursor]; pageIndex += 1; void loadTemplates(nextCursor); }
   function previousPage() { if (pageIndex === 0 || loading) return; pageIndex -= 1; void loadTemplates(cursorStack[pageIndex]); }
-  function closeForm() { if (!saving) formOpen = false; }
+  function closeForm() {
+    if (saving) return;
+    editSequence += 1;
+    discoverySequence += 1;
+    discovering = false;
+    formOpen = false;
+  }
 
   onMount(() => { void bootstrap(); return () => { if (searchTimer) clearTimeout(searchTimer); }; });
 </script>

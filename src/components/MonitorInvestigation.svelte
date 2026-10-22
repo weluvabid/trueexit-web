@@ -193,6 +193,7 @@
     deliveryDetailGeneration += 1;
     healthVersionGeneration += 1;
     selectedEvidence = null; selectedTrace = null; selectedDelivery = null; selectedHealthVersion = null;
+    traceLoading = false;
     healthVersionLoading = false;
     healthVersionError = '';
     detailError = ''; traceError = ''; deliveryDetailError = ''; detailLoading = true;
