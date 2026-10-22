@@ -37,6 +37,7 @@
   let notice = '';
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let sequence = 0;
+  let detailSequence = 0;
   let formOpen = false;
   let mode: Mode = 'create';
   let formTab: 'json' | 'fields' = 'json';
@@ -208,14 +209,26 @@
   }
 
   async function showDetail(template: Template) {
+    const current = ++detailSequence;
     detail = null; detailError = ''; detailLoading = true;
     try {
       const response = await fetchSharedGet(`/api/backend/templates/${encodeURIComponent(template.id)}?workspace_id=${encodeURIComponent(workspaceId)}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
       const body = await response.json().catch(() => null) as Template | ApiError | null;
+      if (current !== detailSequence) return;
       if (!response.ok) { detailError = errorMessage(response.status, (body as ApiError | null)?.error?.code ?? null); return; }
       detail = body as Template;
-    } catch { detailError = errorMessage(0, 'network_error'); }
-    finally { detailLoading = false; }
+    } catch {
+      if (current === detailSequence) detailError = errorMessage(0, 'network_error');
+    } finally {
+      if (current === detailSequence) detailLoading = false;
+    }
+  }
+
+  function closeDetail() {
+    detailSequence += 1;
+    detail = null;
+    detailError = '';
+    detailLoading = false;
   }
 
   async function deleteTemplate() {
@@ -301,8 +314,8 @@
 {/if}
 
 {#if detail || detailLoading || detailError}
-  <div class="template-overlay" role="presentation" on:click={(event) => { if (event.target === event.currentTarget) { detail = null; detailError = ''; } }}>
-    <section class="template-dialog template-dialog--detail" role="dialog" aria-modal="true" aria-labelledby="template-detail-title"><header class="template-dialog__header"><div><p class="template-eyebrow">FIELD DEFINITIONS</p><h2 id="template-detail-title">{detail?.name ?? 'Template details'}</h2></div><button class="template-icon-button" type="button" aria-label="Close details" on:click={() => { detail = null; detailError = ''; }}>×</button></header>
+  <div class="template-overlay" role="presentation" on:click={(event) => { if (event.target === event.currentTarget) closeDetail() }}>
+    <section class="template-dialog template-dialog--detail" role="dialog" aria-modal="true" aria-labelledby="template-detail-title"><header class="template-dialog__header"><div><p class="template-eyebrow">FIELD DEFINITIONS</p><h2 id="template-detail-title">{detail?.name ?? 'Template details'}</h2></div><button class="template-icon-button" type="button" aria-label="Close details" on:click={closeDetail}>×</button></header>
       {#if detailLoading}<p class="template-muted">Loading template…</p>{:else if detailError}<div class="template-alert" role="alert">{detailError}</div>{:else if detail}<p class="template-muted">{detail.description || 'No description.'} · Version {detail.version}</p><div class="template-detail-fields">{#each detail.fields as field}<article><div><h3>{field.name}</h3><code>{field.path}</code></div><span>{primitiveNames[field.primitive]}</span>{#if field.meta}<details><summary>Advanced rules</summary><pre>{JSON.stringify(field.meta, null, 2)}</pre></details>{/if}</article>{/each}</div><p class="template-footnote">These definitions are copied into a monitor when selected. This template does not remain linked to that monitor.</p>{/if}
     </section>
   </div>

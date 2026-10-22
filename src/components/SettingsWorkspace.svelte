@@ -80,6 +80,8 @@
   let createAccountName = '';
   let showCreateWorkspace = false;
   let showCreateAccount = false;
+  let loadGeneration = 0;
+  let workspaceSectionsGeneration = 0;
 
   $: selectedWorkspace = workspaces.find((item) => item.id === selectedWorkspaceId) ?? null;
   $: canManageWorkspace = can(selectedWorkspace, 'workspace.manage');
@@ -148,10 +150,12 @@
   }
 
   async function loadAll(keepNotice = false) {
+    const generation = ++loadGeneration;
     loading = true;
     if (!keepNotice) { error = ''; notice = ''; }
     try {
       const bootstrap = await loadWorkspaceBootstrap();
+      if (generation !== loadGeneration) return;
       if (!bootstrap.workspaces.ok) {
         error = errorMessage(bootstrap.workspaces.status, bootstrap.workspaces.code);
         workspaces = [];
@@ -169,24 +173,32 @@
         members = []; invitations = []; channels = [];
       }
       const accountsResult = await request('/accounts');
+      if (generation !== loadGeneration) return;
       if (accountsResult.response.ok) accounts = listData<Account>(accountsResult.body);
       else if (accountsResult.response.status !== 404) error = errorMessage(accountsResult.response.status, getErrorCode(accountsResult.body));
-      if (selectedWorkspaceId) await loadWorkspaceSections();
+      await loadWorkspaceSections();
     } catch {
-      error = errorMessage(0, 'network_error');
+      if (generation === loadGeneration) error = errorMessage(0, 'network_error');
     } finally {
-      loading = false;
+      if (generation === loadGeneration) loading = false;
     }
   }
 
   async function loadWorkspaceSections() {
-    if (!selectedWorkspaceId) return;
-    const id = encodeURIComponent(selectedWorkspaceId);
+    if (!selectedWorkspaceId) {
+      workspaceSectionsGeneration += 1;
+      members = []; invitations = []; channels = [];
+      return;
+    }
+    const generation = ++workspaceSectionsGeneration;
+    const workspaceId = selectedWorkspaceId;
+    const id = encodeURIComponent(workspaceId);
     const [membersResult, invitationsResult, channelsResult] = await Promise.all([
       request(`/workspaces/${id}/members`),
       request(`/workspaces/${id}/invitations`),
       request(`/workspaces/${id}/channels`),
     ]);
+    if (generation !== workspaceSectionsGeneration || workspaceId !== selectedWorkspaceId) return;
     members = membersResult.response.ok ? listData<Member>(membersResult.body) : [];
     invitations = invitationsResult.response.ok ? listData<Invitation>(invitationsResult.body) : [];
     channels = channelsResult.response.ok ? listData<Channel>(channelsResult.body) : [];
@@ -196,6 +208,7 @@
 
 
   async function selectWorkspace() {
+    workspaceSectionsGeneration += 1;
     try { localStorage.setItem('trueexit.active-workspace-id', selectedWorkspaceId); } catch { /* Storage may be unavailable. */ }
     error = ''; notice = '';
     workspaceName = selectedWorkspace?.name ?? '';

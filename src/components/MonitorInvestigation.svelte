@@ -63,6 +63,13 @@
   let deliveryPageIndex = 0;
   let requestGeneration = 0;
   let workspaceGeneration = 0;
+  let verifiedEvidenceGeneration = 0;
+  let rejectedEvidenceGeneration = 0;
+  let deliveryListGeneration = 0;
+  let detailGeneration = 0;
+  let traceGeneration = 0;
+  let deliveryDetailGeneration = 0;
+  let healthVersionGeneration = 0;
 
   function messageFor(status: number, code: string | null): string {
     if (status === 401) return 'Your session needs attention. Sign in again to continue.';
@@ -146,6 +153,7 @@
   async function loadEvidencePage(kind: 'verified' | 'rejected', cursor: string | null = null, pageIndex = 0) {
     if (!workspaceId) return;
     const generation = workspaceGeneration;
+    const requestId = kind === 'rejected' ? ++rejectedEvidenceGeneration : ++verifiedEvidenceGeneration;
     const rejected = kind === 'rejected';
     if (rejected) { rejectedLoading = true; rejectedError = ''; }
     else { evidenceLoading = true; evidenceError = ''; }
@@ -153,7 +161,8 @@
     const extra: Record<string, string> = { limit: '20' };
     if (cursor) extra.cursor = cursor;
     const result = await readResource<Page<Evidence>>(apiPath(route, extra));
-    if (generation !== workspaceGeneration) return;
+    const latestRequestId = rejected ? rejectedEvidenceGeneration : verifiedEvidenceGeneration;
+    if (generation !== workspaceGeneration || requestId !== latestRequestId) return;
     if (result.ok) {
       if (rejected) { badEvidence = result.data; rejectedCursor = result.data.page?.next_cursor ?? null; rejectedPageIndex = pageIndex; }
       else { evidence = result.data; evidenceCursor = result.data.page?.next_cursor ?? null; evidencePageIndex = pageIndex; }
@@ -165,12 +174,13 @@
   async function loadDeliveryPage(cursor: string | null = null, pageIndex = 0) {
     if (!workspaceId) return;
     const generation = workspaceGeneration;
+    const requestId = ++deliveryListGeneration;
     deliveriesLoading = true;
     deliveriesError = '';
     const extra: Record<string, string> = { limit: '20', monitor_id: monitorId };
     if (cursor) extra.cursor = cursor;
     const result = await readResource<Page<Delivery>>(apiPath(`workspaces/${encodeURIComponent(workspaceId)}/deliveries`, extra));
-    if (generation !== workspaceGeneration) return;
+    if (generation !== workspaceGeneration || requestId !== deliveryListGeneration) return;
     if (result.ok) { deliveries = result.data; deliveryCursor = result.data.page?.next_cursor ?? null; deliveryPageIndex = pageIndex; }
     else deliveriesError = messageFor(result.status, result.code);
     deliveriesLoading = false;
@@ -178,23 +188,55 @@
 
   async function openEvidence(kind: 'verified' | 'rejected', item: Evidence) {
     const generation = workspaceGeneration;
-    selectedEvidence = null; selectedTrace = null; selectedDelivery = null;
-    detailError = ''; traceError = ''; detailLoading = true;
+    const requestId = ++detailGeneration;
+    traceGeneration += 1;
+    deliveryDetailGeneration += 1;
+    healthVersionGeneration += 1;
+    selectedEvidence = null; selectedTrace = null; selectedDelivery = null; selectedHealthVersion = null;
+    healthVersionLoading = false;
+    healthVersionError = '';
+    detailError = ''; traceError = ''; deliveryDetailError = ''; detailLoading = true;
     const prefix = kind === 'rejected' ? 'bad-evidence' : 'evidence';
     const result = await readResource<Record<string, any>>(apiPath(`monitors/${encodeURIComponent(monitorId)}/${prefix}/${encodeURIComponent(item.id)}`));
-    if (generation !== workspaceGeneration) return;
+    if (generation !== workspaceGeneration || requestId !== detailGeneration) return;
     if (result.ok) selectedEvidence = { kind, id: item.id, detail: result.data };
     else detailError = messageFor(result.status, result.code);
     detailLoading = false;
   }
 
+  function closeSelectedEvidence() {
+    detailGeneration += 1;
+    traceGeneration += 1;
+    selectedEvidence = null;
+    selectedTrace = null;
+    detailLoading = false;
+    traceLoading = false;
+    detailError = '';
+    traceError = '';
+  }
+
+  function clearSelectedRecords() {
+    closeSelectedEvidence();
+    deliveryDetailGeneration += 1;
+    healthVersionGeneration += 1;
+    selectedDelivery = null;
+    selectedHealthVersion = null;
+    deliveryDetailError = '';
+    healthVersionError = '';
+    detailLoading = false;
+    healthVersionLoading = false;
+  }
+
   async function openTrace() {
     if (!selectedEvidence || selectedEvidence.detail.trace_available !== true) return;
     const generation = workspaceGeneration;
+    const requestId = ++traceGeneration;
+    const evidenceId = selectedEvidence.id;
+    const evidenceKind = selectedEvidence.kind;
     traceLoading = true; traceError = ''; selectedTrace = null;
-    const prefix = selectedEvidence.kind === 'rejected' ? 'bad-evidence' : 'evidence';
-    const result = await readResource<Record<string, any>>(apiPath(`monitors/${encodeURIComponent(monitorId)}/${prefix}/${encodeURIComponent(selectedEvidence.id)}/trace`));
-    if (generation !== workspaceGeneration) return;
+    const prefix = evidenceKind === 'rejected' ? 'bad-evidence' : 'evidence';
+    const result = await readResource<Record<string, any>>(apiPath(`monitors/${encodeURIComponent(monitorId)}/${prefix}/${encodeURIComponent(evidenceId)}/trace`));
+    if (generation !== workspaceGeneration || requestId !== traceGeneration || selectedEvidence?.id !== evidenceId || selectedEvidence?.kind !== evidenceKind) return;
     if (result.ok) selectedTrace = result.data;
     else traceError = messageFor(result.status, result.code);
     traceLoading = false;
@@ -202,22 +244,45 @@
 
   async function openDelivery(item: Delivery) {
     const generation = workspaceGeneration;
-    selectedEvidence = null; selectedTrace = null; selectedDelivery = null;
-    deliveryDetailError = ''; detailLoading = true;
+    const requestId = ++deliveryDetailGeneration;
+    detailGeneration += 1;
+    traceGeneration += 1;
+    healthVersionGeneration += 1;
+    closeSelectedEvidence();
+    selectedHealthVersion = null;
+    healthVersionLoading = false;
+    selectedDelivery = null;
+    healthVersionError = '';
+    detailError = ''; traceError = ''; deliveryDetailError = ''; detailLoading = true;
     const result = await readResource<Record<string, any>>(apiPath(`workspaces/${encodeURIComponent(workspaceId)}/deliveries/${encodeURIComponent(item.request_id)}`));
-    if (generation !== workspaceGeneration) return;
+    if (generation !== workspaceGeneration || requestId !== deliveryDetailGeneration) return;
     if (result.ok) selectedDelivery = result.data;
     else deliveryDetailError = messageFor(result.status, result.code);
     detailLoading = false;
   }
 
+  function closeSelectedDelivery() {
+    deliveryDetailGeneration += 1;
+    selectedDelivery = null;
+    deliveryDetailError = '';
+    detailLoading = false;
+  }
+
   async function openHealthVersion(version: number) {
     const generation = workspaceGeneration;
+    const requestId = ++healthVersionGeneration;
     selectedHealthVersion = null; healthVersionError = ''; healthVersionLoading = true;
     const result = await readResource<Record<string, any>>(apiPath(`monitors/${encodeURIComponent(monitorId)}/health/history/${version}`));
-    if (generation !== workspaceGeneration) return;
+    if (generation !== workspaceGeneration || requestId !== healthVersionGeneration) return;
     if (result.ok) selectedHealthVersion = result.data;
     else healthVersionError = messageFor(result.status, result.code);
+    healthVersionLoading = false;
+  }
+
+  function closeSelectedHealthVersion() {
+    healthVersionGeneration += 1;
+    selectedHealthVersion = null;
+    healthVersionError = '';
     healthVersionLoading = false;
   }
 
@@ -246,8 +311,12 @@
   async function changeWorkspace() {
     try { localStorage.setItem('trueexit.active-workspace-id', workspaceId); } catch { /* Storage may be unavailable. */ }
     workspaceGeneration += 1;
+    requestGeneration += 1;
+    verifiedEvidenceGeneration += 1;
+    rejectedEvidenceGeneration += 1;
+    deliveryListGeneration += 1;
+    clearSelectedRecords();
     monitor = null; health = null; healthHistory = null; evidence = null; badEvidence = null; deliveries = null;
-    selectedEvidence = null; selectedTrace = null; selectedDelivery = null; selectedHealthVersion = null;
     evidenceCursor = null; rejectedCursor = null; deliveryCursor = null;
     evidenceCursorStack = [null]; rejectedCursorStack = [null]; deliveryCursorStack = [null];
     evidencePageIndex = 0; rejectedPageIndex = 0; deliveryPageIndex = 0;
@@ -340,12 +409,12 @@
         {:else}<p class="investigation-muted">No persisted health history is available.</p>{/if}
         {#if healthVersionLoading}<p class="investigation-muted">Loading selected health version…</p>{/if}
         {#if healthVersionError}<p class="investigation-error" role="alert">{healthVersionError}</p>{/if}
-        {#if selectedHealthVersion}<div class="investigation-detail"><div class="investigation-detail__heading"><h3>Configuration v{selectedHealthVersion.config_version}</h3><button type="button" class="investigation-close" on:click={() => selectedHealthVersion = null}>Close</button></div><p class="investigation-muted">{selectedHealthVersion.is_current ? 'Current persisted snapshot' : 'Historical persisted snapshot'} · Cadence {selectedHealthVersion.configuration?.cadence_seconds == null ? 'unavailable' : `${selectedHealthVersion.configuration.cadence_seconds}s`}</p><details open><summary>Configuration and health snapshot</summary><pre>{JSON.stringify({ configuration: selectedHealthVersion.configuration, health: selectedHealthVersion.health }, null, 2)}</pre></details></div>{/if}
+        {#if selectedHealthVersion}<div class="investigation-detail"><div class="investigation-detail__heading"><h3>Configuration v{selectedHealthVersion.config_version}</h3><button type="button" class="investigation-close" on:click={closeSelectedHealthVersion}>Close</button></div><p class="investigation-muted">{selectedHealthVersion.is_current ? 'Current persisted snapshot' : 'Historical persisted snapshot'} · Cadence {selectedHealthVersion.configuration?.cadence_seconds == null ? 'unavailable' : `${selectedHealthVersion.configuration.cadence_seconds}s`}</p><details open><summary>Configuration and health snapshot</summary><pre>{JSON.stringify({ configuration: selectedHealthVersion.configuration, health: selectedHealthVersion.health }, null, 2)}</pre></details></div>{/if}
       </section>
 
       <section class="investigation-section" aria-labelledby="activity-heading">
         <div class="investigation-section__heading"><div><p class="investigation-eyebrow">OBSERVATIONS AND NOTIFICATIONS</p><h2 id="activity-heading">Evidence & delivery history</h2></div></div>
-        <div class="investigation-tabs" role="tablist" aria-label="Investigation records"><button type="button" role="tab" aria-selected={activeSection === 'evidence'} class:active={activeSection === 'evidence'} on:click={() => { activeSection = 'evidence'; selectedEvidence = null; selectedTrace = null; selectedDelivery = null; }}>Verified evidence</button><button type="button" role="tab" aria-selected={activeSection === 'rejected'} class:active={activeSection === 'rejected'} on:click={() => { activeSection = 'rejected'; selectedEvidence = null; selectedTrace = null; selectedDelivery = null; }}>Rejected evidence</button><button type="button" role="tab" aria-selected={activeSection === 'deliveries'} class:active={activeSection === 'deliveries'} on:click={() => { activeSection = 'deliveries'; selectedEvidence = null; selectedTrace = null; selectedDelivery = null; }}>Delivery history</button></div>
+        <div class="investigation-tabs" role="tablist" aria-label="Investigation records"><button type="button" role="tab" aria-selected={activeSection === 'evidence'} class:active={activeSection === 'evidence'} on:click={() => { activeSection = 'evidence'; clearSelectedRecords(); }}>Verified evidence</button><button type="button" role="tab" aria-selected={activeSection === 'rejected'} class:active={activeSection === 'rejected'} on:click={() => { activeSection = 'rejected'; clearSelectedRecords(); }}>Rejected evidence</button><button type="button" role="tab" aria-selected={activeSection === 'deliveries'} class:active={activeSection === 'deliveries'} on:click={() => { activeSection = 'deliveries'; clearSelectedRecords(); }}>Delivery history</button></div>
 
         {#if activeSection === 'evidence'}
           {#if evidenceLoading}<p class="investigation-muted" aria-live="polite">Loading verified evidence…</p>{:else if evidenceError}<p class="investigation-error" role="alert">{evidenceError}<button type="button" on:click={() => loadEvidencePage('verified')}>Retry</button></p>{:else if evidence?.data?.length}
@@ -367,10 +436,10 @@
         {#if detailLoading}<p class="investigation-muted" aria-live="polite">Loading selected record…</p>{/if}
         {#if detailError}<p class="investigation-error" role="alert">{detailError}</p>{/if}
         {#if selectedEvidence}
-          <div class="investigation-detail"><div class="investigation-detail__heading"><div><p class="investigation-eyebrow">{selectedEvidence.kind === 'rejected' ? 'REJECTED EVIDENCE' : 'VERIFIED EVIDENCE'}</p><h3>Evidence record</h3></div><button type="button" class="investigation-close" on:click={() => { selectedEvidence = null; selectedTrace = null; }}>Close</button></div><dl class="detail-grid"><div><dt>Evidence ID</dt><dd><code>{selectedEvidence.detail.id ?? selectedEvidence.id}</code></dd></div><div><dt>Request ID</dt><dd><code>{formatValue(selectedEvidence.detail.request_id)}</code></dd></div><div><dt>Configuration</dt><dd>v{formatValue(selectedEvidence.detail.config_version)}</dd></div><div><dt>{selectedEvidence.kind === 'rejected' ? 'Recorded at' : 'Observed at'}</dt><dd>{formatDate(selectedEvidence.detail.observed_at ?? selectedEvidence.detail.created_at)}</dd></div>{#if selectedEvidence.kind === 'rejected'}<div><dt>Rejection reason</dt><dd><code>{formatValue(selectedEvidence.detail.reason?.code)}</code></dd></div><div><dt>Reason parameters</dt><dd><pre>{JSON.stringify(selectedEvidence.detail.reason?.params ?? null, null, 2)}</pre></dd></div>{:else}<div class="detail-grid__wide"><dt>Verified fields</dt><dd><pre>{JSON.stringify(selectedEvidence.detail.fields ?? {}, null, 2)}</pre></dd></div>{/if}</dl>{#if selectedEvidence.detail.trace_available === true}<button type="button" class="investigation-primary" on:click={openTrace} disabled={traceLoading}>{traceLoading ? 'Loading trace…' : selectedTrace ? 'Refresh trace' : 'Load submitted trace'}</button><p class="investigation-muted">The original payload is fetched only on request when the API reports that a trace is available.</p>{:else}<p class="investigation-muted">The API reports that a trace is unavailable for this record.</p>{/if}{#if traceError}<p class="investigation-error" role="alert">{traceError}</p>{/if}{#if selectedTrace}<details open class="investigation-json"><summary>Trace payload and metadata</summary><pre>{JSON.stringify(selectedTrace, null, 2)}</pre></details>{/if}</div>
+          <div class="investigation-detail"><div class="investigation-detail__heading"><div><p class="investigation-eyebrow">{selectedEvidence.kind === 'rejected' ? 'REJECTED EVIDENCE' : 'VERIFIED EVIDENCE'}</p><h3>Evidence record</h3></div><button type="button" class="investigation-close" on:click={closeSelectedEvidence}>Close</button></div><dl class="detail-grid"><div><dt>Evidence ID</dt><dd><code>{selectedEvidence.detail.id ?? selectedEvidence.id}</code></dd></div><div><dt>Request ID</dt><dd><code>{formatValue(selectedEvidence.detail.request_id)}</code></dd></div><div><dt>Configuration</dt><dd>v{formatValue(selectedEvidence.detail.config_version)}</dd></div><div><dt>{selectedEvidence.kind === 'rejected' ? 'Recorded at' : 'Observed at'}</dt><dd>{formatDate(selectedEvidence.detail.observed_at ?? selectedEvidence.detail.created_at)}</dd></div>{#if selectedEvidence.kind === 'rejected'}<div><dt>Rejection reason</dt><dd><code>{formatValue(selectedEvidence.detail.reason?.code)}</code></dd></div><div><dt>Reason parameters</dt><dd><pre>{JSON.stringify(selectedEvidence.detail.reason?.params ?? null, null, 2)}</pre></dd></div>{:else}<div class="detail-grid__wide"><dt>Verified fields</dt><dd><pre>{JSON.stringify(selectedEvidence.detail.fields ?? {}, null, 2)}</pre></dd></div>{/if}</dl>{#if selectedEvidence.detail.trace_available === true}<button type="button" class="investigation-primary" on:click={openTrace} disabled={traceLoading}>{traceLoading ? 'Loading trace…' : selectedTrace ? 'Refresh trace' : 'Load submitted trace'}</button><p class="investigation-muted">The original payload is fetched only on request when the API reports that a trace is available.</p>{:else}<p class="investigation-muted">The API reports that a trace is unavailable for this record.</p>{/if}{#if traceError}<p class="investigation-error" role="alert">{traceError}</p>{/if}{#if selectedTrace}<details open class="investigation-json"><summary>Trace payload and metadata</summary><pre>{JSON.stringify(selectedTrace, null, 2)}</pre></details>{/if}</div>
         {/if}
         {#if deliveryDetailError}<p class="investigation-error" role="alert">{deliveryDetailError}</p>{/if}
-        {#if selectedDelivery}<div class="investigation-detail"><div class="investigation-detail__heading"><div><p class="investigation-eyebrow">READ-ONLY DELIVERY INSPECTION</p><h3>Delivery record</h3></div><button type="button" class="investigation-close" on:click={() => selectedDelivery = null}>Close</button></div><p class="investigation-muted">Delivery status is derived from persisted per-channel state. Manual retry is not available here.</p><details open><summary>Delivery snapshot and bounded diagnostics</summary><pre>{JSON.stringify(selectedDelivery, null, 2)}</pre></details></div>{/if}
+        {#if selectedDelivery}<div class="investigation-detail"><div class="investigation-detail__heading"><div><p class="investigation-eyebrow">READ-ONLY DELIVERY INSPECTION</p><h3>Delivery record</h3></div><button type="button" class="investigation-close" on:click={closeSelectedDelivery}>Close</button></div><p class="investigation-muted">Delivery status is derived from persisted per-channel state. Manual retry is not available here.</p><details open><summary>Delivery snapshot and bounded diagnostics</summary><pre>{JSON.stringify(selectedDelivery, null, 2)}</pre></details></div>{/if}
       </section>
     {/if}
   {/if}
