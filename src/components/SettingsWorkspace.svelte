@@ -4,6 +4,7 @@
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import { getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../lib/client/settings-api';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
+  import { formatDateTime } from '../lib/client/date-format';
   import SettingsSectionNavigation from './settings/SettingsSectionNavigation.svelte';
   import SettingsDestinationManager from './settings/SettingsDestinationManager.svelte';
   import SettingsPeopleManager from './settings/SettingsPeopleManager.svelte';
@@ -196,9 +197,7 @@
   }
 
   function formatDate(value: string | null | undefined): string {
-    if (!value) return 'Not scheduled';
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? 'Date unavailable' : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+    return value ? formatDateTime(value, 'Date unavailable') : 'Not scheduled';
   }
 
   function saveAppearance(event: Event) {

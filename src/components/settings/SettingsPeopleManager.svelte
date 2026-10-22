@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../../lib/client/settings-api';
+  import { formatDateTime } from '../../lib/client/date-format';
 
   export let workspaceId = '';
   export let canManageWorkspace = false;
@@ -145,9 +146,7 @@
   }
 
   function formatDate(value: string | null | undefined): string {
-    if (!value) return 'Not scheduled';
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? 'Date unavailable' : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+    return value ? formatDateTime(value, 'Date unavailable') : 'Not scheduled';
   }
 </script>
 

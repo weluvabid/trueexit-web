@@ -1,9 +1,8 @@
 import type { Monitor } from './monitor-types';
+import { formatDateTime } from './date-format';
 
 export function formatMonitorDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Time unavailable';
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  return formatDateTime(value);
 }
 
 export function formatMonitorCadence(seconds: number): string {

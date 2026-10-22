@@ -3,6 +3,8 @@
   import { getApiErrorCode } from '../lib/client/api-response';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
+  import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
+  import { formatDateTime } from '../lib/client/date-format';
 
   type DashboardSummary = {
     active_monitors: number; disabled_monitors: number; evidence_received_recently: number;
@@ -57,9 +59,7 @@
     return code ? `The request could not be completed (${code}).` : 'The request could not be completed. Please try again.';
   }
   function formatDate(value: string | null | undefined): string {
-    if (!value) return 'Time unavailable';
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? 'Time unavailable' : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+    return formatDateTime(value);
   }
   function relativeDate(value: string | null | undefined): string {
     if (!value) return 'Time unavailable';
@@ -79,7 +79,7 @@
 
   async function loadDashboard(workspaceId: string) {
     const sequence = ++requestSequence;
-    selectedWorkspaceId = workspaceId; dashboard = null; monitors = []; dashboardError = ''; detailError = '';
+    selectedWorkspaceId = workspaceId; writeActiveWorkspaceId(workspaceId); dashboard = null; monitors = []; dashboardError = ''; detailError = '';
     view = 'overview'; detailItems = []; monitorCursor = null; evidenceCursor = null;
     if (!workspaceId) return;
     loadingDashboard = true;
@@ -121,9 +121,11 @@
       }
       workspaces = result.workspaces.data.data;
       const personalId = result.me.ok ? result.me.data.personal_workspace_id : null;
-      const initial = workspaces.find((w) => w.id === personalId) ?? workspaces[0];
+      const requestedWorkspaceId = new URL(window.location.href).searchParams.get('workspace_id');
+      const initialWorkspaceId = resolveWorkspaceId(workspaces, [requestedWorkspaceId, readActiveWorkspaceId(), personalId]);
+      writeActiveWorkspaceId(initialWorkspaceId);
       bootstrapping = false;
-      if (initial) await loadDashboard(initial.id);
+      if (initialWorkspaceId) await loadDashboard(initialWorkspaceId);
     } catch {
       if (!disposed && sequence === bootstrapSequence) {
         bootstrapError = messageForCode('network_error', 0);
