@@ -2,7 +2,8 @@
   import { onDestroy } from 'svelte';
   import type { MonitorEditorDraft, FieldPrimitive } from '../lib/client/monitor-editor-state';
   import { buildMonitorJsonDraft, parseMonitorJsonDraft } from '../lib/client/monitor-field-editor';
-  import { createMonitorQueryClient, fetchMonitorTemplates, monitorTemplateQueryKeys, type MonitorTemplate } from '../lib/client/monitor-queries';
+  import { fetchMonitorTemplates, monitorTemplateQueryKeys, type MonitorTemplate } from '../lib/client/monitor-queries';
+  import { getSharedQueryClient } from '../lib/client/shared-http-query';
 
   export let draft: MonitorEditorDraft;
   export let workspaceId = '';
@@ -19,7 +20,7 @@
   let templateLoadSequence = 0;
   let observedWorkspaceId = workspaceId;
   let disposed = false;
-  const queryClient = createMonitorQueryClient();
+  const queryClient = getSharedQueryClient();
 
   const primitiveValues: Record<FieldPrimitive, number> = {
     size: 0, count: 1, duration: 2, timestamp: 3, boolean: 4, categorical: 5, checksum: 6, text: 7,

@@ -1,6 +1,5 @@
-import { fetchSharedGet, getSharedQueryClient } from './shared-http-query';
+import { fetchSharedGet } from './shared-http-query';
 import { getApiErrorCode, getApiList } from './api-response';
-import type { QueryClient } from '@tanstack/svelte-query';
 
 export type MonitorListQuery = {
   workspaceId: string;
@@ -25,15 +24,6 @@ export type MonitorListResponse<TMonitor> = {
   code: string | null;
   page: MonitorPage<TMonitor> | null;
 };
-
-/**
- * Use the same browser QueryClient as the shared HTTP GET layer. Monitor query
- * keys remain separately namespaced, while cache invalidation and request
- * lifecycle ownership now have one application-wide source.
- */
-export function createMonitorQueryClient(): QueryClient {
-  return getSharedQueryClient();
-}
 
 export const monitorQueryKeys = {
   workspaceLists: (workspaceId: string) => ['monitors', 'list', workspaceId] as const,

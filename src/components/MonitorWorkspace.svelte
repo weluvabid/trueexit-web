@@ -13,14 +13,16 @@
   import { prepareMonitorSubmission } from '../lib/client/monitor-editor-validation';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import { createMutation } from '@tanstack/svelte-query';
-  import { createMonitorQueryClient, fetchMonitorPage, fetchWorkspaceTags, fetchMonitorTags, fetchWorkspaceChannels, fetchMonitorDetail, fetchMonitorChannelIds, monitorQueryKeys, monitorResourceQueryKeys, type WorkspaceTag, type MonitorChannel } from '../lib/client/monitor-queries';
+  import { fetchMonitorPage, fetchWorkspaceTags, fetchMonitorTags, fetchWorkspaceChannels, fetchMonitorDetail, fetchMonitorChannelIds, monitorQueryKeys, monitorResourceQueryKeys, type WorkspaceTag, type MonitorChannel } from '../lib/client/monitor-queries';
   import { createEmptyMonitorDraft, createMonitorDraft, serializeMonitorChannelSelection, type FieldPrimitive } from '../lib/client/monitor-editor-state';
   import { createMonitorMutationOptions, editMonitorMutationOptions, lifecycleMonitorMutationOptions, tagMonitorMutationOptions } from '../lib/client/monitor-mutations';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
+  import { getSharedQueryClient } from '../lib/client/shared-http-query';
 
   type MonitorConfigVersion = { version: number; cadence_seconds: number; config: { fields: Array<{ name: string; path: string; primitive: number; meta?: Record<string, unknown> }> } };
   type MonitorDetail = Monitor & { config_versions?: MonitorConfigVersion[] };
-  const monitorQueryClient = createMonitorQueryClient();
+  // Query cache lifetime belongs to the application, not this component instance.
+  const monitorQueryClient = getSharedQueryClient();
   const createMonitorMutation = createMutation(() => createMonitorMutationOptions(monitorQueryClient), () => monitorQueryClient);
   const editMonitorMutation = createMutation(() => editMonitorMutationOptions(monitorQueryClient), () => monitorQueryClient);
   const tagMonitorMutation = createMutation(() => tagMonitorMutationOptions(monitorQueryClient), () => monitorQueryClient);
@@ -692,8 +694,8 @@
       editorLoadSequence += 1;
       tagLoadSequence += 1;
       if (searchTimer) clearTimeout(searchTimer);
-      void monitorQueryClient.cancelQueries();
-      monitorQueryClient.clear();
+      // Do not cancel or clear the application-wide cache when this island unmounts.
+      // Request sequencing above prevents this component from applying stale results.
     };
   });
 </script>
