@@ -71,18 +71,6 @@
 .settings-list-row strong, .settings-list-row small { display:block; }
 .settings-list-row strong { color:#303542; font-size:11px; }
 .settings-list-row small { margin-top:4px; color:#8b92a0; font-size:10px; }
-.settings-destination-summary { display:flex; flex-wrap:wrap; gap:10px 20px; margin-bottom:16px; color:#858d9b; font-size:10px; }
-.settings-destination-summary strong { color:#333849; font-size:13px; }
-.settings-destination-list { display:grid; margin-bottom:17px; }
-.settings-destination { display:flex; align-items:center; gap:12px; padding:14px 0; border-top:1px solid #edf0f4; }
-.settings-destination__mark { display:grid; flex:0 0 38px; width:38px; height:38px; place-items:center; border:1px solid #e8e3ff; border-radius:12px; background:#f8f6ff; color:#6b5de0; font-size:14px; font-weight:750; }
-.settings-destination__body { flex:1; min-width:0; }
-.settings-destination__title { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
-.settings-destination__title strong { color:#2d3240; font-size:12px; }
-.settings-destination__body p { margin:5px 0 0; color:#8b92a0; font-size:10px; }
-.settings-destination__actions { display:flex; align-items:center; gap:12px; }
-.settings-channel-form { display:grid; gap:18px; margin-top:20px; padding:20px; border:1px solid #e8e4fb; border-radius:14px; background:linear-gradient(135deg,#fcfbff,#fff); }
-.settings-channel-form--edit { border-color:#dfe3eb; background:#fbfcfe; }
 .settings-form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
 .settings-field--wide { grid-column:1 / -1; }
 .settings-check { display:flex; align-items:center; gap:9px; color:#596172; font-size:11px; line-height:1.5; }
@@ -99,7 +87,7 @@
 .settings-account-create { display:grid; gap:12px; margin-top:25px; padding-top:22px; border-top:1px solid #edf0f4; }
 .settings-account-create .settings-inline-form { margin-top:4px; }
 @media (max-width:900px) { .settings-layout { grid-template-columns:1fr; } .settings-tabs { position:static; display:flex; flex-wrap:wrap; } .settings-tabs button { flex:1 1 140px; } .settings-tabs button span { display:none; } }
-@media (max-width:640px) { .settings-intro { align-items:flex-start; } .settings-intro h1 { font-size:39px; } .settings-context { align-items:stretch; flex-direction:column; } .settings-context__select { width:100%; } .settings-layout { gap:13px; } .settings-card { padding:18px; border-radius:15px; } .settings-card__heading h2 { font-size:20px; } .settings-form__footer, .settings-danger-zone { align-items:stretch; flex-direction:column; } .settings-form__footer > div { flex-wrap:wrap; } .settings-inline-form { align-items:stretch; flex-direction:column; } .settings-form-grid { grid-template-columns:1fr; } .settings-field--wide { grid-column:auto; } .settings-account-status { grid-template-columns:1fr; } .settings-destination { align-items:flex-start; flex-wrap:wrap; } .settings-destination__actions { margin-left:50px; } .settings-table td, .settings-table th { padding-inline:8px; } }
+@media (max-width:640px) { .settings-intro { align-items:flex-start; } .settings-intro h1 { font-size:39px; } .settings-context { align-items:stretch; flex-direction:column; } .settings-context__select { width:100%; } .settings-layout { gap:13px; } .settings-card { padding:18px; border-radius:15px; } .settings-card__heading h2 { font-size:20px; } .settings-form__footer, .settings-danger-zone { align-items:stretch; flex-direction:column; } .settings-form__footer > div { flex-wrap:wrap; } .settings-inline-form { align-items:stretch; flex-direction:column; } .settings-form-grid { grid-template-columns:1fr; } .settings-field--wide { grid-column:auto; } .settings-account-status { grid-template-columns:1fr; } .settings-table td, .settings-table th { padding-inline:8px; } }
 @media (prefers-reduced-motion:reduce) { .settings-spinner { animation:none; } .settings-button { transition:none; } }
 
 /* Settings visual system: semantic surfaces follow the global light/dark theme. */
@@ -140,7 +128,7 @@ html[data-theme="dark"] .settings-note, html[data-theme="dark"] .settings-empty 
 html[data-theme="dark"] .settings-field input:disabled { background:#1b1a24; color:#aaa6ba; }
 html[data-theme="dark"] .settings-form__footer > span, html[data-theme="dark"] .settings-field small { color:var(--color-text-muted); }
 html[data-theme="dark"] .settings-table th { color:#aaa6ba; }
-html[data-theme="dark"] .settings-destination, html[data-theme="dark"] .settings-destination__actions { color:var(--color-text); }
+
 html[data-theme="dark"] .settings-check { color:var(--color-text-secondary); }
 html[data-theme="dark"] .settings-danger-zone { border-color:#61303a; background:linear-gradient(110deg,#24171d,#19151c); }
 html[data-theme="dark"] .settings-danger-zone h3 { color:#ffc0c6; }

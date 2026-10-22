@@ -4,9 +4,9 @@
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import { invalidateSharedGetCache } from '../lib/client/shared-http-query';
   import { getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../lib/client/settings-api';
-  import { buildNotificationChannelConfig } from '../lib/client/settings-channel-config';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
   import SettingsSectionNavigation from './settings/SettingsSectionNavigation.svelte';
+  import SettingsDestinationManager from './settings/SettingsDestinationManager.svelte';
 
   export let mode: 'workspace' | 'account' = 'workspace';
 
@@ -32,19 +32,6 @@
     created_at?: string;
     email_delivery?: string;
   };
-  type ChannelKind = 'email' | 'webhook' | 'slack' | 'discord';
-  type Channel = {
-    id: string;
-    label: string;
-    type: ChannelKind;
-    priority: number;
-    enabled: boolean;
-    configured: boolean;
-    total_attempts?: number;
-    successful_attempts?: number;
-  };
-  type AccountPage = { data: Account[] };
-  type List<T> = { data: T[] };
 
   let workspaces: WorkspaceContext[] = [];
   let selectedWorkspaceId = '';
@@ -52,7 +39,6 @@
   let accounts: Account[] = [];
   let members: Member[] = [];
   let invitations: Invitation[] = [];
-  let channels: Channel[] = [];
   let loading = true;
   let error = '';
   let notice = '';
@@ -62,27 +48,8 @@
   let workspaceForm = { name: '', newName: '', accountId: '' };
   let peopleForm = { inviteEmail: '' };
   let accountForm = { newOwnerUserId: '', closureConfirm: false, createAccountName: '' };
-  let destinationCreateForm = {
-    label: '',
-    type: 'webhook' as ChannelKind,
-    priority: 0,
-    enabled: true,
-    address: '',
-    headers: '',
-  };
-  let destinationEditForm = {
-    id: '',
-    label: '',
-    priority: 0,
-    enabled: true,
-    type: 'webhook' as ChannelKind,
-    address: '',
-    headers: '',
-    configTouched: false,
-  };
   let settingsUi = {
     appearancePreference: 'system',
-    showNewChannel: false,
     showCreateWorkspace: false,
     showCreateAccount: false,
   };
@@ -139,7 +106,7 @@
       }
       writeActiveWorkspaceId(selectedWorkspaceId);
       if (!selectedWorkspaceId) {
-        members = []; invitations = []; channels = [];
+        members = []; invitations = [];
       }
       const accountsResult = await request('/accounts');
       if (generation !== loadGeneration) return;
@@ -156,33 +123,23 @@
   async function loadWorkspaceSections() {
     if (!selectedWorkspaceId) {
       workspaceSectionsGeneration += 1;
-      members = []; invitations = []; channels = [];
+      members = []; invitations = [];
       return;
     }
     const generation = ++workspaceSectionsGeneration;
     const workspaceId = selectedWorkspaceId;
     const id = encodeURIComponent(workspaceId);
-    const [membersResult, invitationsResult, channelsResult] = await Promise.all([
+    const [membersResult, invitationsResult] = await Promise.all([
       request(`/workspaces/${id}/members`),
       request(`/workspaces/${id}/invitations`),
-      request(`/workspaces/${id}/channels`),
     ]);
     if (generation !== workspaceSectionsGeneration || workspaceId !== selectedWorkspaceId) return;
     members = membersResult.response.ok ? listSettingsData<Member>(membersResult.body) : [];
     invitations = invitationsResult.response.ok ? listSettingsData<Invitation>(invitationsResult.body) : [];
-    channels = channelsResult.response.ok ? listSettingsData<Channel>(channelsResult.body) : [];
-    const failed = [membersResult, invitationsResult, channelsResult].find((item) => !item.response.ok && item.response.status !== 403 && item.response.status !== 404);
+    const failed = [membersResult, invitationsResult].find((item) => !item.response.ok && item.response.status !== 403 && item.response.status !== 404);
     if (failed && !error) error = settingsErrorMessage(failed.response.status, getSettingsErrorCode(failed.body));
   }
 
-
-  async function selectWorkspace() {
-    workspaceSectionsGeneration += 1;
-    writeActiveWorkspaceId(selectedWorkspaceId);
-    error = ''; notice = '';
-    workspaceForm.name = selectedWorkspace?.name ?? '';
-    await loadWorkspaceSections();
-  }
 
   async function renameWorkspace(event: SubmitEvent) {
     event.preventDefault();
@@ -262,100 +219,6 @@
     if (result !== null || !error) {
       invitations = invitations.filter((item) => item.id !== invitation.id);
       notice = `Invitation for ${invitation.email} revoked.`;
-    }
-  }
-
-  function channelConfig(type: ChannelKind, address: string, headersText: string): Record<string, unknown> | null {
-    const result = buildNotificationChannelConfig(type, address, headersText);
-    if (!result.ok) {
-      error = result.error;
-      return null;
-    }
-    return result.config;
-  }
-
-  async function validateChannel(type: ChannelKind, label: string, priority: number, enabled: boolean, config: Record<string, unknown>) {
-    if (!selectedWorkspace) return false;
-    const result = await perform<{ valid?: boolean; duplicate?: boolean; existing_channel?: { id: string; label: string } | null }>(
-      'validate-channel', `/workspaces/${encodeURIComponent(selectedWorkspace.id)}/channels/validate`,
-      { method: 'POST', body: JSON.stringify({ type, config }) },
-    );
-    if (!result) return false;
-    if (result.duplicate && result.existing_channel) {
-      error = `This configuration matches “${result.existing_channel.label}”. Choose the existing destination instead.`;
-      return false;
-    }
-    if (result.valid === false) {
-      error = 'The destination configuration was not valid.';
-      return false;
-    }
-    return true;
-  }
-
-  async function createChannel(event: SubmitEvent) {
-    event.preventDefault();
-    if (!selectedWorkspace || !canManageWorkspace) return;
-    const label = destinationCreateForm.label.trim();
-    if (!label || label.length > 80) { error = 'Enter a destination label between 1 and 80 characters.'; return; }
-    if (!Number.isInteger(destinationCreateForm.priority) || destinationCreateForm.priority < 0 || destinationCreateForm.priority > 1000) { error = 'Priority must be a whole number between 0 and 1000.'; return; }
-    error = '';
-    const config = channelConfig(destinationCreateForm.type, destinationCreateForm.address, destinationCreateForm.headers);
-    if (!config) return;
-    if (!(await validateChannel(destinationCreateForm.type, label, destinationCreateForm.priority, destinationCreateForm.enabled, config))) return;
-    const result = await perform<Channel>('create-channel', `/workspaces/${encodeURIComponent(selectedWorkspace.id)}/channels`, {
-      method: 'POST', body: JSON.stringify({ type: destinationCreateForm.type, label, priority: destinationCreateForm.priority, enabled: destinationCreateForm.enabled, config }),
-    });
-    if (result) {
-      channels = [...channels, result];
-      destinationCreateForm.label = ''; destinationCreateForm.address = ''; destinationCreateForm.headers = ''; destinationCreateForm.priority = 0; destinationCreateForm.enabled = true;
-      settingsUi.showNewChannel = false;
-      notice = 'Destination saved. Secret values are not returned to the browser after saving.';
-    }
-  }
-
-  function beginEditChannel(channel: Channel) {
-    destinationEditForm.id = channel.id;
-    destinationEditForm.label = channel.label;
-    destinationEditForm.priority = channel.priority ?? 0;
-    destinationEditForm.enabled = channel.enabled;
-    destinationEditForm.type = channel.type;
-    destinationEditForm.address = '';
-    destinationEditForm.headers = '';
-    destinationEditForm.configTouched = false;
-    error = '';
-  }
-
-  async function saveChannelEdit(event: SubmitEvent) {
-    event.preventDefault();
-    if (!selectedWorkspace || !canManageWorkspace || !destinationEditForm.id) return;
-    const label = destinationEditForm.label.trim();
-    if (!label || label.length > 80) { error = 'Enter a destination label between 1 and 80 characters.'; return; }
-    if (!Number.isInteger(destinationEditForm.priority) || destinationEditForm.priority < 0 || destinationEditForm.priority > 1000) { error = 'Priority must be a whole number between 0 and 1000.'; return; }
-    const payload: Record<string, unknown> = { label, priority: destinationEditForm.priority, enabled: destinationEditForm.enabled };
-    if (destinationEditForm.configTouched) {
-      const config = channelConfig(destinationEditForm.type, destinationEditForm.address, destinationEditForm.headers);
-      if (!config) return;
-      if (!(await validateChannel(destinationEditForm.type, label, destinationEditForm.priority, destinationEditForm.enabled, config))) return;
-      payload.config = config;
-    }
-    const result = await perform<Channel>('edit-channel', `/workspaces/${encodeURIComponent(selectedWorkspace.id)}/channels/${encodeURIComponent(destinationEditForm.id)}`, {
-      method: 'PATCH', body: JSON.stringify(payload),
-    });
-    if (result) {
-      channels = channels.map((item) => item.id === result.id ? result : item);
-      destinationEditForm.id = '';
-      destinationEditForm.address = ''; destinationEditForm.headers = '';
-      notice = 'Destination updated.';
-    }
-  }
-
-  async function deleteChannel(channel: Channel) {
-    if (!selectedWorkspace || !canManageWorkspace) return;
-    if (!confirm(`Delete destination “${channel.label}”? It must first be unassigned from all monitors.`)) return;
-    const result = await perform('delete-channel', `/workspaces/${encodeURIComponent(selectedWorkspace.id)}/channels/${encodeURIComponent(channel.id)}`, { method: 'DELETE' });
-    if (result !== null || !error) {
-      channels = channels.filter((item) => item.id !== channel.id);
-      notice = `Destination “${channel.label}” deleted.`;
     }
   }
 
@@ -531,49 +394,7 @@
             {#if invitations.length}<div class="settings-list">{#each invitations as invitation (invitation.id)}<div class="settings-list-row"><div><strong>{invitation.email}</strong><small>Expires {formatDate(invitation.expires_at)} · {invitation.role}</small></div>{#if canManageWorkspace}<button class="settings-text-button settings-text-button--danger" type="button" on:click={() => revokeInvitation(invitation)} disabled={!!busyKey}>Revoke</button>{/if}</div>{/each}</div>{:else}<p class="settings-empty">No pending invitations.</p>{/if}
           </section>
         {:else if section === 'destinations'}
-          <section class="settings-card">
-            <div class="settings-card__heading"><div><p class="settings-kicker">NOTIFICATION ROUTES</p><h2>Choose where signals land.</h2><p>Secrets are never returned after saving. Destination setup is separate from provider delivery activation.</p></div><span class="settings-card__symbol">↗</span></div>
-            <div class="settings-destination-summary"><span><strong>{channels.length}</strong> saved destinations</span><span><strong>{channels.filter((item) => item.enabled).length}</strong> enabled</span><span>Maximum 25 per workspace</span></div>
-            {#if channels.length}
-              <div class="settings-destination-list">{#each channels as channel (channel.id)}
-                <article class="settings-destination">
-                  <div class="settings-destination__mark">{channel.type === 'email' ? '@' : channel.type === 'slack' ? 'S' : channel.type === 'discord' ? 'D' : '↗'}</div>
-                  <div class="settings-destination__body"><div class="settings-destination__title"><strong>{channel.label}</strong><span class:settings-pill--off={!channel.enabled} class="settings-pill">{channel.enabled ? 'Enabled' : 'Disabled'}</span></div><p>{channel.type.toUpperCase()} · Priority {channel.priority ?? 0} · {channel.configured ? 'Configured' : 'Needs configuration'}</p></div>
-                  {#if canManageWorkspace}<div class="settings-destination__actions"><button class="settings-text-button" type="button" on:click={() => beginEditChannel(channel)} disabled={!!busyKey}>Edit</button><button class="settings-text-button settings-text-button--danger" type="button" on:click={() => deleteChannel(channel)} disabled={!!busyKey}>Delete</button></div>{/if}
-                </article>
-              {/each}</div>
-            {:else}<p class="settings-empty">No notification destinations saved yet.</p>{/if}
-            {#if canManageWorkspace}
-              <button class="settings-button settings-button--primary" type="button" on:click={() => { settingsUi.showNewChannel = !settingsUi.showNewChannel; destinationEditForm.id = ''; error = ''; }} disabled={channels.length >= 25 || !!busyKey}>{settingsUi.showNewChannel ? '− Close form' : '＋ Add destination'}</button>
-              {#if settingsUi.showNewChannel}
-                <form class="settings-channel-form" on:submit={createChannel}>
-                  <div class="settings-form-grid">
-                    <label class="settings-field"><span>Provider</span><select bind:value={destinationCreateForm.type}><option value="webhook">Custom webhook</option><option value="email">Email</option><option value="slack">Slack incoming webhook</option><option value="discord">Discord webhook</option></select></label>
-                    <label class="settings-field"><span>Destination label</span><input bind:value={destinationCreateForm.label} required maxlength="80" placeholder="Operations alerts" /></label>
-                    <label class="settings-field settings-field--wide"><span>{destinationCreateForm.type === 'email' ? 'Recipient email' : 'HTTPS webhook URL'}</span><input bind:value={destinationCreateForm.address} required type={destinationCreateForm.type === 'email' ? 'email' : 'url'} autocomplete="off" placeholder={destinationCreateForm.type === 'email' ? 'ops@example.com' : 'https://hooks.example.com/…'} /></label>
-                    {#if destinationCreateForm.type !== 'email'}<label class="settings-field settings-field--wide"><span>Custom headers <small>Optional JSON object</small></span><textarea bind:value={destinationCreateForm.headers} rows="3" spellcheck="false" placeholder={'{ "Authorization": "Bearer secret" }'}></textarea><small>Encrypted by the API and never returned after saving.</small></label>{/if}
-                    <label class="settings-field"><span>Priority <small>Lower runs first</small></span><input bind:value={destinationCreateForm.priority} type="number" min="0" max="1000" step="1" required /></label>
-                    <label class="settings-check"><input bind:checked={destinationCreateForm.enabled} type="checkbox" /><span>Destination enabled</span></label>
-                  </div>
-                  <div class="settings-form__footer"><span>Validation previews duplicates without contacting the destination.</span><button class="settings-button settings-button--primary" type="submit" disabled={!!busyKey}>{busyKey === 'create-channel' || busyKey === 'validate-channel' ? 'Validating…' : 'Validate & save'}</button></div>
-                </form>
-              {/if}
-            {:else}<p class="settings-note">You can view destinations, but only workspace owners and admins can change them.</p>{/if}
-
-            {#if destinationEditForm.id}
-              <form class="settings-channel-form settings-channel-form--edit" on:submit={saveChannelEdit}>
-                <div class="settings-card__heading"><div><p class="settings-kicker">EDIT DESTINATION</p><h2>{destinationEditForm.label || 'Destination settings'}</h2><p>Leave the secret fields blank to preserve the existing encrypted configuration.</p></div></div>
-                <div class="settings-form-grid">
-                  <label class="settings-field"><span>Label</span><input bind:value={destinationEditForm.label} required maxlength="80" /></label>
-                  <label class="settings-field"><span>Priority</span><input bind:value={destinationEditForm.priority} type="number" min="0" max="1000" step="1" required /></label>
-                  <label class="settings-field settings-field--wide"><span>{destinationEditForm.type === 'email' ? 'New recipient email (optional)' : 'New HTTPS webhook URL (optional)'}</span><input bind:value={destinationEditForm.address} type={destinationEditForm.type === 'email' ? 'email' : 'url'} autocomplete="off" placeholder="Leave blank to preserve current secret" on:input={() => destinationEditForm.configTouched = true} /></label>
-                  {#if destinationEditForm.type !== 'email'}<label class="settings-field settings-field--wide"><span>Replace custom headers (optional JSON)</span><textarea bind:value={destinationEditForm.headers} rows="2" spellcheck="false" placeholder="Only used if replacing the destination config" on:input={() => destinationEditForm.configTouched = true}></textarea></label>{/if}
-                  <label class="settings-check"><input bind:checked={destinationEditForm.enabled} type="checkbox" /><span>Destination enabled</span></label>
-                </div>
-                <div class="settings-form__footer"><span>Secret configuration is never prefilled.</span><div><button class="settings-button settings-button--quiet" type="button" on:click={() => destinationEditForm.id = ''}>Cancel</button><button class="settings-button settings-button--primary" type="submit" disabled={!!busyKey}>{busyKey === 'edit-channel' ? 'Saving…' : 'Save changes'}</button></div></div>
-              </form>
-            {/if}
-          </section>
+          <SettingsDestinationManager workspaceId={selectedWorkspaceId} {canManageWorkspace} />
         {:else if section === 'account'}
           <section class="settings-card">
             <div class="settings-card__heading"><div><p class="settings-kicker">ACCOUNT STATUS</p><h2>Know where your account stands.</h2><p>Account actions are restricted to the account owner and may require recent identity verification.</p></div><span class="settings-card__symbol">◈</span></div>

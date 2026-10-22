@@ -1,0 +1,16 @@
+.settings-destination-summary { display:flex; flex-wrap:wrap; gap:10px 20px; margin-bottom:16px; color:var(--color-text-muted); font-size:10px; }
+.settings-destination-summary strong { color:var(--color-text); font-size:13px; }
+.settings-destination-list { display:grid; margin-bottom:17px; }
+.settings-destination { display:flex; align-items:center; gap:12px; padding:14px 0; border-top:1px solid var(--color-border); }
+.settings-destination__mark { display:grid; flex:0 0 38px; width:38px; height:38px; place-items:center; border:1px solid var(--color-border); border-radius:12px; background:var(--color-surface-secondary); color:var(--color-text); font-size:14px; font-weight:750; }
+.settings-destination__body { flex:1; min-width:0; }
+.settings-destination__title { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.settings-destination__title strong { color:var(--color-text); font-size:12px; }
+.settings-destination__body p { margin:5px 0 0; color:var(--color-text-muted); font-size:10px; }
+.settings-destination__actions { display:flex; align-items:center; gap:12px; }
+.settings-channel-form { display:grid; gap:18px; margin-top:20px; padding:20px; border:1px solid var(--color-border); border-radius:14px; background:var(--color-surface); }
+.settings-channel-form--edit { background:var(--color-surface-secondary); }
+@media (max-width:640px) {
+  .settings-destination { align-items:flex-start; flex-wrap:wrap; }
+  .settings-destination__actions { margin-left:50px; }
+}
