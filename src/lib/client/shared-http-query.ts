@@ -69,27 +69,63 @@ function canonicalizeGetUrl(input: string): string {
 }
 
 export async function fetchSharedGet(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
-  const method = (init.method ?? 'GET').toUpperCase();
+  const request = typeof Request !== 'undefined' && input instanceof Request ? input : null;
+  const method = (init.method ?? request?.method ?? 'GET').toUpperCase();
   if (method !== 'GET') return fetch(input, init);
 
   const requestUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
   // Query parameter order does not change the resource represented by these
-  // API GETs. Canonicalize it so callers that construct equivalent URLs in
-  // different orders share the same in-flight request and cached response.
+  // API GETs. Canonicalize it so equivalent URLs share the same request/cache.
   const url = canonicalizeGetUrl(requestUrl);
-  const headers = new Headers(init.headers);
-  headers.set('Accept', headers.get('Accept') ?? 'application/json');
-  const credentials = init.credentials ?? 'same-origin';
-  const key = ['shared-http-get', method, url, credentials, [...headers.entries()].sort(([a], [b]) => a.localeCompare(b))] as const;
+
+  // Fetch's Request input already carries headers and request options. Merge
+  // explicit init headers as overrides rather than accidentally dropping the
+  // headers supplied by the Request object.
+  const headers = new Headers(request?.headers);
+  if (init.headers) {
+    new Headers(init.headers).forEach((value, name) => headers.set(name, value));
+  }
+  if (!headers.has('Accept')) headers.set('Accept', 'application/json');
+
+  const credentials = init.credentials ?? request?.credentials ?? 'same-origin';
+  const mode = init.mode ?? request?.mode ?? 'cors';
+  const redirect = init.redirect ?? request?.redirect ?? 'follow';
+  const referrer = init.referrer ?? request?.referrer ?? '';
+  const referrerPolicy = init.referrerPolicy ?? request?.referrerPolicy ?? '';
+  const integrity = init.integrity ?? request?.integrity ?? '';
+  const headerIdentity = [...headers.entries()].sort(([a], [b]) => a.localeCompare(b));
+  const key = [
+    'shared-http-get',
+    method,
+    url,
+    credentials,
+    mode,
+    redirect,
+    referrer,
+    referrerPolicy,
+    integrity,
+    headerIdentity,
+  ] as const;
 
   try {
     const result = await getSharedQueryClient().fetchQuery<CachedHttpResponse>({
       queryKey: key,
       staleTime: 1_500,
       queryFn: async ({ signal }) => {
-        // The shared query owns the network request's AbortSignal. A component's
-        // signal must not cancel an in-flight request shared with other consumers.
-        const response = await fetch(input, { ...init, method, headers, credentials, signal });
+        // The shared query owns the network request's AbortSignal. One consumer
+        // leaving must not abort a request that another consumer is awaiting.
+        const response = await fetch(input, {
+          ...init,
+          method,
+          headers,
+          credentials,
+          mode,
+          redirect,
+          referrer,
+          referrerPolicy,
+          integrity,
+          signal,
+        });
         const result: CachedHttpResponse = {
           status: response.status,
           statusText: response.statusText,

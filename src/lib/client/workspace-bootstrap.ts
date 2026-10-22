@@ -67,10 +67,25 @@ export function loadWorkspaceBootstrap(): Promise<{
     ]).then(([me, workspaces]) => normalizeBootstrap(me, workspaces));
   }
 
-  const shared = window.__trueExitWorkspaceBootstrapPromise ??= Promise.all([
-    readResource('/api/backend/me'),
-    readResource('/api/backend/workspaces?limit=50'),
-  ]).then(([me, workspaces]) => ({ me, workspaces }));
+  let shared = window.__trueExitWorkspaceBootstrapPromise;
+  if (!shared) {
+    shared = Promise.all([
+      readResource('/api/backend/me'),
+      readResource('/api/backend/workspaces?limit=50'),
+    ]).then(([me, workspaces]) => ({ me, workspaces }));
+    window.__trueExitWorkspaceBootstrapPromise = shared;
+
+    // This promise exists only to deduplicate concurrent shell/page bootstrap
+    // work. Keeping a settled result forever makes a transient failure (or an
+    // authentication/workspace transition) permanent for the lifetime of the
+    // document. The shared GET cache provides a short reuse window after this
+    // promise settles, while failed reads remain immediately retryable.
+    void shared.finally(() => {
+      if (window.__trueExitWorkspaceBootstrapPromise === shared) {
+        window.__trueExitWorkspaceBootstrapPromise = undefined;
+      }
+    }).catch(() => undefined);
+  }
 
   return shared.then(({ me, workspaces }) => normalizeBootstrap(me, workspaces));
 }
