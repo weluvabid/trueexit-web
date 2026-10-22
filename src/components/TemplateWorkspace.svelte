@@ -5,6 +5,8 @@
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import type { FieldDefinition, Primitive } from '../lib/client/template-types';
   import { addTemplateField, removeTemplateField, updateTemplateField, discoveredFieldKey, mergeDiscoveredFields } from '../lib/client/template-field-model';
+  import { validateTemplateDraft } from '../lib/client/template-validation';
+  import { templateErrorMessage } from '../lib/client/template-errors';
 
   type Template = {
     id: string; owner_user_id: string | null; kind: 'built_in' | 'custom'; name: string;
@@ -61,22 +63,10 @@
   $: selectedWorkspace = workspaces.find((item) => item.id === workspaceId) ?? null;
   $: canManage = can(selectedWorkspace, 'templates.create');
 
-  function errorMessage(status: number, code: string | null): string {
-    if (status === 401) return 'Your session needs attention. Sign in again to continue.';
-    if (status === 403) return 'You do not have permission to manage templates in this workspace.';
-    if (status === 404) return 'This template or workspace is no longer available.';
-    if (status === 409) return code === 'version_conflict' || code === 'template_version_conflict'
-      ? 'This template changed elsewhere. Reload it before saving your changes.'
-      : 'This operation conflicts with the current state. Refresh and try again.';
-    if (status === 422) return 'The template was not accepted. Check its fields and try again.';
-    if (status === 0) return 'Could not reach TrueExit. Check your connection and try again.';
-    if (status >= 500) return 'TrueExit could not complete this request right now. Try again shortly.';
-    return code ? `The request could not be completed (${code}).` : 'The request could not be completed.';
-  }
 
   async function readError(response: Response): Promise<string> {
     const body = await response.json().catch(() => null) as ApiError | null;
-    return errorMessage(response.status, body?.error?.code ?? null);
+    return templateErrorMessage(response.status, body?.error?.code ?? null);
   }
 
   function idempotencyHeaders(): HeadersInit {
@@ -94,19 +84,19 @@
       const response = await fetchSharedGet(`/api/backend/templates?${params}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
       const body = await response.json().catch(() => null) as Page<Template> | ApiError | null;
       if (current !== sequence) return;
-      if (!response.ok) { const e = body as ApiError | null; listError = errorMessage(response.status, e?.error?.code ?? null); return; }
+      if (!response.ok) { const e = body as ApiError | null; listError = templateErrorMessage(response.status, e?.error?.code ?? null); return; }
       const page = body as Page<Template>;
       templates = Array.isArray(page.data) ? page.data : [];
       nextCursor = page.page?.next_cursor ?? null;
       cursor = next;
-    } catch { if (current === sequence) listError = errorMessage(0, 'network_error'); }
+    } catch { if (current === sequence) listError = templateErrorMessage(0, 'network_error'); }
     finally { if (current === sequence) loading = false; }
   }
 
   async function bootstrap() {
     loading = true; bootError = '';
     const result = await loadWorkspaceBootstrap();
-    if (!result.workspaces.ok) { bootError = errorMessage(result.workspaces.status, result.workspaces.code); loading = false; return; }
+    if (!result.workspaces.ok) { bootError = templateErrorMessage(result.workspaces.status, result.workspaces.code); loading = false; return; }
     workspaces = result.workspaces.data.data;
     const personal = result.me.ok ? result.me.data.personal_workspace_id : null;
     let storedWorkspaceId = '';
@@ -140,12 +130,12 @@
       const response = await fetchSharedGet(`/api/backend/templates/${encodeURIComponent(template.id)}?workspace_id=${encodeURIComponent(targetWorkspaceId)}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
       const body = await response.json().catch(() => null) as Template | ApiError | null;
       if (current !== editSequence || !formOpen || mode !== 'edit' || editing?.id !== template.id || workspaceId !== targetWorkspaceId) return;
-      if (!response.ok) { formError = errorMessage(response.status, (body as ApiError | null)?.error?.code ?? null); return; }
+      if (!response.ok) { formError = templateErrorMessage(response.status, (body as ApiError | null)?.error?.code ?? null); return; }
       const latest = body as Template;
       editing = latest; name = latest.name; description = latest.description ?? ''; fields = latest.fields.map((field) => ({ ...field }));
     } catch {
       if (current === editSequence && formOpen && mode === 'edit' && editing?.id === template.id && workspaceId === targetWorkspaceId) {
-        formError = errorMessage(0, 'network_error');
+        formError = templateErrorMessage(0, 'network_error');
       }
     }
   }
@@ -157,23 +147,32 @@
   }
 
   async function discoverFields() {
+    const current = ++discoverySequence;
+    const targetWorkspaceId = workspaceId;
+    const targetSamplePayload = samplePayload;
     discoveryError = ''; discoveryWarnings = []; discovered = []; selectedDiscovered = [];
     let payload: unknown;
-    try { payload = JSON.parse(samplePayload); } catch { discoveryError = 'Enter valid JSON before discovering fields.'; return; }
+    try { payload = JSON.parse(targetSamplePayload); } catch { discoveryError = 'Enter valid JSON before discovering fields.'; return; }
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) { discoveryError = 'The sample payload must be a JSON object.'; return; }
     discovering = true;
     try {
       const response = await fetch('/api/backend/templates/discover-fields', {
         method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: idempotencyHeaders(),
-        body: JSON.stringify({ workspace_id: workspaceId, payload }),
+        body: JSON.stringify({ workspace_id: targetWorkspaceId, payload }),
       });
       const body = await response.json().catch(() => null) as { fields?: DiscoveredField[]; warnings?: { code: string }[] } | ApiError | null;
-      if (!response.ok) { discoveryError = errorMessage(response.status, (body as ApiError | null)?.error?.code ?? null); return; }
+      if (current !== discoverySequence || !formOpen || workspaceId !== targetWorkspaceId || samplePayload !== targetSamplePayload) return;
+      if (!response.ok) { discoveryError = templateErrorMessage(response.status, (body as ApiError | null)?.error?.code ?? null); return; }
       const result = body as { fields?: DiscoveredField[]; warnings?: { code: string }[] };
       discovered = Array.isArray(result.fields) ? result.fields : [];
       discoveryWarnings = (result.warnings ?? []).map((warning) => warning.code);
-    } catch { discoveryError = errorMessage(0, 'network_error'); }
-    finally { discovering = false; }
+    } catch {
+      if (current === discoverySequence && formOpen && workspaceId === targetWorkspaceId && samplePayload === targetSamplePayload) {
+        discoveryError = templateErrorMessage(0, 'network_error');
+      }
+    } finally {
+      if (current === discoverySequence) discovering = false;
+    }
   }
 
   function toggleDiscovered(field: DiscoveredField, checked: boolean) {
@@ -188,22 +187,10 @@
     selectedDiscovered = [];
   }
 
-  function validateForm(): string | null {
-    if (!name.trim()) return 'Give this template a name.';
-    if (name.trim().length > 120) return 'Template names must be 120 characters or fewer.';
-    if (description.length > 1000) return 'Descriptions must be 1,000 characters or fewer.';
-    const valid = fields.filter((field) => field.name.trim() && field.path.trim());
-    if (!valid.length) return 'Add at least one field with a name and JSON path.';
-    const names = valid.map((field) => field.name.trim());
-    if (new Set(names).size !== names.length) return 'Field names must be unique.';
-    if (valid.filter((field) => field.primitive === 3).length > 1) return 'Only one field can use the Timestamp primitive.';
-    if (valid.some((field) => !Number.isInteger(field.primitive) || field.primitive < 0 || field.primitive > 7)) return 'Choose a valid primitive for every field.';
-    return null;
-  }
 
   async function saveTemplate(event: SubmitEvent) {
     event.preventDefault(); formError = ''; notice = '';
-    const validation = validateForm(); if (validation) { formError = validation; return; }
+    const validation = validateTemplateDraft({ name, description, fields }); if (validation) { formError = validation; return; }
     if (!canManage) { formError = 'You can view templates here, but only workspace managers can save them.'; return; }
     saving = true;
     const payload = { workspace_id: workspaceId, name: name.trim(), description: description.trim(), fields: fields.filter((field) => field.name.trim() && field.path.trim()).map((field) => ({ ...field, name: field.name.trim(), path: field.path.trim() })) };
@@ -215,7 +202,7 @@
       void invalidateSharedGetCache();
       formOpen = false; notice = mode === 'create' ? 'Template created.' : 'Template updated.';
       cursorStack = [null]; pageIndex = 0; await loadTemplates(null);
-    } catch { formError = errorMessage(0, 'network_error'); }
+    } catch { formError = templateErrorMessage(0, 'network_error'); }
     finally { saving = false; }
   }
 
@@ -226,10 +213,10 @@
       const response = await fetchSharedGet(`/api/backend/templates/${encodeURIComponent(template.id)}?workspace_id=${encodeURIComponent(workspaceId)}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
       const body = await response.json().catch(() => null) as Template | ApiError | null;
       if (current !== detailSequence) return;
-      if (!response.ok) { detailError = errorMessage(response.status, (body as ApiError | null)?.error?.code ?? null); return; }
+      if (!response.ok) { detailError = templateErrorMessage(response.status, (body as ApiError | null)?.error?.code ?? null); return; }
       detail = body as Template;
     } catch {
-      if (current === detailSequence) detailError = errorMessage(0, 'network_error');
+      if (current === detailSequence) detailError = templateErrorMessage(0, 'network_error');
     } finally {
       if (current === detailSequence) detailLoading = false;
     }
@@ -251,7 +238,7 @@
       void invalidateSharedGetCache();
       pendingDelete = null; detail = null; notice = 'Template deleted. Existing monitors are unchanged.';
       cursorStack = [null]; pageIndex = 0; await loadTemplates(null);
-    } catch { formError = errorMessage(0, 'network_error'); }
+    } catch { formError = templateErrorMessage(0, 'network_error'); }
     finally { saving = false; }
   }
 
