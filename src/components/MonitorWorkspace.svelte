@@ -54,6 +54,7 @@
   let busyMonitorId = '';
   let requestSequence = 0;
   let editorLoadSequence = 0;
+  let disposed = false;
   let tagLoadSequence = 0;
   let templateLoadSequence = 0;
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -125,6 +126,10 @@
     createRequestBody = '';
     editRequestKey = '';
     editRequestBody = '';
+  }
+
+  function isCurrentWorkspace(workspaceId: string): boolean {
+    return !disposed && Boolean(workspaceId) && selectedWorkspaceId === workspaceId;
   }
 
   function messageFor(status: number, code: string | null): string {
@@ -239,7 +244,7 @@
         staleTime: 30_000,
         retry: false,
       });
-      if (workspaceId !== selectedWorkspaceId) return false;
+      if (disposed || workspaceId !== selectedWorkspaceId) return false;
       if (!result.ok || !result.data) {
         await monitorQueryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceTags(workspaceId) });
         return false;
@@ -268,7 +273,7 @@
     tagBusy = true;
     try {
       const tagsLoaded = await loadWorkspaceTags();
-      if (requestSequenceForTags !== tagLoadSequence || workspaceId !== selectedWorkspaceId) return;
+      if (disposed || requestSequenceForTags !== tagLoadSequence || workspaceId !== selectedWorkspaceId) return;
       if (!tagsLoaded) {
         tagError = 'Workspace tags could not be loaded. Close this panel and try again; no changes have been made.';
         return;
@@ -279,7 +284,7 @@
         staleTime: 0,
         retry: false,
       });
-      if (requestSequenceForTags !== tagLoadSequence || workspaceId !== selectedWorkspaceId) return;
+      if (disposed || requestSequenceForTags !== tagLoadSequence || workspaceId !== selectedWorkspaceId) return;
       if (!result.ok) {
         tagError = messageFor(result.status, result.code);
         await monitorQueryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorTags(workspaceId, monitor.id) });
@@ -335,21 +340,25 @@
       tagError = 'A monitor can have at most three tags.';
       return;
     }
+    const workspaceId = selectedWorkspaceId;
+    const monitorId = taggingMonitor.id;
+    const taggedMonitorName = taggingMonitor.name;
+    if (!workspaceId) return;
     tagBusy = true;
     tagError = '';
-    const taggedMonitorName = taggingMonitor.name;
-    const requestBody = JSON.stringify({ workspace_id: selectedWorkspaceId, tag_ids: monitorTagIds, create_tags: newTagNames });
+    const requestBody = JSON.stringify({ workspace_id: workspaceId, tag_ids: monitorTagIds, create_tags: newTagNames });
     if (!tagRequestKey || tagRequestBody !== requestBody) {
       tagRequestKey = crypto.randomUUID();
       tagRequestBody = requestBody;
     }
     try {
       const result = await tagMonitorMutation.mutateAsync({
-        workspaceId: selectedWorkspaceId,
-        monitorId: taggingMonitor.id,
+        workspaceId,
+        monitorId,
         requestBody,
         idempotencyKey: tagRequestKey,
       });
+      if (!isCurrentWorkspace(workspaceId) || taggingMonitor?.id !== monitorId) return;
       if (!result.ok) {
         tagError = messageFor(result.status, result.code);
         return;
@@ -362,9 +371,9 @@
       actionMessage = `Tags updated for “${taggedMonitorName}”.`;
       await Promise.all([loadWorkspaceTags(), loadMonitors(null)]);
     } catch {
-      tagError = messageFor(0, 'network_error');
+      if (isCurrentWorkspace(workspaceId)) tagError = messageFor(0, 'network_error');
     } finally {
-      tagBusy = false;
+      if (!disposed) tagBusy = false;
     }
   }
 
@@ -589,8 +598,9 @@
     cadencePreview = resolvedPreview;
 
     const payloadChannels = serializeMonitorChannelSelection(editorDraft.channelSelection);
+    const workspaceId = selectedWorkspaceId;
     const payload = {
-      workspace_id: selectedWorkspaceId,
+      workspace_id: workspaceId,
       name,
       description,
       cadence_seconds: resolvedCadence,
@@ -606,10 +616,11 @@
     creating = true;
     try {
       const result = await createMonitorMutation.mutateAsync({
-        workspaceId: selectedWorkspaceId,
+        workspaceId,
         requestBody,
         idempotencyKey: createRequestKey,
       });
+      if (!isCurrentWorkspace(workspaceId)) return;
       if (!result.ok) {
         createError = result.status === 422 && result.code === 'invalid_monitor_config'
           ? 'TrueExit rejected this field configuration. Check field names, paths, and primitive choices.'
@@ -618,7 +629,7 @@
       }
       const created = result.body as Monitor;
       resetEditorDraft();
-      if (initialMode !== 'inventory') { window.location.href = `/monitors?workspace_id=${encodeURIComponent(selectedWorkspaceId)}`; return; }
+      if (initialMode !== 'inventory') { window.location.href = `/monitors?workspace_id=${encodeURIComponent(workspaceId)}`; return; }
       createOpen = false;
       search = '';
       statusFilter = 'all';
@@ -630,16 +641,17 @@
       actionMessage = `“${created.name || name}” was created.`;
       await loadMonitors(null);
     } catch {
-      createError = messageFor(0, 'network_error');
+      if (isCurrentWorkspace(workspaceId)) createError = messageFor(0, 'network_error');
     } finally {
-      creating = false;
+      if (!disposed) creating = false;
     }
   }
 
   async function saveMonitorEdits(event: SubmitEvent) {
     event.preventDefault();
     const original = editingMonitor;
-    if (!original || creating || !selectedWorkspaceId) return;
+    const workspaceId = selectedWorkspaceId;
+    if (!original || creating || !workspaceId) return;
     createError = '';
     createMessage = '';
     if (fieldMode === 'json') { applyJsonDraft(); if (fieldMode === 'json') return; }
@@ -671,11 +683,12 @@
     creating = true;
     try {
       const result = await editMonitorMutation.mutateAsync({
-        workspaceId: selectedWorkspaceId,
+        workspaceId,
         monitorId: original.id,
         requestBody,
         idempotencyKey: editRequestKey,
       });
+      if (!isCurrentWorkspace(workspaceId) || editingMonitor?.id !== original.id) return;
       if (!result.ok) {
         createError = result.status === 409
           ? 'This monitor changed while you were editing it. Close this form, reopen Edit monitor, and review the latest version before saving again.'
@@ -684,7 +697,7 @@
             : messageFor(result.status, result.code);
         return;
       }
-      if (initialMode !== 'inventory') { window.location.href = `/monitors?workspace_id=${encodeURIComponent(selectedWorkspaceId)}`; return; }
+      if (initialMode !== 'inventory') { window.location.href = `/monitors?workspace_id=${encodeURIComponent(workspaceId)}`; return; }
       createOpen = false;
       editingMonitor = null;
       editRequestKey = '';
@@ -695,9 +708,9 @@
       resetPagination();
       await loadMonitors(null);
     } catch {
-      createError = messageFor(0, 'network_error');
+      if (isCurrentWorkspace(workspaceId) && editingMonitor?.id === original.id) createError = messageFor(0, 'network_error');
     } finally {
-      creating = false;
+      if (!disposed) creating = false;
     }
   }
 
@@ -709,9 +722,11 @@
 
   async function loadMonitors(cursor: string | null = null) {
     const sequence = ++requestSequence;
-    if (!selectedWorkspaceId) {
+    const workspaceId = selectedWorkspaceId;
+    if (!workspaceId || disposed) {
       monitors = [];
       nextCursor = null;
+      loadingMonitors = false;
       return;
     }
 
@@ -720,7 +735,7 @@
     actionError = '';
 
     const query = {
-      workspaceId: selectedWorkspaceId,
+      workspaceId,
       limit: 25,
       sort,
       direction,
@@ -738,7 +753,7 @@
         staleTime: 0,
         retry: false,
       });
-      if (sequence !== requestSequence) return;
+      if (sequence !== requestSequence || !isCurrentWorkspace(workspaceId)) return;
       if (!result.ok || !result.page) {
         listError = messageFor(result.status, result.code);
         return;
@@ -746,9 +761,9 @@
       monitors = result.page.data;
       nextCursor = result.page.page.next_cursor;
     } catch {
-      if (sequence === requestSequence) listError = messageFor(0, 'network_error');
+      if (sequence === requestSequence && isCurrentWorkspace(workspaceId)) listError = messageFor(0, 'network_error');
     } finally {
-      if (sequence === requestSequence) loadingMonitors = false;
+      if (sequence === requestSequence && !disposed) loadingMonitors = false;
     }
   }
 
@@ -765,25 +780,34 @@
   }
 
   async function bootstrap() {
+    if (disposed) return;
     loadingWorkspaces = true;
     bootError = '';
-    const result = await loadWorkspaceBootstrap();
-    if (!result.workspaces.ok) {
-      bootError = messageFor(result.workspaces.status, result.workspaces.code);
-      loadingWorkspaces = false;
-      return;
-    }
+    try {
+      const result = await loadWorkspaceBootstrap();
+      if (disposed) return;
+      if (!result.workspaces.ok) {
+        bootError = messageFor(result.workspaces.status, result.workspaces.code);
+        loadingWorkspaces = false;
+        return;
+      }
 
-    workspaces = result.workspaces.data.data;
-    const personalId = result.me.ok ? result.me.data.personal_workspace_id : null;
-    const requestedWorkspaceId = new URLSearchParams(window.location.search).get('workspace_id') ?? '';
-    selectedWorkspaceId = resolveWorkspaceId(workspaces, [requestedWorkspaceId, readActiveWorkspaceId(), personalId]);
-    writeActiveWorkspaceId(selectedWorkspaceId);
-    loadingWorkspaces = false;
-    if (selectedWorkspaceId) void loadWorkspaceTags();
-    if (selectedWorkspaceId && initialMode === 'inventory') await loadMonitors(null);
-    if (initialMode === 'create') { await openCreate(); }
-    else if (initialMode === 'edit' && monitorId) { await openEdit({ id: monitorId, workspace_id: selectedWorkspaceId } as Monitor); }
+      workspaces = result.workspaces.data.data;
+      const personalId = result.me.ok ? result.me.data.personal_workspace_id : null;
+      const requestedWorkspaceId = new URLSearchParams(window.location.search).get('workspace_id') ?? '';
+      selectedWorkspaceId = resolveWorkspaceId(workspaces, [requestedWorkspaceId, readActiveWorkspaceId(), personalId]);
+      writeActiveWorkspaceId(selectedWorkspaceId);
+      loadingWorkspaces = false;
+      if (selectedWorkspaceId) void loadWorkspaceTags();
+      if (selectedWorkspaceId && initialMode === 'inventory') await loadMonitors(null);
+      if (initialMode === 'create') { await openCreate(); }
+      else if (initialMode === 'edit' && monitorId) { await openEdit({ id: monitorId, workspace_id: selectedWorkspaceId } as Monitor); }
+    } catch {
+      if (!disposed) {
+        bootError = messageFor(0, 'network_error');
+        loadingWorkspaces = false;
+      }
+    }
   }
 
   async function runLifecycleAction(monitor: Monitor, action: 'pause' | 'resume' | 'archive' | 'restore') {
@@ -791,16 +815,19 @@
     const labels = { pause: 'Pause', resume: 'Resume', archive: 'Archive', restore: 'Restore' };
     if (action === 'archive' && !window.confirm(`Archive “${monitor.name}”? Its evidence and health history will be retained, and it can be restored later.`)) return;
 
+    const workspaceId = selectedWorkspaceId;
+    if (!workspaceId) return;
     busyMonitorId = monitor.id;
     actionError = '';
     actionMessage = '';
     try {
       const result = await lifecycleMonitorMutation.mutateAsync({
-        workspaceId: selectedWorkspaceId,
+        workspaceId,
         monitorId: monitor.id,
         action,
         idempotencyKey: crypto.randomUUID(),
       });
+      if (!isCurrentWorkspace(workspaceId)) return;
       if (!result.ok) {
         actionError = messageFor(result.status, result.code);
         return;
@@ -809,9 +836,9 @@
       resetPagination();
       await loadMonitors(null);
     } catch {
-      actionError = messageFor(0, 'network_error');
+      if (isCurrentWorkspace(workspaceId)) actionError = messageFor(0, 'network_error');
     } finally {
-      busyMonitorId = '';
+      if (!disposed) busyMonitorId = '';
     }
   }
 
@@ -831,6 +858,11 @@
   onMount(() => {
     void bootstrap();
     return () => {
+      disposed = true;
+      requestSequence += 1;
+      editorLoadSequence += 1;
+      tagLoadSequence += 1;
+      templateLoadSequence += 1;
       if (searchTimer) clearTimeout(searchTimer);
       void monitorQueryClient.cancelQueries();
       monitorQueryClient.clear();
@@ -879,7 +911,7 @@
   {#if createOpen}
       <section class="monitor-create-modal monitor-create-page" aria-labelledby="monitor-create-title">
         <header class="monitor-create-modal__header">
-          <div><p class="eyebrow">{editingMonitor ? 'EDIT CHECK' : 'NEW CHECK'}</p><h2 id="monitor-create-title">{editingMonitor ? 'Refine your signal.' : 'Give your signal a shape.'}</h2><p>{editingMonitor ? 'Update the fields, cadence, and notification destinations for this monitor.' : 'Define the editorDraft.fields TrueExit should observe. A monitor always needs at least one valid field.'}</p></div>
+          <div><p class="eyebrow">{editingMonitor ? 'EDIT CHECK' : 'NEW CHECK'}</p><h2 id="monitor-create-title">{editingMonitor ? 'Refine your signal.' : 'Give your signal a shape.'}</h2><p>{editingMonitor ? 'Update the fields, cadence, and notification destinations for this monitor.' : 'Define the fields TrueExit should observe. A monitor always needs at least one valid field.'}</p></div>
           <button class="monitor-button monitor-button--quiet" type="button" on:click={closeCreate} disabled={creating}>← Back to monitors</button>
         </header>
         {#if createError}<div class="monitor-inline-alert" role="alert">{createError}</div>{/if}
@@ -921,7 +953,7 @@
               <div class="monitor-template-mode"><p>Templates provide reusable field names, JSON paths, and interpretation types. They do not change cadence, tags, or destinations.</p>
                 {#if templatesError}<p class="monitor-form-error" role="alert">{templatesError}</p>{/if}
                 {#if templatesLoading}<p class="monitor-form-hint">Loading templates…</p>{:else if templates.length === 0}<div class="monitor-template-empty"><strong>No templates available</strong><span>Create a reusable field template first, or use JSON to discover fields from a sample payload.</span><a href="/templates">Open Templates ↗</a></div>{:else}
-                  <div class="monitor-template-picker"><label class="monitor-form-field"><span>Choose a template</span><select bind:value={selectedTemplateId}><option value="">Select a template…</option>{#each templates as template (template.id)}<option value={template.id}>{template.name} · {template.fields.length} editorDraft.fields</option>{/each}</select></label><label class="monitor-form-field"><span>Apply method</span><select bind:value={templateApplyMode}><option value="replace">Replace current fields</option><option value="merge">Merge with current fields</option></select></label></div>
+                  <div class="monitor-template-picker"><label class="monitor-form-field"><span>Choose a template</span><select bind:value={selectedTemplateId}><option value="">Select a template…</option>{#each templates as template (template.id)}<option value={template.id}>{template.name} · {template.fields.length} fields</option>{/each}</select></label><label class="monitor-form-field"><span>Apply method</span><select bind:value={templateApplyMode}><option value="replace">Replace current fields</option><option value="merge">Merge with current fields</option></select></label></div>
                   {#if selectedTemplateId}<div class="monitor-template-preview">{#each templates.find((template) => template.id === selectedTemplateId)?.fields ?? [] as field}<div><span><strong>{field.name}</strong><code>{field.path}</code></span><small>{primitiveLabels[(Object.entries(primitiveValues).find(([, value]) => value === field.primitive)?.[0] ?? 'text') as FieldPrimitive]}</small></div>{/each}</div><button type="button" class="monitor-button monitor-button--primary" on:click={applySelectedTemplate}>Apply template to draft →</button>{/if}
                 {/if}
               </div>
