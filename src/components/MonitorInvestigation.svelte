@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import '../styles/investigation.css';
   import { formatInvestigationDate, formatInvestigationValue, formatInvestigationLabel, getHealthCounts } from '../lib/client/investigation-format';
@@ -61,6 +61,7 @@
   let evidencePageIndex = 0;
   let rejectedPageIndex = 0;
   let deliveryPageIndex = 0;
+  let disposed = false;
   let requestGeneration = 0;
   let workspaceGeneration = 0;
   let verifiedEvidenceGeneration = 0;
@@ -249,21 +250,29 @@
 
   async function bootstrap() {
     bootLoading = true; bootError = '';
-    const result = await loadWorkspaceBootstrap();
-    if (!result.workspaces.ok) {
-      bootError = messageFor(result.workspaces.status, result.workspaces.code);
+    try {
+      const result = await loadWorkspaceBootstrap();
+      if (disposed) return;
+      if (!result.workspaces.ok) {
+        bootError = messageFor(result.workspaces.status, result.workspaces.code);
+        bootLoading = false;
+        return;
+      }
+      workspaces = result.workspaces.data.data;
+      const personalId = result.me.ok ? result.me.data.personal_workspace_id : null;
+      const requestedWorkspaceId = new URLSearchParams(window.location.search).get('workspace_id');
+      workspaceId = resolveWorkspaceId(workspaces, [requestedWorkspaceId, readActiveWorkspaceId(), personalId]);
+      writeActiveWorkspaceId(workspaceId);
+      workspaceGeneration += 1;
       bootLoading = false;
-      return;
+      if (!workspaceId) { bootError = 'No workspace is available to inspect this monitor.'; return; }
+      await Promise.all([loadMonitorContext(), loadEvidencePage('verified'), loadEvidencePage('rejected'), loadDeliveryPage()]);
+    } catch {
+      if (!disposed) {
+        bootError = messageFor(0, 'network_error');
+        bootLoading = false;
+      }
     }
-    workspaces = result.workspaces.data.data;
-    const personalId = result.me.ok ? result.me.data.personal_workspace_id : null;
-    const requestedWorkspaceId = new URLSearchParams(window.location.search).get('workspace_id');
-    workspaceId = resolveWorkspaceId(workspaces, [requestedWorkspaceId, readActiveWorkspaceId(), personalId]);
-    writeActiveWorkspaceId(workspaceId);
-    workspaceGeneration += 1;
-    bootLoading = false;
-    if (!workspaceId) { bootError = 'No workspace is available to inspect this monitor.'; return; }
-    await Promise.all([loadMonitorContext(), loadEvidencePage('verified'), loadEvidencePage('rejected'), loadDeliveryPage()]);
   }
 
   async function changeWorkspace() {
@@ -306,7 +315,23 @@
     if (deliveryPageIndex > 0) void loadDeliveryPage(deliveryCursorStack[deliveryPageIndex - 1], deliveryPageIndex - 1);
   }
 
-  onMount(() => { void bootstrap(); });
+  onMount(() => {
+    disposed = false;
+    void bootstrap();
+  });
+
+  onDestroy(() => {
+    disposed = true;
+    requestGeneration += 1;
+    workspaceGeneration += 1;
+    verifiedEvidenceGeneration += 1;
+    rejectedEvidenceGeneration += 1;
+    deliveryListGeneration += 1;
+    detailGeneration += 1;
+    traceGeneration += 1;
+    deliveryDetailGeneration += 1;
+    healthVersionGeneration += 1;
+  });
 </script>
 
 <svelte:head>

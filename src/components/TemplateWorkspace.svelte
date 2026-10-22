@@ -42,6 +42,8 @@
   let notice = '';
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let sequence = 0;
+  let bootstrapSequence = 0;
+  let disposed = false;
   let detailSequence = 0;
   let editSequence = 0;
   let discoverySequence = 0;
@@ -98,15 +100,24 @@
   }
 
   async function bootstrap() {
+    const current = ++bootstrapSequence;
     loading = true; bootError = '';
-    const result = await loadWorkspaceBootstrap();
-    if (!result.workspaces.ok) { bootError = templateErrorMessage(result.workspaces.status, result.workspaces.code); loading = false; return; }
-    workspaces = result.workspaces.data.data;
-    const personal = result.me.ok ? result.me.data.personal_workspace_id : null;
-    workspaceId = resolveWorkspaceId(workspaces, [readActiveWorkspaceId(), personal]);
-    writeActiveWorkspaceId(workspaceId);
-    if (!workspaceId) { loading = false; return; }
-    await loadTemplates(null);
+    try {
+      const result = await loadWorkspaceBootstrap();
+      if (disposed || current !== bootstrapSequence) return;
+      if (!result.workspaces.ok) { bootError = templateErrorMessage(result.workspaces.status, result.workspaces.code); loading = false; return; }
+      workspaces = result.workspaces.data.data;
+      const personal = result.me.ok ? result.me.data.personal_workspace_id : null;
+      workspaceId = resolveWorkspaceId(workspaces, [readActiveWorkspaceId(), personal]);
+      writeActiveWorkspaceId(workspaceId);
+      if (!workspaceId) { loading = false; return; }
+      await loadTemplates(null);
+    } catch {
+      if (!disposed && current === bootstrapSequence) {
+        bootError = templateErrorMessage(0, 'network_error');
+        loading = false;
+      }
+    }
   }
 
   function openCreate() {
@@ -304,8 +315,11 @@
   }
 
   onMount(() => {
+    disposed = false;
     void bootstrap();
     return () => {
+      disposed = true;
+      bootstrapSequence += 1;
       if (searchTimer) clearTimeout(searchTimer);
       sequence += 1;
       detailSequence += 1;
