@@ -1,17 +1,35 @@
 <script lang="ts">
-  export let search = '';
-  export let searchLabel = 'Search records';
-  export let searchPlaceholder = 'Search…';
-  export let clearLabel = 'Clear search';
-  export let searchId = 'table-search';
-  export let resultSummary = '';
-  export let disabled = false;
-  export let onSearchChange: ((value: string) => void) | undefined = undefined;
+  import type { Snippet } from 'svelte';
 
-  function handleInput(event: Event) {
-    const value = (event.currentTarget as HTMLInputElement).value;
+  let {
+    search = $bindable(''),
+    searchLabel = 'Search records',
+    searchPlaceholder = 'Search…',
+    clearLabel = 'Clear search',
+    searchId = 'table-search',
+    resultSummary = '',
+    disabled = false,
+    onSearchChange,
+    children
+  }: {
+    search: string;
+    searchLabel?: string;
+    searchPlaceholder?: string;
+    clearLabel?: string;
+    searchId?: string;
+    resultSummary?: string;
+    disabled?: boolean;
+    onSearchChange?: (value: string) => void;
+    children?: Snippet;
+  } = $props();
+
+  function updateSearch(value: string) {
     search = value;
     onSearchChange?.(value);
+  }
+
+  function handleInput(event: Event) {
+    updateSearch((event.currentTarget as HTMLInputElement).value);
   }
 </script>
 
@@ -20,12 +38,12 @@
     <label class="table-toolbar__search" for={searchId}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.6"/><path d="m16 16 4.2 4.2"/></svg>
       <span class="sr-only">{searchLabel}</span>
-      <input id={searchId} type="search" value={search} on:input={handleInput} placeholder={searchPlaceholder} disabled={disabled} autocomplete="off" />
+      <input id={searchId} type="search" value={search} oninput={handleInput} placeholder={searchPlaceholder} disabled={disabled} autocomplete="off" />
       {#if search}
-        <button type="button" class="table-toolbar__clear" aria-label={clearLabel} on:click={() => { search = ''; onSearchChange?.(''); }} disabled={disabled}>×</button>
+        <button type="button" class="table-toolbar__clear" aria-label={clearLabel} onclick={() => updateSearch('')} disabled={disabled}>×</button>
       {/if}
     </label>
-    <div class="table-toolbar__filters"><slot /></div>
+    <div class="table-toolbar__filters">{@render children?.()}</div>
   </div>
   {#if resultSummary}
     <p class="table-toolbar__summary" aria-live="polite">{resultSummary}</p>

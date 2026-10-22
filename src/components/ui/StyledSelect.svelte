@@ -1,31 +1,44 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   export type SelectOption = { value: string; label: string };
-  export let label: string;
-  export let value: string;
-  export let options: SelectOption[] = [];
-  const dispatch = createEventDispatcher<{ change: { value: string } }>();
-  let open = false;
-  $: selected = options.find((option) => option.value === value) ?? options[0];
+
+  let {
+    label,
+    value,
+    options = [],
+    onChange
+  }: {
+    label: string;
+    value: string;
+    options?: SelectOption[];
+    onChange?: (value: string) => void;
+  } = $props();
+
+  let open = $state(false);
+  const selected = $derived(options.find((option) => option.value === value) ?? options[0]);
+
   function choose(option: SelectOption) {
-    dispatch('change', { value: option.value });
+    onChange?.(option.value);
     open = false;
   }
+
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape') open = false;
-    if (event.key === 'ArrowDown' && !open) { event.preventDefault(); open = true; }
+    if (event.key === 'ArrowDown' && !open) {
+      event.preventDefault();
+      open = true;
+    }
   }
 </script>
 
-<div class="styled-select" class:styled-select--open={open} on:keydown={handleKeydown}>
-  <button class="styled-select__trigger" type="button" aria-label={label} aria-haspopup="listbox" aria-expanded={open} on:click={() => open = !open}>
+<div class="styled-select" class:styled-select--open={open} onkeydown={handleKeydown}>
+  <button class="styled-select__trigger" type="button" aria-label={label} aria-haspopup="listbox" aria-expanded={open} onclick={() => open = !open}>
     <span>{selected?.label ?? 'Select…'}</span>
     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 7.5 5 5 5-5" /></svg>
   </button>
   {#if open}
     <div class="styled-select__menu" role="listbox" aria-label={label}>
       {#each options as option (option.value)}
-        <button type="button" class="styled-select__option" class:styled-select__option--selected={option.value === value} role="option" aria-selected={option.value === value} on:click={() => choose(option)}>
+        <button type="button" class="styled-select__option" class:styled-select__option--selected={option.value === value} role="option" aria-selected={option.value === value} onclick={() => choose(option)}>
           <span>{option.label}</span>
           {#if option.value === value}<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8" /></svg>{/if}
         </button>

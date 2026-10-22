@@ -1,6 +1,11 @@
 <script lang="ts">
-  export let label = 'Loading…';
-  export let compact = false;
+  let {
+    label = 'Loading…',
+    compact = false
+  }: {
+    label?: string;
+    compact?: boolean;
+  } = $props();
 </script>
 
 <div class:loading-state--compact={compact} class="loading-state" role="status" aria-live="polite" aria-atomic="true">

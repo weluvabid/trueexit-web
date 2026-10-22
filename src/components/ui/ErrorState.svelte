@@ -1,9 +1,17 @@
 <script lang="ts">
-  export let title = 'Something went wrong';
-  export let message: string;
-  export let retry: (() => void | Promise<void>) | undefined = undefined;
-  export let retryLabel = 'Try again';
-  export let retrying = false;
+  let {
+    title = 'Something went wrong',
+    message,
+    retry,
+    retryLabel = 'Try again',
+    retrying = false
+  }: {
+    title?: string;
+    message: string;
+    retry?: () => void | Promise<void>;
+    retryLabel?: string;
+    retrying?: boolean;
+  } = $props();
 </script>
 
 <section class="error-state" role="alert" aria-live="assertive" aria-atomic="true">
@@ -12,7 +20,7 @@
     <h3>{title}</h3>
     <p>{message}</p>
     {#if retry}
-      <button class="error-state__retry" type="button" on:click={retry} disabled={retrying}>
+      <button class="error-state__retry" type="button" onclick={() => retry?.()} disabled={retrying}>
         {#if retrying}<span class="error-state__spinner" aria-hidden="true"></span>{/if}
         {retrying ? 'Trying again…' : retryLabel}
       </button>

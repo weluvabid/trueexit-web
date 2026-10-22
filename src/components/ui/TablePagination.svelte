@@ -1,26 +1,39 @@
 <script lang="ts">
-  export let page = 1;
-  export let hasPrevious = false;
-  export let hasNext = false;
-  export let loading = false;
-  export let previousLabel = 'Previous';
-  export let nextLabel = 'Next';
-  export let pageLabel = 'Page';
-  export let onPrevious: (() => void) | undefined = undefined;
-  export let onNext: (() => void) | undefined = undefined;
-  export let summary = '';
+  let {
+    page = 1,
+    hasPrevious = false,
+    hasNext = false,
+    loading = false,
+    previousLabel = 'Previous',
+    nextLabel = 'Next',
+    pageLabel = 'Page',
+    onPrevious,
+    onNext,
+    summary = ''
+  }: {
+    page?: number;
+    hasPrevious?: boolean;
+    hasNext?: boolean;
+    loading?: boolean;
+    previousLabel?: string;
+    nextLabel?: string;
+    pageLabel?: string;
+    onPrevious?: () => void;
+    onNext?: () => void;
+    summary?: string;
+  } = $props();
 
-  $: safePage = Math.max(1, Math.floor(Number(page) || 1));
+  const safePage = $derived(Math.max(1, Math.floor(Number(page) || 1)));
 </script>
 
 <nav class="table-pagination" aria-label="List pagination" aria-busy={loading}>
   {#if summary}<p class="table-pagination__summary" aria-live="polite">{summary}</p>{:else}<span class="table-pagination__page" aria-live="polite">{pageLabel} {safePage}</span>{/if}
   <div class="table-pagination__actions">
-    <button type="button" class="table-pagination__button" on:click={() => onPrevious?.()} disabled={!hasPrevious || loading}>
+    <button type="button" class="table-pagination__button" onclick={() => onPrevious?.()} disabled={!hasPrevious || loading}>
       <span aria-hidden="true">←</span> {previousLabel}
     </button>
     <span class="table-pagination__compact-page" aria-hidden="true">{safePage}</span>
-    <button type="button" class="table-pagination__button" on:click={() => onNext?.()} disabled={!hasNext || loading}>
+    <button type="button" class="table-pagination__button" onclick={() => onNext?.()} disabled={!hasNext || loading}>
       {nextLabel} <span aria-hidden="true">→</span>
     </button>
   </div>

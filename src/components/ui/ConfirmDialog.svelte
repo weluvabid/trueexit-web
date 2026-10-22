@@ -1,24 +1,36 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { onMount } from 'svelte';
 
-  export let title: string;
-  export let description: string;
-  export let confirmLabel = 'Confirm';
-  export let cancelLabel = 'Cancel';
-  export let tone: 'danger' | 'primary' = 'primary';
-  export let busy = false;
+  let {
+    title,
+    description,
+    confirmLabel = 'Confirm',
+    cancelLabel = 'Cancel',
+    tone = 'primary',
+    busy = false,
+    onConfirm,
+    onCancel
+  }: {
+    title: string;
+    description: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    tone?: 'danger' | 'primary';
+    busy?: boolean;
+    onConfirm?: () => void | Promise<void>;
+    onCancel?: () => void;
+  } = $props();
 
-  const dispatch = createEventDispatcher<{ confirm: void; cancel: void }>();
   let cancelButton: HTMLButtonElement;
   let confirmButton: HTMLButtonElement;
-  let overlay: HTMLDivElement;
   let previousFocus: HTMLElement | null = null;
 
   onMount(() => {
     previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    cancelButton?.focus();
     const priorOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
+    cancelButton?.focus();
+
     return () => {
       document.body.style.overflow = priorOverflow;
       previousFocus?.focus();
@@ -28,23 +40,32 @@
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape' && !busy) {
       event.preventDefault();
-      dispatch('cancel');
+      onCancel?.();
       return;
     }
+
     if (event.key !== 'Tab') return;
+
     if (event.shiftKey && document.activeElement === cancelButton) {
       event.preventDefault();
       confirmButton?.focus();
     } else if (!event.shiftKey && document.activeElement === confirmButton) {
       event.preventDefault();
       cancelButton?.focus();
+    } else if (document.activeElement !== cancelButton && document.activeElement !== confirmButton) {
+      event.preventDefault();
+      (event.shiftKey ? confirmButton : cancelButton)?.focus();
     }
+  }
+
+  function handleBackdropClick(event: MouseEvent) {
+    if (event.target === event.currentTarget && !busy) onCancel?.();
   }
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
-<div class="confirm-dialog__backdrop" bind:this={overlay} on:click={(event) => { if (event.target === overlay && !busy) dispatch('cancel'); }} role="presentation">
+<div class="confirm-dialog__backdrop" onclick={handleBackdropClick} role="presentation">
   <section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-description">
     <div class="confirm-dialog__mark" class:confirm-dialog__mark--danger={tone === 'danger'} aria-hidden="true">
       {#if tone === 'danger'}
@@ -56,8 +77,8 @@
     <h2 id="confirm-dialog-title">{title}</h2>
     <p id="confirm-dialog-description">{description}</p>
     <div class="confirm-dialog__actions">
-      <button bind:this={cancelButton} class="confirm-dialog__button confirm-dialog__button--quiet" type="button" disabled={busy} on:click={() => dispatch('cancel')}>{cancelLabel}</button>
-      <button bind:this={confirmButton} class="confirm-dialog__button" class:confirm-dialog__button--danger={tone === 'danger'} class:confirm-dialog__button--primary={tone === 'primary'} type="button" disabled={busy} on:click={() => dispatch('confirm')}>{busy ? 'Working…' : confirmLabel}</button>
+      <button bind:this={cancelButton} class="confirm-dialog__button confirm-dialog__button--quiet" type="button" disabled={busy} onclick={() => onCancel?.()}>{cancelLabel}</button>
+      <button bind:this={confirmButton} class="confirm-dialog__button" class:confirm-dialog__button--danger={tone === 'danger'} class:confirm-dialog__button--primary={tone === 'primary'} type="button" disabled={busy} onclick={() => onConfirm?.()}>{busy ? 'Working…' : confirmLabel}</button>
     </div>
   </section>
 </div>

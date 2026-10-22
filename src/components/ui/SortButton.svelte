@@ -1,15 +1,23 @@
 <script lang="ts">
-  export let label: string;
-  export let active = false;
-  export let direction: 'asc' | 'desc' = 'asc';
-  export let disabled = false;
-  export let onSort: (() => void) | undefined = undefined;
+  let {
+    label,
+    active = false,
+    direction = 'asc',
+    disabled = false,
+    onSort
+  }: {
+    label: string;
+    active?: boolean;
+    direction?: 'asc' | 'desc';
+    disabled?: boolean;
+    onSort?: () => void;
+  } = $props();
 
-  $: ariaSort = active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none';
+  const ariaSort = $derived(active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none');
 </script>
 
 <th scope="col" aria-sort={ariaSort}>
-  <button class:active type="button" class="sort-button" on:click={() => onSort?.()} disabled={disabled}>
+  <button class:active type="button" class="sort-button" onclick={() => onSort?.()} disabled={disabled}>
     <span>{label}</span>
     <span class="sort-button__indicator" aria-hidden="true">{active ? (direction === 'asc' ? '↑' : '↓') : '↕'}</span>
     {#if active}<span class="sr-only">, sorted {direction === 'asc' ? 'ascending' : 'descending'}</span>{/if}

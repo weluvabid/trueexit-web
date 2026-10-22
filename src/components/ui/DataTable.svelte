@@ -1,15 +1,26 @@
 <script lang="ts">
-  export let label: string;
-  export let loading = false;
-  export let minWidth = '42rem';
-  export let caption: string | undefined = undefined;
+  import type { Snippet } from 'svelte';
+
+  let {
+    label,
+    loading = false,
+    minWidth = '42rem',
+    caption,
+    children
+  }: {
+    label: string;
+    loading?: boolean;
+    minWidth?: string;
+    caption?: string;
+    children?: Snippet;
+  } = $props();
 </script>
 
 <div class="data-table-frame" aria-busy={loading}>
   <div class="data-table-frame__scroll" tabindex="0" role="region" aria-label={label}>
     <table style={`--data-table-min-width: ${minWidth}`}>
       {#if caption}<caption>{caption}</caption>{/if}
-      <slot />
+      {@render children?.()}
     </table>
   </div>
 </div>

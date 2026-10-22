@@ -1,8 +1,15 @@
 <script lang="ts">
-  export let message: string;
-  export let title: string | undefined = undefined;
-  export let dismissible = false;
-  export let onDismiss: (() => void) | undefined = undefined;
+  let {
+    message,
+    title,
+    dismissible = false,
+    onDismiss
+  }: {
+    message: string;
+    title?: string;
+    dismissible?: boolean;
+    onDismiss?: () => void;
+  } = $props();
 </script>
 
 <div class="success-message" role="status" aria-live="polite" aria-atomic="true">
@@ -12,7 +19,7 @@
     <span>{message}</span>
   </div>
   {#if dismissible}
-    <button type="button" class="success-message__dismiss" aria-label="Dismiss success message" on:click={onDismiss}>×</button>
+    <button type="button" class="success-message__dismiss" aria-label="Dismiss success message" onclick={() => onDismiss?.()}>×</button>
   {/if}
 </div>
 
