@@ -9,7 +9,7 @@
   import SettingsDestinationManager from './settings/SettingsDestinationManager.svelte';
   import SettingsPeopleManager from './settings/SettingsPeopleManager.svelte';
 
-  export let mode: 'workspace' | 'account' = 'workspace';
+  let { mode = 'workspace' }: { mode?: 'workspace' | 'account' } = $props();
 
   type Account = {
     account_id: string;
@@ -17,30 +17,29 @@
     scheduled_deletion_at: string | null;
     billing_cancellation_status: string | null;
   };
-  let workspaces: WorkspaceContext[] = [];
-  let selectedWorkspaceId = '';
-  let selectedWorkspace: WorkspaceContext | null = null;
-  let accounts: Account[] = [];
-  let peopleRefreshKey = 0;
-  let loading = true;
-  let error = '';
-  let notice = '';
-  let section: 'workspace' | 'people' | 'destinations' | 'profile' | 'preferences' | 'security' | 'account' = 'workspace';
-  let busyKey = '';
+  let workspaces = $state<WorkspaceContext[]>([]);
+  let selectedWorkspaceId = $state('');
+
+  let accounts = $state<Account[]>([]);
+  let peopleRefreshKey = $state(0);
+  let loading = $state(true);
+  let error = $state('');
+  let notice = $state('');
+  let section = $state<'workspace' | 'people' | 'destinations' | 'profile' | 'preferences' | 'security' | 'account'>('workspace');
+  let busyKey = $state('');
   // Form state is grouped by workflow so unrelated fields do not share one flat namespace.
-  let workspaceForm = { name: '', newName: '', accountId: '' };
-  let accountForm = { newOwnerUserId: '', closureConfirm: false, createAccountName: '' };
-  let settingsUi = {
+  let workspaceForm = $state({ name: '', newName: '', accountId: '' });
+  let accountForm = $state({ newOwnerUserId: '', closureConfirm: false, createAccountName: '' });
+  let settingsUi = $state({
     appearancePreference: 'system',
     showCreateWorkspace: false,
     showCreateAccount: false,
-  };
+  });
   let loadGeneration = 0;
 
-  $: selectedWorkspace = workspaces.find((item) => item.id === selectedWorkspaceId) ?? null;
-  $: canManageWorkspace = can(selectedWorkspace, 'workspace.manage');
-  $: selectedAccount = accounts.find((item) => item.account_id === selectedWorkspace?.account_id) ?? null;
-  $: ownedAccounts = accounts;
+  const selectedWorkspace = $derived(workspaces.find((item) => item.id === selectedWorkspaceId) ?? null);
+  const canManageWorkspace = $derived(can(selectedWorkspace, 'workspace.manage'));
+  const selectedAccount = $derived(accounts.find((item) => item.account_id === selectedWorkspace?.account_id) ?? null);
 
   async function request(path: string, init: RequestInit = {}): Promise<{ response: Response; body: unknown }> {
     return requestSettingsApi(path, init);
@@ -264,7 +263,7 @@
         {:else if mode === 'account' && section === 'preferences'}
           <section class="settings-card">
             <div class="settings-card__heading"><div><p class="settings-kicker">PREFERENCES</p><h2>Make TrueExit feel right.</h2><p>Choose how the interface appears on this device. Your preference is stored locally and does not change workspace data.</p></div><span class="settings-card__symbol">◐</span></div>
-            <label class="settings-field settings-preference-field"><span>Appearance</span><select bind:value={settingsUi.appearancePreference} on:change={saveAppearance}><option value="system">Use system setting</option><option value="light">Light</option><option value="dark">Dark</option></select><small>Applies immediately, including the application shell.</small></label>
+            <label class="settings-field settings-preference-field"><span>Appearance</span><select bind:value={settingsUi.appearancePreference} onchange={saveAppearance}><option value="system">Use system setting</option><option value="light">Light</option><option value="dark">Dark</option></select><small>Applies immediately, including the application shell.</small></label>
           </section>
         {:else if mode === 'account' && section === 'security'}
           <section class="settings-card">
@@ -274,7 +273,7 @@
         {:else if section === 'workspace'}
           <section class="settings-card">
             <div class="settings-card__heading"><div><p class="settings-kicker">WORKSPACE IDENTITY</p><h2>Give this space a name.</h2><p>Make it easy for your team to recognise the environment they’re working in.</p></div><span class="settings-card__symbol">⌘</span></div>
-            <form class="settings-form" on:submit={renameWorkspace}>
+            <form class="settings-form" onsubmit={renameWorkspace}>
               <label class="settings-field"><span>Workspace name</span><input bind:value={workspaceForm.name} maxlength="120" required disabled={!canManageWorkspace} /></label>
               <div class="settings-form__footer"><span>{canManageWorkspace ? 'Changes apply to this workspace.' : 'Only workspace owners and admins can rename this space.'}</span><button class="settings-button settings-button--primary" type="submit" disabled={!canManageWorkspace || !!busyKey || workspaceForm.name.trim() === selectedWorkspace?.name}>{busyKey === 'rename' ? 'Saving…' : 'Save workspace'}</button></div>
             </form>
@@ -283,13 +282,13 @@
           <section class="settings-card">
             <div class="settings-card__heading"><div><p class="settings-kicker">WORKSPACE DIRECTORY</p><h2>Keep work separated.</h2><p>Create a workspace inside an account you own, without leaving settings.</p></div><span class="settings-card__symbol">＋</span></div>
             {#if !settingsUi.showCreateWorkspace}
-              <button class="settings-button settings-button--quiet" type="button" on:click={() => settingsUi.showCreateWorkspace = true} disabled={!ownedAccounts.length}>＋ Create workspace</button>
-              {#if !ownedAccounts.length}<p class="settings-note">Creating a team workspace requires an account you own. Use Account Settings to create or manage an account.</p>{/if}
+              <button class="settings-button settings-button--quiet" type="button" onclick={() => settingsUi.showCreateWorkspace = true} disabled={!accounts.length}>＋ Create workspace</button>
+              {#if !accounts.length}<p class="settings-note">Creating a team workspace requires an account you own. Use Account Settings to create or manage an account.</p>{/if}
             {:else}
-              <form class="settings-form" on:submit={createWorkspace}>
+              <form class="settings-form" onsubmit={createWorkspace}>
                 <label class="settings-field"><span>Workspace name</span><input bind:value={workspaceForm.newName} maxlength="120" required placeholder="Production operations" /></label>
-                {#if ownedAccounts.length > 1}<label class="settings-field"><span>Account</span><select bind:value={workspaceForm.accountId} required><option value="">Choose an account</option>{#each ownedAccounts as account (account.account_id)}<option value={account.account_id}>{account.account_id.slice(0, 8)} · {account.lifecycle_status}</option>{/each}</select></label>{:else if ownedAccounts.length === 1}<p class="settings-note">This workspace will be created under your owned account.</p>{/if}
-                <div class="settings-form__footer"><span>Account Owner permission required.</span><div><button class="settings-button settings-button--quiet" type="button" on:click={() => settingsUi.showCreateWorkspace = false}>Cancel</button><button class="settings-button settings-button--primary" type="submit" disabled={!!busyKey}>{busyKey === 'create-workspace' ? 'Creating…' : 'Create workspace'}</button></div></div>
+                {#if accounts.length > 1}<label class="settings-field"><span>Account</span><select bind:value={workspaceForm.accountId} required><option value="">Choose an account</option>{#each accounts as account (account.account_id)}<option value={account.account_id}>{account.account_id.slice(0, 8)} · {account.lifecycle_status}</option>{/each}</select></label>{:else if accounts.length === 1}<p class="settings-note">This workspace will be created under your owned account.</p>{/if}
+                <div class="settings-form__footer"><span>Account Owner permission required.</span><div><button class="settings-button settings-button--quiet" type="button" onclick={() => settingsUi.showCreateWorkspace = false}>Cancel</button><button class="settings-button settings-button--primary" type="submit" disabled={!!busyKey}>{busyKey === 'create-workspace' ? 'Creating…' : 'Create workspace'}</button></div></div>
               </form>
             {/if}
           </section>
@@ -304,11 +303,11 @@
               <div class="settings-account-status"><div><span>Lifecycle status</span><strong>{selectedAccount.lifecycle_status.replaceAll('_', ' ')}</strong></div><div><span>Scheduled deletion</span><strong>{formatDate(selectedAccount.scheduled_deletion_at)}</strong></div><div><span>Billing cancellation</span><strong>{selectedAccount.billing_cancellation_status ?? 'Not reported'}</strong></div></div>
               {#if selectedWorkspace?.account_owner}
                 {#if selectedAccount.scheduled_deletion_at || selectedAccount.lifecycle_status.includes('closure')}
-                  <div class="settings-danger-zone settings-danger-zone--closure"><div class="settings-danger-zone__copy"><h3>Closure is scheduled.</h3><p>Monitoring has stopped for this account. If the recovery window is still open, you can cancel the scheduled closure.</p></div><button class="settings-button settings-button--primary" type="button" on:click={cancelClosure} disabled={!!busyKey}>{busyKey === 'cancel-closure' ? 'Cancelling…' : 'Cancel closure'}</button></div>
+                  <div class="settings-danger-zone settings-danger-zone--closure"><div class="settings-danger-zone__copy"><h3>Closure is scheduled.</h3><p>Monitoring has stopped for this account. If the recovery window is still open, you can cancel the scheduled closure.</p></div><button class="settings-button settings-button--primary" type="button" onclick={cancelClosure} disabled={!!busyKey}>{busyKey === 'cancel-closure' ? 'Cancelling…' : 'Cancel closure'}</button></div>
                 {:else}
-                  <div class="settings-danger-zone settings-danger-zone--closure"><div class="settings-danger-zone__copy"><h3>Schedule account closure</h3><p>This stops monitoring and schedules deletion. Billing cancellation status is reported by the API; do not assume a billing provider action has completed.</p><label class="settings-check"><input bind:checked={accountForm.closureConfirm} type="checkbox" /><span>I understand monitoring will stop and this account will be scheduled for deletion.</span></label></div><button class="settings-button settings-button--danger" type="button" on:click={requestClosure} disabled={!accountForm.closureConfirm || !!busyKey}>{busyKey === 'close-account' ? 'Scheduling…' : 'Schedule closure'}</button></div>
+                  <div class="settings-danger-zone settings-danger-zone--closure"><div class="settings-danger-zone__copy"><h3>Schedule account closure</h3><p>This stops monitoring and schedules deletion. Billing cancellation status is reported by the API; do not assume a billing provider action has completed.</p><label class="settings-check"><input bind:checked={accountForm.closureConfirm} type="checkbox" /><span>I understand monitoring will stop and this account will be scheduled for deletion.</span></label></div><button class="settings-button settings-button--danger" type="button" onclick={requestClosure} disabled={!accountForm.closureConfirm || !!busyKey}>{busyKey === 'close-account' ? 'Scheduling…' : 'Schedule closure'}</button></div>
                 {/if}
-                <form class="settings-form settings-transfer-form" on:submit={transferOwnership}>
+                <form class="settings-form settings-transfer-form" onsubmit={transferOwnership}>
                   <div><p class="settings-kicker">OWNERSHIP</p><h3>Transfer account ownership</h3><p>Enter the eligible user ID provided by your identity or workspace administration workflow.</p></div>
                   <label class="settings-field"><span>New owner user ID</span><input bind:value={accountForm.newOwnerUserId} required autocomplete="off" placeholder="User ID" /></label>
                   <div class="settings-form__footer"><span>Requires recent authentication.</span><button class="settings-button settings-button--quiet" type="submit" disabled={!!busyKey}>{busyKey === 'transfer-account' ? 'Transferring…' : 'Transfer ownership'}</button></div>
@@ -321,8 +320,8 @@
             {/if}
             <div class="settings-account-create">
               <div><p class="settings-kicker">NEW ACCOUNT</p><h3>Start a separate account.</h3><p>Creates an account and its initial team workspace. Recent authentication is required.</p></div>
-              {#if !settingsUi.showCreateAccount}<button class="settings-button settings-button--quiet" type="button" on:click={() => settingsUi.showCreateAccount = true}>＋ Create account</button>
-              {:else}<form class="settings-inline-form" on:submit={createAccount}><label class="settings-field"><span>Initial workspace name</span><input bind:value={accountForm.createAccountName} maxlength="120" required placeholder="Acme operations" /></label><button class="settings-button settings-button--primary" type="submit" disabled={!!busyKey}>{busyKey === 'create-account' ? 'Creating…' : 'Create account'}</button></form>{/if}
+              {#if !settingsUi.showCreateAccount}<button class="settings-button settings-button--quiet" type="button" onclick={() => settingsUi.showCreateAccount = true}>＋ Create account</button>
+              {:else}<form class="settings-inline-form" onsubmit={createAccount}><label class="settings-field"><span>Initial workspace name</span><input bind:value={accountForm.createAccountName} maxlength="120" required placeholder="Acme operations" /></label><button class="settings-button settings-button--primary" type="submit" disabled={!!busyKey}>{busyKey === 'create-account' ? 'Creating…' : 'Create account'}</button></form>{/if}
             </div>
           </section>
         {/if}

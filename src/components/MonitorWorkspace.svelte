@@ -60,9 +60,9 @@
   let actionError = $state('');
   let actionMessage = $state('');
   let busyMonitorId = $state('');
-  let editorLoadSequence = $state(0);
-  let disposed = $state(false);
-  let tagLoadSequence = $state(0);
+  let editorLoadSequence = 0;
+  let disposed = false;
+  let tagLoadSequence = 0;
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let createOpen = $state(initialMode !== 'inventory');
   let fieldConfiguration = $state<InstanceType<typeof MonitorFieldConfiguration> | undefined>(undefined);
@@ -732,13 +732,13 @@
       <section class="monitor-create-modal monitor-create-page" aria-labelledby="monitor-create-title">
         <header class="monitor-create-modal__header">
           <div><p class="eyebrow">{editingMonitor ? 'EDIT CHECK' : 'NEW CHECK'}</p><h2 id="monitor-create-title">{editingMonitor ? 'Refine your signal.' : 'Give your signal a shape.'}</h2><p>{editingMonitor ? 'Update the fields, cadence, and notification destinations for this monitor.' : 'Define the fields TrueExit should observe. A monitor always needs at least one valid field.'}</p></div>
-          <button class="monitor-button monitor-button--quiet" type="button" on:click={closeCreate} disabled={creating}>← Back to monitors</button>
+          <button class="monitor-button monitor-button--quiet" type="button" onclick={closeCreate} disabled={creating}>← Back to monitors</button>
         </header>
         {#if createError}<div class="monitor-inline-alert" role="alert">{createError}</div>{/if}
         {#if initialMode === 'edit' && creating}
           <div class="monitor-form-loading" role="status"><span class="monitor-loader" aria-hidden="true"></span><div><strong>Loading monitor configuration</strong><p>Fetching the current fields and destinations before enabling edits.</p></div></div>
         {:else}
-        <form class="monitor-create-form" on:submit={createMonitor}>
+        <form class="monitor-create-form" onsubmit={createMonitor}>
           <div class="monitor-create-section">
             <div class="monitor-create-section__heading"><span>01</span><div><h3>Monitor details</h3><p>Make it recognisable to your team.</p></div></div>
             <div class="monitor-form-grid">
@@ -763,7 +763,7 @@
             {canManageChannels}
           />
 
-          <footer class="monitor-create-footer"><p>Fields are required. Destinations are optional. You can review everything before saving.</p><div><button class="monitor-button monitor-button--quiet" type="button" on:click={closeCreate} disabled={creating}>Cancel</button><button class="monitor-button monitor-button--primary" type="submit" disabled={creating}>{creating ? (editingMonitor ? 'Saving changes…' : 'Creating monitor…') : (editingMonitor ? 'Save changes' : 'Create monitor')} <span aria-hidden="true">↗</span></button></div></footer>
+          <footer class="monitor-create-footer"><p>Fields are required. Destinations are optional. You can review everything before saving.</p><div><button class="monitor-button monitor-button--quiet" type="button" onclick={closeCreate} disabled={creating}>Cancel</button><button class="monitor-button monitor-button--primary" type="submit" disabled={creating}>{creating ? (editingMonitor ? 'Saving changes…' : 'Creating monitor…') : (editingMonitor ? 'Save changes' : 'Create monitor')} <span aria-hidden="true">↗</span></button></div></footer>
         </form>
         {/if}
       </section>

@@ -3,8 +3,7 @@
   import { getCachedSettingsResponse, getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../../lib/client/settings-api';
   import { buildNotificationChannelConfig, type NotificationChannelKind } from '../../lib/client/settings-channel-config';
 
-  export let workspaceId = '';
-  export let canManageWorkspace = false;
+  let { workspaceId = '', canManageWorkspace = false }: { workspaceId?: string; canManageWorkspace?: boolean } = $props();
 
   type ChannelKind = NotificationChannelKind;
   type Channel = {
@@ -20,21 +19,20 @@
   type CreateForm = { label: string; type: ChannelKind; priority: number; enabled: boolean; address: string; headers: string };
   type EditForm = { id: string; label: string; priority: number; enabled: boolean; type: ChannelKind; address: string; headers: string; configTouched: boolean };
 
-  let channels: Channel[] = [];
-  let loading = false;
-  let busyKey = '';
-  let error = '';
-  let notice = '';
-  let showCreateForm = false;
+  let channels = $state<Channel[]>([]);
+  let loading = $state(false);
+  let busyKey = $state('');
+  let error = $state('');
+  let notice = $state('');
+  let showCreateForm = $state(false);
   let generation = 0;
-  let createForm: CreateForm = { label: '', type: 'webhook', priority: 0, enabled: true, address: '', headers: '' };
-  let editForm: EditForm = { id: '', label: '', priority: 0, enabled: true, type: 'webhook', address: '', headers: '', configTouched: false };
-  let activeWorkspaceId = '';
+  let createForm = $state<CreateForm>({ label: '', type: 'webhook', priority: 0, enabled: true, address: '', headers: '' });
+  let editForm = $state<EditForm>({ id: '', label: '', priority: 0, enabled: true, type: 'webhook', address: '', headers: '', configTouched: false });
 
-  $: if (workspaceId !== activeWorkspaceId) {
-    activeWorkspaceId = workspaceId;
+
+  $effect(() => {
     void loadChannels(workspaceId);
-  }
+  });
 
   async function request(path: string, init: RequestInit = {}) {
     return requestSettingsApi(path, init);
@@ -173,14 +171,14 @@
     <div class="settings-destination-list">{#each channels as channel (channel.id)}
       <article class="settings-destination"><div class="settings-destination__mark">{channel.type === 'email' ? '@' : channel.type === 'slack' ? 'S' : channel.type === 'discord' ? 'D' : '↗'}</div>
         <div class="settings-destination__body"><div class="settings-destination__title"><strong>{channel.label}</strong><span class:settings-pill--off={!channel.enabled} class="settings-pill">{channel.enabled ? 'Enabled' : 'Disabled'}</span></div><p>{channel.type.toUpperCase()} · Priority {channel.priority ?? 0} · {channel.configured ? 'Configured' : 'Needs configuration'}</p></div>
-        {#if canManageWorkspace}<div class="settings-destination__actions"><button class="settings-text-button" type="button" on:click={() => beginEditChannel(channel)} disabled={!!busyKey}>Edit</button><button class="settings-text-button settings-text-button--danger" type="button" on:click={() => deleteChannel(channel)} disabled={!!busyKey}>Delete</button></div>{/if}
+        {#if canManageWorkspace}<div class="settings-destination__actions"><button class="settings-text-button" type="button" onclick={() => beginEditChannel(channel)} disabled={!!busyKey}>Edit</button><button class="settings-text-button settings-text-button--danger" type="button" onclick={() => deleteChannel(channel)} disabled={!!busyKey}>Delete</button></div>{/if}
       </article>
     {/each}</div>
   {:else if !loading}<p class="settings-empty">No notification destinations saved yet.</p>{/if}
   {#if canManageWorkspace}
-    <button class="settings-button settings-button--primary" type="button" on:click={() => { showCreateForm = !showCreateForm; editForm.id = ''; error = ''; }} disabled={channels.length >= 25 || !!busyKey}>{showCreateForm ? '− Close form' : '＋ Add destination'}</button>
+    <button class="settings-button settings-button--primary" type="button" onclick={() => { showCreateForm = !showCreateForm; editForm.id = ''; error = ''; }} disabled={channels.length >= 25 || !!busyKey}>{showCreateForm ? '− Close form' : '＋ Add destination'}</button>
     {#if showCreateForm}
-      <form class="settings-channel-form" on:submit={createChannel}><div class="settings-form-grid">
+      <form class="settings-channel-form" onsubmit={createChannel}><div class="settings-form-grid">
         <label class="settings-field"><span>Provider</span><select bind:value={createForm.type}><option value="webhook">Custom webhook</option><option value="email">Email</option><option value="slack">Slack incoming webhook</option><option value="discord">Discord webhook</option></select></label>
         <label class="settings-field"><span>Destination label</span><input bind:value={createForm.label} required maxlength="80" placeholder="Operations alerts" /></label>
         <label class="settings-field settings-field--wide"><span>{createForm.type === 'email' ? 'Recipient email' : 'HTTPS webhook URL'}</span><input bind:value={createForm.address} required type={createForm.type === 'email' ? 'email' : 'url'} autocomplete="off" placeholder={createForm.type === 'email' ? 'ops@example.com' : 'https://hooks.example.com/…'} /></label>
@@ -190,12 +188,12 @@
     {/if}
   {:else}<p class="settings-note">You can view destinations, but only workspace owners and admins can change them.</p>{/if}
   {#if editForm.id}
-    <form class="settings-channel-form settings-channel-form--edit" on:submit={saveChannelEdit}><div class="settings-card__heading"><div><p class="settings-kicker">EDIT DESTINATION</p><h2>{editForm.label || 'Destination settings'}</h2><p>Leave the secret fields blank to preserve the existing encrypted configuration.</p></div></div>
+    <form class="settings-channel-form settings-channel-form--edit" onsubmit={saveChannelEdit}><div class="settings-card__heading"><div><p class="settings-kicker">EDIT DESTINATION</p><h2>{editForm.label || 'Destination settings'}</h2><p>Leave the secret fields blank to preserve the existing encrypted configuration.</p></div></div>
       <div class="settings-form-grid"><label class="settings-field"><span>Label</span><input bind:value={editForm.label} required maxlength="80" /></label><label class="settings-field"><span>Priority</span><input bind:value={editForm.priority} type="number" min="0" max="1000" step="1" required /></label>
-        <label class="settings-field settings-field--wide"><span>{editForm.type === 'email' ? 'New recipient email (optional)' : 'New HTTPS webhook URL (optional)'}</span><input bind:value={editForm.address} type={editForm.type === 'email' ? 'email' : 'url'} autocomplete="off" placeholder="Leave blank to preserve current secret" on:input={() => editForm.configTouched = true} /></label>
-        {#if editForm.type !== 'email'}<label class="settings-field settings-field--wide"><span>Replace custom headers (optional JSON)</span><textarea bind:value={editForm.headers} rows="2" spellcheck="false" placeholder="Only used if replacing the destination config" on:input={() => editForm.configTouched = true}></textarea></label>{/if}
+        <label class="settings-field settings-field--wide"><span>{editForm.type === 'email' ? 'New recipient email (optional)' : 'New HTTPS webhook URL (optional)'}</span><input bind:value={editForm.address} type={editForm.type === 'email' ? 'email' : 'url'} autocomplete="off" placeholder="Leave blank to preserve current secret" oninput={() => editForm.configTouched = true} /></label>
+        {#if editForm.type !== 'email'}<label class="settings-field settings-field--wide"><span>Replace custom headers (optional JSON)</span><textarea bind:value={editForm.headers} rows="2" spellcheck="false" placeholder="Only used if replacing the destination config" oninput={() => editForm.configTouched = true}></textarea></label>{/if}
         <label class="settings-check"><input bind:checked={editForm.enabled} type="checkbox" /><span>Destination enabled</span></label></div>
-      <div class="settings-form__footer"><span>Secret configuration is never prefilled.</span><div><button class="settings-button settings-button--quiet" type="button" on:click={() => editForm.id = ''}>Cancel</button><button class="settings-button settings-button--primary" type="submit" disabled={!!busyKey}>{busyKey === 'edit-channel' ? 'Saving…' : 'Save changes'}</button></div></div>
+      <div class="settings-form__footer"><span>Secret configuration is never prefilled.</span><div><button class="settings-button settings-button--quiet" type="button" onclick={() => editForm.id = ''}>Cancel</button><button class="settings-button settings-button--primary" type="submit" disabled={!!busyKey}>{busyKey === 'edit-channel' ? 'Saving…' : 'Save changes'}</button></div></div>
     </form>
   {/if}
 </section>

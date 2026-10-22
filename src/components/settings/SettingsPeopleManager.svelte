@@ -2,9 +2,7 @@
   import { getCachedSettingsResponse, getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../../lib/client/settings-api';
   import { formatDateTime } from '../../lib/client/date-format';
 
-  export let workspaceId = '';
-  export let canManageWorkspace = false;
-  export let refreshKey = 0;
+  let { workspaceId = '', canManageWorkspace = false, refreshKey = 0 }: { workspaceId?: string; canManageWorkspace?: boolean; refreshKey?: number } = $props();
 
   type Member = {
     user_id: string;
@@ -23,24 +21,24 @@
     email_delivery?: string;
   };
 
-  let members: Member[] = [];
-  let invitations: Invitation[] = [];
-  let invitationsUnavailable = false;
-  let loading = false;
-  let busyKey = '';
-  let error = '';
-  let notice = '';
-  let inviteEmail = '';
-  let activeWorkspaceId = '';
+  let members = $state<Member[]>([]);
+  let invitations = $state<Invitation[]>([]);
+  let invitationsUnavailable = $state(false);
+  let loading = $state(false);
+  let busyKey = $state('');
+  let error = $state('');
+  let notice = $state('');
+  let inviteEmail = $state('');
+
   let generation = 0;
   let mutationGeneration = 0;
 
-  let activeRefreshKey = -1;
-  $: if (workspaceId !== activeWorkspaceId || refreshKey !== activeRefreshKey) {
-    activeWorkspaceId = workspaceId;
-    activeRefreshKey = refreshKey;
+
+  $effect(() => {
     void loadPeople(workspaceId);
-  }
+    // A parent refresh invalidates the current people load without changing workspace.
+    void refreshKey;
+  });
 
   async function request(path: string, init: RequestInit = {}) {
     return requestSettingsApi(path, init);
@@ -174,7 +172,7 @@
   {#if members.length}
     <div class="settings-table-wrap"><table class="settings-table"><thead><tr><th>Person</th><th>Access</th><th>Actions</th></tr></thead><tbody>
       {#each members as member (member.user_id)}
-        <tr><td><strong>{member.display_name || member.email}</strong><small>{member.email}</small></td><td>{#if member.account_owner}<span class="settings-pill">Account owner</span>{:else if canManageWorkspace}<select aria-label={`Role for ${member.email}`} value={member.role ?? 'member'} on:change={(event) => changeRole(member, (event.currentTarget as HTMLSelectElement).value as 'admin' | 'member')} disabled={!!busyKey}><option value="member">Member</option><option value="admin">Admin</option></select>{:else}<span class="settings-pill">{member.role ?? 'Member'}</span>{/if}</td><td>{#if canManageWorkspace && !member.account_owner}<button class="settings-text-button settings-text-button--danger" type="button" on:click={() => removeMember(member)} disabled={!!busyKey}>Remove</button>{:else}<span class="settings-note">Protected</span>{/if}</td></tr>
+        <tr><td><strong>{member.display_name || member.email}</strong><small>{member.email}</small></td><td>{#if member.account_owner}<span class="settings-pill">Account owner</span>{:else if canManageWorkspace}<select aria-label={`Role for ${member.email}`} value={member.role ?? 'member'} onchange={(event) => changeRole(member, (event.currentTarget as HTMLSelectElement).value as 'admin' | 'member')} disabled={!!busyKey}><option value="member">Member</option><option value="admin">Admin</option></select>{:else}<span class="settings-pill">{member.role ?? 'Member'}</span>{/if}</td><td>{#if canManageWorkspace && !member.account_owner}<button class="settings-text-button settings-text-button--danger" type="button" onclick={() => removeMember(member)} disabled={!!busyKey}>Remove</button>{:else}<span class="settings-note">Protected</span>{/if}</td></tr>
       {/each}
     </tbody></table></div>
   {:else if !loading}<p class="settings-empty">No member records are available for this workspace, or you don’t have permission to view them.</p>{/if}
@@ -183,7 +181,7 @@
 <section class="settings-card" aria-labelledby="settings-invitations-title">
   <div class="settings-card__heading"><div><p class="settings-kicker">INVITATIONS</p><h2 id="settings-invitations-title">Bring the right people in.</h2><p>Invitations are recorded by the API. Email delivery is currently stubbed and is not sent automatically.</p></div><span class="settings-card__symbol">↗</span></div>
   {#if canManageWorkspace}
-    <form class="settings-inline-form" on:submit={sendInvitation}><label class="settings-field"><span>Email address</span><input bind:value={inviteEmail} type="email" maxlength="320" required placeholder="teammate@company.com" /></label><button class="settings-button settings-button--primary" type="submit" disabled={!!busyKey}>{busyKey === 'invite' ? 'Adding…' : 'Create invitation'}</button></form>
+    <form class="settings-inline-form" onsubmit={sendInvitation}><label class="settings-field"><span>Email address</span><input bind:value={inviteEmail} type="email" maxlength="320" required placeholder="teammate@company.com" /></label><button class="settings-button settings-button--primary" type="submit" disabled={!!busyKey}>{busyKey === 'invite' ? 'Adding…' : 'Create invitation'}</button></form>
   {:else}<p class="settings-note">Only workspace owners and admins can manage invitations.</p>{/if}
-  {#if invitations.length}<div class="settings-list">{#each invitations as invitation (invitation.id)}<div class="settings-list-row"><div><strong>{invitation.email}</strong><small>Expires {formatDate(invitation.expires_at)} · {invitation.role}</small></div>{#if canManageWorkspace}<button class="settings-text-button settings-text-button--danger" type="button" on:click={() => revokeInvitation(invitation)} disabled={!!busyKey}>Revoke</button>{/if}</div>{/each}</div>{:else if invitationsUnavailable}<p class="settings-empty">Invitations are currently unavailable for this workspace.</p>{:else if !loading}<p class="settings-empty">No pending invitations.</p>{/if}
+  {#if invitations.length}<div class="settings-list">{#each invitations as invitation (invitation.id)}<div class="settings-list-row"><div><strong>{invitation.email}</strong><small>Expires {formatDate(invitation.expires_at)} · {invitation.role}</small></div>{#if canManageWorkspace}<button class="settings-text-button settings-text-button--danger" type="button" onclick={() => revokeInvitation(invitation)} disabled={!!busyKey}>Revoke</button>{/if}</div>{/each}</div>{:else if invitationsUnavailable}<p class="settings-empty">Invitations are currently unavailable for this workspace.</p>{:else if !loading}<p class="settings-empty">No pending invitations.</p>{/if}
 </section>

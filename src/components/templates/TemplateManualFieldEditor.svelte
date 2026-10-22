@@ -3,11 +3,13 @@
 
   type PrimitiveOption = { value: Primitive; label: string };
 
-  export let fields: FieldDefinition[];
-  export let primitiveOptions: PrimitiveOption[];
-  export let onAddField: () => void;
-  export let onRemoveField: (index: number) => void;
-  export let onUpdateField: (index: number, key: keyof FieldDefinition, value: string | number) => void;
+  let { fields, primitiveOptions, onAddField, onRemoveField, onUpdateField }: {
+    fields: FieldDefinition[];
+    primitiveOptions: PrimitiveOption[];
+    onAddField: () => void;
+    onRemoveField: (index: number) => void;
+    onUpdateField: (index: number, key: keyof FieldDefinition, value: string | number) => void;
+  } = $props();
 </script>
 
 <section class="template-fields template-fields--editor">
@@ -16,24 +18,24 @@
       <h3>Define fields manually</h3>
       <p>Add a field and provide its JSON path and interpretation type. Nested paths use dot notation.</p>
     </div>
-    <button class="template-button template-button--primary" type="button" on:click={onAddField}>＋ Add field</button>
+    <button class="template-button template-button--primary" type="button" onclick={onAddField}>＋ Add field</button>
   </div>
   {#each fields as field, index (index)}
     <div class="template-field-row">
       <label class="template-label">Field name
-        <input value={field.name} on:input={(event) => onUpdateField(index, 'name', event.currentTarget.value)} required placeholder="processed_rows" />
+        <input value={field.name} oninput={(event) => onUpdateField(index, 'name', event.currentTarget.value)} required placeholder="processed_rows" />
       </label>
       <label class="template-label">JSON path
-        <input value={field.path} on:input={(event) => onUpdateField(index, 'path', event.currentTarget.value)} required placeholder="backup.processed_rows" />
+        <input value={field.path} oninput={(event) => onUpdateField(index, 'path', event.currentTarget.value)} required placeholder="backup.processed_rows" />
       </label>
       <label class="template-label">Type
-        <select value={field.primitive} on:change={(event) => onUpdateField(index, 'primitive', Number(event.currentTarget.value))}>
+        <select value={field.primitive} onchange={(event) => onUpdateField(index, 'primitive', Number(event.currentTarget.value))}>
           {#each primitiveOptions as option}
             <option value={option.value}>{option.label}</option>
           {/each}
         </select>
       </label>
-      <button class="template-icon-button" type="button" aria-label={`Remove field ${index + 1}`} on:click={() => onRemoveField(index)} disabled={fields.length === 1}>×</button>
+      <button class="template-icon-button" type="button" aria-label={`Remove field ${index + 1}`} onclick={() => onRemoveField(index)} disabled={fields.length === 1}>×</button>
     </div>
   {/each}
   <p class="template-muted template-small">At least one valid field is required. Advanced assertion, reasoning, and checksum metadata are preserved when editing existing fields.</p>
