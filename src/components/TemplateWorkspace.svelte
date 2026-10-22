@@ -3,7 +3,7 @@
   import { getSharedQueryClient } from '../lib/client/query-client';
   import { templateQueryKeys } from '../lib/client/template-queries';
   import { fetchTemplatePage, fetchTemplateDetail, TemplateQueryError } from '../lib/client/template-queries';
-  import { requestApi } from '../lib/client/api-client';
+  import { ApiClientError, assertApiSuccess, requestApi } from '../lib/client/api-client';
   import { can } from '../lib/client/permissions';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
@@ -170,18 +170,20 @@
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) { discoveryError = 'The sample payload must be a JSON object.'; return; }
     discovering = true;
     try {
-      const { response, body, code } = await requestApi('/api/backend/templates/discover-fields', {
+      const result = await requestApi('/api/backend/templates/discover-fields', {
         method: 'POST', headers: idempotencyHeaders(),
         body: JSON.stringify({ workspace_id: targetWorkspaceId, payload }),
       });
       if (current !== discoverySequence || !formOpen || workspaceId !== targetWorkspaceId || samplePayload !== targetSamplePayload) return;
-      if (!response.ok) { discoveryError = templateErrorMessage(response.status, code); return; }
-      const result = body as { fields?: DiscoveredField[]; warnings?: { code: string }[] };
-      discovered = Array.isArray(result.fields) ? result.fields : [];
-      discoveryWarnings = (result.warnings ?? []).map((warning) => warning.code);
-    } catch {
+      assertApiSuccess(result);
+      const discovery = result.body as { fields?: DiscoveredField[]; warnings?: { code: string }[] };
+      discovered = Array.isArray(discovery.fields) ? discovery.fields : [];
+      discoveryWarnings = (discovery.warnings ?? []).map((warning) => warning.code);
+    } catch (error) {
       if (current === discoverySequence && formOpen && workspaceId === targetWorkspaceId && samplePayload === targetSamplePayload) {
-        discoveryError = templateErrorMessage(0, 'network_error');
+        discoveryError = error instanceof ApiClientError
+          ? templateErrorMessage(error.status, error.code)
+          : templateErrorMessage(0, 'network_error');
       }
     } finally {
       if (current === discoverySequence) discovering = false;
@@ -226,15 +228,11 @@
     };
     saving = true;
     try {
-      const { response, code } = targetMode === 'create'
+      const result = targetMode === 'create'
         ? await requestApi('/api/backend/templates', { method: 'POST', headers: idempotencyHeaders(), body: JSON.stringify(payload) })
         : await requestApi(`/api/backend/templates/${encodeURIComponent(targetTemplate!.id)}`, { method: 'PATCH', headers: idempotencyHeaders(), body: JSON.stringify({ ...payload, expected_version: targetTemplate!.version }) });
       if (operation !== mutationSequence) return;
-      if (!response.ok) {
-        const message = templateErrorMessage(response.status, code);
-        if (operation === mutationSequence) formError = message;
-        return;
-      }
+      assertApiSuccess(result);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: templateQueryKeys.all }),
         queryClient.invalidateQueries({ queryKey: ['monitor-templates'] }),
@@ -244,8 +242,10 @@
       notice = targetMode === 'create' ? 'Template created.' : 'Template updated.';
       cursorStack = [null]; pageIndex = 0;
       await loadTemplates(null);
-    } catch {
-      if (operation === mutationSequence) formError = templateErrorMessage(0, 'network_error');
+    } catch (error) {
+      if (operation === mutationSequence) formError = error instanceof ApiClientError
+        ? templateErrorMessage(error.status, error.code)
+        : templateErrorMessage(0, 'network_error');
     } finally {
       if (operation === mutationSequence) saving = false;
     }
@@ -285,13 +285,9 @@
     saving = true;
     formError = '';
     try {
-      const { response, code } = await requestApi(`/api/backend/templates/${encodeURIComponent(target.id)}?workspace_id=${encodeURIComponent(targetWorkspaceId)}`, { method: 'DELETE', headers: { 'Idempotency-Key': crypto.randomUUID() } });
+      const result = await requestApi(`/api/backend/templates/${encodeURIComponent(target.id)}?workspace_id=${encodeURIComponent(targetWorkspaceId)}`, { method: 'DELETE', headers: { 'Idempotency-Key': crypto.randomUUID() } });
       if (operation !== mutationSequence) return;
-      if (!response.ok) {
-        const message = templateErrorMessage(response.status, code);
-        if (operation === mutationSequence) formError = message;
-        return;
-      }
+      assertApiSuccess(result);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: templateQueryKeys.all }),
         queryClient.invalidateQueries({ queryKey: ['monitor-templates'] }),
@@ -302,8 +298,10 @@
       notice = 'Template deleted. Existing monitors are unchanged.';
       cursorStack = [null]; pageIndex = 0;
       await loadTemplates(null);
-    } catch {
-      if (operation === mutationSequence) formError = templateErrorMessage(0, 'network_error');
+    } catch (error) {
+      if (operation === mutationSequence) formError = error instanceof ApiClientError
+        ? templateErrorMessage(error.status, error.code)
+        : templateErrorMessage(0, 'network_error');
     } finally {
       if (operation === mutationSequence) saving = false;
     }

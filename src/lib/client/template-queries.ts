@@ -1,4 +1,4 @@
-import { isAbortError, requestApi } from './api-client';
+import { ApiClientError, isAbortError, requestApi } from './api-client';
 import { getSharedQueryClient } from './query-client';
 
 export type TemplatePage<T> = {
@@ -6,12 +6,9 @@ export type TemplatePage<T> = {
   page?: { next_cursor: string | null };
 };
 
-export class TemplateQueryError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string | null,
-  ) {
-    super(`Template request failed with status ${status}`);
+export class TemplateQueryError extends ApiClientError {
+  constructor(status: number, code: string | null, requestId: string | null = null, kind: 'http' | 'network' | 'invalid_response' = status === 0 ? 'network' : 'http') {
+    super(kind, `Template request failed with status ${status}.`, status, code, requestId);
     this.name = 'TemplateQueryError';
   }
 }
@@ -30,15 +27,17 @@ async function fetchTemplateResource<T>(url: string, signal: AbortSignal): Promi
   let response: Response;
   let body: unknown;
   let code: string | null;
+  let requestId: string | null;
   try {
-    ({ response, body, code } = await requestApi(url, { signal }));
+    ({ response, body, code, requestId } = await requestApi(url, { signal }));
   } catch (error) {
     if (isAbortError(error)) throw error;
+    if (error instanceof ApiClientError) throw new TemplateQueryError(error.status, error.code, error.requestId, error.kind);
     throw new TemplateQueryError(0, 'network_error');
   }
 
   if (!response.ok) {
-    throw new TemplateQueryError(response.status, code);
+    throw new TemplateQueryError(response.status, code, requestId);
   }
   return body as T;
 }

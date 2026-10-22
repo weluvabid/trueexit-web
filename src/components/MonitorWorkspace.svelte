@@ -18,6 +18,7 @@
   import { createMonitorMutationOptions, editMonitorMutationOptions, lifecycleMonitorMutationOptions, tagMonitorMutationOptions } from '../lib/client/monitor-mutations';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
   import { getSharedQueryClient } from '../lib/client/query-client';
+  import { ApiClientError } from '../lib/client/api-client';
 
   type MonitorConfigVersion = { version: number; cadence_seconds: number; config: { fields: Array<{ name: string; path: string; primitive: number; meta?: Record<string, unknown> }> } };
   type MonitorDetail = Monitor & { config_versions?: MonitorConfigVersion[] };
@@ -33,7 +34,7 @@
   const monitorsQuery = createQuery(() => ({
     ...(activeListQuery ? monitorListQueryOptions<Monitor>(activeListQuery) : {
       queryKey: ['monitors', 'list', 'inactive'] as const,
-      queryFn: async (): Promise<MonitorListResponse<Monitor>> => ({ ok: true, status: 200, code: null, page: { data: [], page: { next_cursor: null } } }),
+      queryFn: async (): Promise<MonitorListResponse<Monitor>> => ({ ok: true, status: 200, code: null, requestId: null, page: { data: [], page: { next_cursor: null } } }),
     }),
     enabled: Boolean(activeListQuery?.workspaceId),
   }), () => monitorQueryClient);
@@ -139,6 +140,19 @@
 
   const selectedWorkspace = $derived(workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null);
   const canManageChannels = $derived(can(selectedWorkspace, 'workspace.destinations.manage'));
+
+  function monitorMutationErrorMessage(error: unknown, operation: 'create' | 'edit'): string {
+    if (!(error instanceof ApiClientError)) return messageFor(0, 'network_error');
+    if (operation === 'edit' && error.status === 409) {
+      return 'This monitor changed while you were editing it. Close this form, reopen Edit monitor, and review the latest version before saving again.';
+    }
+    if (error.status === 422 && error.code === 'invalid_monitor_config') {
+      return operation === 'create'
+        ? 'TrueExit rejected this field configuration. Check field names, paths, and primitive choices.'
+        : 'TrueExit rejected this field configuration. Check field names, paths, and value types.';
+    }
+    return messageFor(error.status, error.code);
+  }
 
   async function loadWorkspaceTags(): Promise<boolean> {
     const workspaceId = selectedWorkspaceId;
@@ -261,17 +275,13 @@
       tagRequestBody = requestBody;
     }
     try {
-      const result = await tagMonitorMutation.mutateAsync({
+      await tagMonitorMutation.mutateAsync({
         workspaceId,
         monitorId,
         requestBody,
         idempotencyKey: tagRequestKey,
       });
       if (!isCurrentWorkspace(workspaceId) || taggingMonitor?.id !== monitorId) return;
-      if (!result.ok) {
-        tagError = messageFor(result.status, result.code);
-        return;
-      }
       tagModalOpen = false;
       taggingMonitor = null;
       tagRequestKey = '';
@@ -279,8 +289,8 @@
       actionError = '';
       actionMessage = `Tags updated for “${taggedMonitorName}”.`;
       await Promise.all([loadWorkspaceTags(), loadMonitors(null)]);
-    } catch {
-      if (isCurrentWorkspace(workspaceId)) tagError = messageFor(0, 'network_error');
+    } catch (error) {
+      if (isCurrentWorkspace(workspaceId)) tagError = error instanceof ApiClientError ? messageFor(error.status, error.code) : messageFor(0, 'network_error');
     } finally {
       if (!disposed) tagBusy = false;
     }
@@ -461,12 +471,6 @@
         idempotencyKey: createRequestKey,
       });
       if (!isCurrentWorkspace(workspaceId)) return;
-      if (!result.ok) {
-        createError = result.status === 422 && result.code === 'invalid_monitor_config'
-          ? 'TrueExit rejected this field configuration. Check field names, paths, and primitive choices.'
-          : messageFor(result.status, result.code);
-        return;
-      }
       const created = result.body as Monitor;
       resetEditorDraft();
       if (initialMode !== 'inventory') { window.location.href = `/monitors?workspace_id=${encodeURIComponent(workspaceId)}`; return; }
@@ -480,8 +484,8 @@
       actionError = '';
       actionMessage = `“${created.name || name}” was created.`;
       await loadMonitors(null);
-    } catch {
-      if (isCurrentWorkspace(workspaceId)) createError = messageFor(0, 'network_error');
+    } catch (error) {
+      if (isCurrentWorkspace(workspaceId)) createError = monitorMutationErrorMessage(error, 'create');
     } finally {
       if (!disposed) creating = false;
     }
@@ -522,21 +526,13 @@
     }
     creating = true;
     try {
-      const result = await editMonitorMutation.mutateAsync({
+      await editMonitorMutation.mutateAsync({
         workspaceId,
         monitorId: original.id,
         requestBody,
         idempotencyKey: editRequestKey,
       });
       if (!isCurrentWorkspace(workspaceId) || editingMonitor?.id !== original.id) return;
-      if (!result.ok) {
-        createError = result.status === 409
-          ? 'This monitor changed while you were editing it. Close this form, reopen Edit monitor, and review the latest version before saving again.'
-          : result.status === 422 && result.code === 'invalid_monitor_config'
-            ? 'TrueExit rejected this field configuration. Check field names, paths, and value types.'
-            : messageFor(result.status, result.code);
-        return;
-      }
       if (initialMode !== 'inventory') { window.location.href = `/monitors?workspace_id=${encodeURIComponent(workspaceId)}`; return; }
       createOpen = false;
       editingMonitor = null;
@@ -546,8 +542,8 @@
       actionMessage = `“${name}” was updated.`;
       resetPagination();
       await loadMonitors(null);
-    } catch {
-      if (isCurrentWorkspace(workspaceId) && editingMonitor?.id === original.id) createError = messageFor(0, 'network_error');
+    } catch (error) {
+      if (isCurrentWorkspace(workspaceId) && editingMonitor?.id === original.id) createError = monitorMutationErrorMessage(error, 'edit');
     } finally {
       if (!disposed) creating = false;
     }
@@ -643,22 +639,18 @@
     actionError = '';
     actionMessage = '';
     try {
-      const result = await lifecycleMonitorMutation.mutateAsync({
+      await lifecycleMonitorMutation.mutateAsync({
         workspaceId,
         monitorId: monitor.id,
         action,
         idempotencyKey: crypto.randomUUID(),
       });
       if (!isCurrentWorkspace(workspaceId)) return;
-      if (!result.ok) {
-        actionError = messageFor(result.status, result.code);
-        return;
-      }
       actionMessage = `${monitor.name}: ${labels[action].toLowerCase()} completed.`;
       resetPagination();
       await loadMonitors(null);
-    } catch {
-      if (isCurrentWorkspace(workspaceId)) actionError = messageFor(0, 'network_error');
+    } catch (error) {
+      if (isCurrentWorkspace(workspaceId)) actionError = error instanceof ApiClientError ? messageFor(error.status, error.code) : messageFor(0, 'network_error');
     } finally {
       if (!disposed) busyMonitorId = '';
     }

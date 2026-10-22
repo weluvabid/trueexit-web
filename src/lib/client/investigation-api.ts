@@ -1,7 +1,7 @@
 import { getSharedQueryClient } from './query-client';
-import { requestApi } from './api-client';
+import { ApiClientError, requestApi } from './api-client';
 
-export type Resource<T> = { ok: true; data: T } | { ok: false; status: number; code: string | null };
+export type Resource<T> = { ok: true; data: T } | { ok: false; status: number; code: string | null; requestId: string | null };
 
 export function getInvestigationErrorMessage(status: number, code: string | null): string {
   if (status === 401) return 'Your session needs attention. Sign in again to continue.';
@@ -24,12 +24,13 @@ export async function readInvestigationResource<T>(path: string): Promise<Resour
       staleTime: 15_000,
       retry: false,
       queryFn: async ({ signal }): Promise<T> => {
-        const { response, body, code } = await requestApi(path, { signal });
+        const { response, body, code, requestId } = await requestApi(path, { signal });
         if (!response.ok) {
           throw new InvestigationQueryError(
             getInvestigationErrorMessage(response.status, code),
             response.status,
             code,
+            requestId,
           );
         }
         return body as T;
@@ -38,27 +39,27 @@ export async function readInvestigationResource<T>(path: string): Promise<Resour
     return { ok: true, data };
   } catch (error) {
     if (error instanceof InvestigationQueryError) {
-      return { ok: false, status: error.status, code: error.code };
+      return { ok: false, status: error.status, code: error.code, requestId: error.requestId };
+    }
+    if (error instanceof ApiClientError) {
+      return { ok: false, status: error.status, code: error.code, requestId: error.requestId };
     }
     if (error instanceof Error && error.name === 'AbortError') throw error;
-    return { ok: false, status: 0, code: 'network_error' };
+    return { ok: false, status: 0, code: 'network_error', requestId: null };
   }
 }
 
 
-export class InvestigationQueryError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code: string | null,
-  ) {
-    super(message);
+export class InvestigationQueryError extends ApiClientError {
+  constructor(message: string, status: number, code: string | null, requestId: string | null = null) {
+    super(status === 0 ? 'network' : 'http', message, status, code, requestId);
     this.name = 'InvestigationQueryError';
   }
 }
 
 export function investigationQueryErrorMessage(error: unknown): string {
   if (error instanceof InvestigationQueryError) return error.message;
+  if (error instanceof ApiClientError) return getInvestigationErrorMessage(error.status, error.code);
   return getInvestigationErrorMessage(0, 'network_error');
 }
 
@@ -75,12 +76,13 @@ export function investigationResourceQueryOptions<T>(
     enabled: Boolean(workspaceId && monitorId),
     staleTime: 30_000,
     queryFn: async ({ signal }: { signal: AbortSignal }): Promise<T> => {
-      const { response, body, code } = await requestApi(queryPath, { signal });
+      const { response, body, code, requestId } = await requestApi(queryPath, { signal });
       if (!response.ok) {
         throw new InvestigationQueryError(
           getInvestigationErrorMessage(response.status, code),
           response.status,
           code,
+          requestId,
         );
       }
       return body as T;

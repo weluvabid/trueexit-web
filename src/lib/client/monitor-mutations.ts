@@ -1,11 +1,11 @@
-import { requestApi } from './api-client';
+import { assertApiSuccess, requestApi } from './api-client';
 import type { QueryClient } from '@tanstack/svelte-query';
 import { monitorQueryKeys, monitorResourceQueryKeys } from './monitor-queries';
 
 export type MonitorMutationResult = {
-  ok: boolean;
   status: number;
   code: string | null;
+  requestId: string | null;
   body: unknown;
 };
 
@@ -25,7 +25,7 @@ async function sendMonitorMutation(
   requestBody: string,
   idempotencyKey: string,
 ): Promise<MonitorMutationResult> {
-  const { response, body, code } = await requestApi(url, {
+  const result = await requestApi(url, {
     method,
     headers: {
       'Content-Type': 'application/json',
@@ -33,27 +33,21 @@ async function sendMonitorMutation(
     },
     body: requestBody,
   });
-  return {
-    ok: response.ok,
-    status: response.status,
-    code,
-    body,
-  };
+  assertApiSuccess(result);
+  return { status: result.response.status, code: result.code, requestId: result.requestId, body: result.body };
 }
 
 export function createMonitorMutationOptions(queryClient: QueryClient) {
   return {
     mutationFn: (variables: CreateMonitorVariables) =>
       sendMonitorMutation('/api/backend/monitors', 'POST', variables.requestBody, variables.idempotencyKey),
-    onSuccess: async (result: MonitorMutationResult, variables: CreateMonitorVariables) => {
-      if (result.ok) {
-        await Promise.all([
+    onSuccess: async (_result: MonitorMutationResult, variables: CreateMonitorVariables) => {
+      await Promise.all([
           queryClient.invalidateQueries({ queryKey: monitorQueryKeys.workspaceLists(variables.workspaceId) }),
           queryClient.invalidateQueries({ queryKey: ['dashboard-page', variables.workspaceId, 'monitors'] }),
           queryClient.invalidateQueries({ queryKey: ['dashboard', 'overview', variables.workspaceId] }),
           queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceChannels(variables.workspaceId) }),
         ]);
-      }
     },
   };
 }
@@ -67,9 +61,8 @@ export function editMonitorMutationOptions(queryClient: QueryClient) {
         variables.requestBody,
         variables.idempotencyKey,
       ),
-    onSuccess: async (result: MonitorMutationResult, variables: EditMonitorVariables) => {
-      if (result.ok) {
-        await Promise.all([
+    onSuccess: async (_result: MonitorMutationResult, variables: EditMonitorVariables) => {
+      await Promise.all([
           queryClient.invalidateQueries({ queryKey: monitorQueryKeys.workspaceLists(variables.workspaceId) }),
           queryClient.invalidateQueries({ queryKey: ['dashboard-page', variables.workspaceId, 'monitors'] }),
           queryClient.invalidateQueries({ queryKey: ['dashboard', 'overview', variables.workspaceId] }),
@@ -77,7 +70,6 @@ export function editMonitorMutationOptions(queryClient: QueryClient) {
           queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorChannels(variables.workspaceId, variables.monitorId) }),
           queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceChannels(variables.workspaceId) }),
         ]);
-      }
     },
   };
 }
@@ -102,16 +94,14 @@ export function tagMonitorMutationOptions(queryClient: QueryClient) {
         variables.requestBody,
         variables.idempotencyKey,
       ),
-    onSuccess: async (result: MonitorMutationResult, variables: TagMonitorVariables) => {
-      if (result.ok) {
-        await Promise.all([
+    onSuccess: async (_result: MonitorMutationResult, variables: TagMonitorVariables) => {
+      await Promise.all([
           queryClient.invalidateQueries({ queryKey: monitorQueryKeys.workspaceLists(variables.workspaceId) }),
           queryClient.invalidateQueries({ queryKey: ['dashboard-page', variables.workspaceId, 'monitors'] }),
           queryClient.invalidateQueries({ queryKey: ['dashboard', 'overview', variables.workspaceId] }),
           queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceTags(variables.workspaceId) }),
           queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorTags(variables.workspaceId, variables.monitorId) }),
         ]);
-      }
     },
   };
 }
@@ -119,28 +109,22 @@ export function tagMonitorMutationOptions(queryClient: QueryClient) {
 export function lifecycleMonitorMutationOptions(queryClient: QueryClient) {
   return {
     mutationFn: async (variables: LifecycleMonitorVariables): Promise<MonitorMutationResult> => {
-      const { response, body, code } = await requestApi(
+      const result = await requestApi(
         `/api/backend/monitors/${encodeURIComponent(variables.monitorId)}/${variables.action}?workspace_id=${encodeURIComponent(variables.workspaceId)}`,
         {
           method: 'POST',
           headers: { 'Idempotency-Key': variables.idempotencyKey },
         },
       );
-      return {
-        ok: response.ok,
-        status: response.status,
-        code,
-        body,
-      };
+      assertApiSuccess(result);
+      return { status: result.response.status, code: result.code, requestId: result.requestId, body: result.body };
     },
-    onSuccess: async (result: MonitorMutationResult, variables: LifecycleMonitorVariables) => {
-      if (result.ok) {
-        await Promise.all([
+    onSuccess: async (_result: MonitorMutationResult, variables: LifecycleMonitorVariables) => {
+      await Promise.all([
           queryClient.invalidateQueries({ queryKey: monitorQueryKeys.workspaceLists(variables.workspaceId) }),
           queryClient.invalidateQueries({ queryKey: ['dashboard-page', variables.workspaceId, 'monitors'] }),
           queryClient.invalidateQueries({ queryKey: ['dashboard', 'overview', variables.workspaceId] }),
         ]);
-      }
     },
   };
 }

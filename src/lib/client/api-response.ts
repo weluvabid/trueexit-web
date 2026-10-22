@@ -13,6 +13,13 @@ export function getApiErrorCode(body: unknown): string | null {
   return typeof error?.code === 'string' ? error.code : null;
 }
 
+/** Extract the backend correlation ID when it is present and well-formed as a string. */
+export function getApiRequestId(body: unknown): string | null {
+  if (!body || typeof body !== 'object' || !('request_id' in body)) return null;
+  const requestId = (body as ApiErrorEnvelope).request_id;
+  return typeof requestId === 'string' ? requestId : null;
+}
+
 /** Normalize common list response shapes used by the backend API. */
 export function getApiList<T>(body: unknown): T[] {
   if (Array.isArray(body)) return body as T[];

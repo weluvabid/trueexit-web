@@ -126,7 +126,7 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
 
     <script>
       import { loadWorkspaceBootstrap } from '../lib/client/workspace-bootstrap';
-      import { requestApi } from '../lib/client/api-client';
+      import { assertApiSuccess, ApiClientError, requestApi } from '../lib/client/api-client';
       import { clearPersistedQueryCache, getSharedQueryClient } from '../lib/client/query-client';
       import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
 
@@ -350,12 +350,8 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
               queryKey: ['workspace-search', workspaceId, query, 'all', 5],
               staleTime: 10_000,
               queryFn: async ({ signal }) => {
-                const { response, body: result } = await requestApi(`/api/backend/search?${params}`, { signal });
-                if (!response.ok) {
-                  const error = new Error('Workspace search failed') as Error & { status?: number };
-                  error.status = response.status;
-                  throw error;
-                }
+                const { response, body: result, code, requestId } = await requestApi(`/api/backend/search?${params}`, { signal });
+                assertApiSuccess({ response, body: result, code, requestId });
                 return result;
               },
             });
@@ -379,7 +375,7 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
             workspaceSearchSection.querySelector('.search-dialog__label').hidden = count === 0;
           } catch (error) {
             if (sequence === searchRequestSequence) {
-              const status = (error as Error & { status?: number }).status;
+              const status = error instanceof ApiClientError ? error.status : undefined;
               workspaceSearchStatus.hidden = false;
               workspaceSearchStatus.textContent = status === 403
                 ? 'You do not have access to search this workspace.'

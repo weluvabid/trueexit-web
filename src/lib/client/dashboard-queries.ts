@@ -1,4 +1,4 @@
-import { requestApi } from './api-client';
+import { ApiClientError, requestApi } from './api-client';
 
 export type DashboardSummary = {
   active_monitors: number;
@@ -35,13 +35,9 @@ export type DashboardResponse = {
   recent_evidence_activity: ActivityItem[];
 };
 
-export class DashboardQueryError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code: string | null,
-  ) {
-    super(message);
+export class DashboardQueryError extends ApiClientError {
+  constructor(message: string, status: number, code: string | null, requestId: string | null = null) {
+    super('http', message, status, code, requestId);
     this.name = 'DashboardQueryError';
   }
 }
@@ -52,13 +48,13 @@ export function dashboardQueryOptions(workspaceId: string) {
     enabled: Boolean(workspaceId),
     staleTime: 30_000,
     queryFn: async ({ signal }: { signal: AbortSignal }): Promise<DashboardResponse> => {
-      const { response, body, code } = await requestApi(
+      const { response, body, code, requestId } = await requestApi(
         `/api/backend/workspaces/${encodeURIComponent(workspaceId)}/dashboard`,
         { signal },
       );
       if (!response.ok) {
         const status = response.status;
-        throw new DashboardQueryError(dashboardErrorMessage(status, code), status, code);
+        throw new DashboardQueryError(dashboardErrorMessage(status, code), status, code, requestId);
       }
       return body as DashboardResponse;
     },
@@ -76,5 +72,6 @@ export function dashboardErrorMessage(status: number, code: string | null): stri
 
 export function dashboardQueryErrorMessage(error: unknown): string {
   if (error instanceof DashboardQueryError) return error.message;
+  if (error instanceof ApiClientError) return dashboardErrorMessage(error.status, error.code);
   return dashboardErrorMessage(0, 'network_error');
 }

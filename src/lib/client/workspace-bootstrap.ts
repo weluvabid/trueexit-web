@@ -1,5 +1,5 @@
 import { getSharedQueryClient, waitForQueryCacheRestoration } from './query-client';
-import { requestApi } from './api-client';
+import { ApiClientError, isAbortError, requestApi } from './api-client';
 
 export interface CurrentUserContext {
   user_id: string;
@@ -23,21 +23,25 @@ export interface WorkspacePage {
 
 export type BootstrapResource<T> =
   | { ok: true; data: T }
-  | { ok: false; status: number; code: string | null };
+  | { ok: false; status: number; code: string | null; requestId: string | null };
 
-type SharedHttpResult = { ok: boolean; status: number; body: unknown; code: string | null };
+type SharedHttpResult = { ok: boolean; status: number; body: unknown; code: string | null; requestId: string | null };
 
 const workspaceBootstrapKeys = {
   me: ['workspace-bootstrap', 'me'] as const,
   workspaces: ['workspace-bootstrap', 'workspaces', { limit: 50 }] as const,
 };
 
-async function readResource(path: string): Promise<SharedHttpResult> {
+async function readResource(path: string, signal: AbortSignal): Promise<SharedHttpResult> {
   try {
-    const { response, body, code } = await requestApi(path);
-    return { ok: response.ok, status: response.status, body, code };
-  } catch {
-    return { ok: false, status: 0, body: null, code: 'network_error' };
+    const { response, body, code, requestId } = await requestApi(path, { signal });
+    return { ok: response.ok, status: response.status, body, code, requestId };
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    if (error instanceof ApiClientError) {
+      return { ok: false, status: error.status, body: null, code: error.code, requestId: error.requestId };
+    }
+    return { ok: false, status: 0, body: null, code: 'network_error', requestId: null };
   }
 }
 
@@ -56,12 +60,12 @@ export async function loadWorkspaceBootstrap(): Promise<{
   const queryClient = getSharedQueryClient();
   const meOptions = {
     queryKey: workspaceBootstrapKeys.me,
-    queryFn: () => readResource('/api/backend/me'),
+    queryFn: ({ signal }: { signal: AbortSignal }) => readResource('/api/backend/me', signal),
     staleTime: 30_000,
   };
   const workspacesOptions = {
     queryKey: workspaceBootstrapKeys.workspaces,
-    queryFn: () => readResource('/api/backend/workspaces?limit=50'),
+    queryFn: ({ signal }: { signal: AbortSignal }) => readResource('/api/backend/workspaces?limit=50', signal),
     staleTime: 30_000,
   };
 
@@ -86,7 +90,7 @@ function normalizeBootstrap(me: SharedHttpResult, workspaces: SharedHttpResult):
   workspaces: BootstrapResource<WorkspacePage>;
 } {
   return {
-    me: me.ok ? { ok: true, data: me.body as CurrentUserContext } : { ok: false, status: me.status, code: me.code ?? null },
-    workspaces: workspaces.ok ? { ok: true, data: workspaces.body as WorkspacePage } : { ok: false, status: workspaces.status, code: workspaces.code ?? null },
+    me: me.ok ? { ok: true, data: me.body as CurrentUserContext } : { ok: false, status: me.status, code: me.code ?? null, requestId: me.requestId },
+    workspaces: workspaces.ok ? { ok: true, data: workspaces.body as WorkspacePage } : { ok: false, status: workspaces.status, code: workspaces.code ?? null, requestId: workspaces.requestId },
   };
 }

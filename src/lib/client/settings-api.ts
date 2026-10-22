@@ -1,6 +1,6 @@
 import { getSharedQueryClient } from './query-client';
 import { getApiErrorCode, getApiList } from './api-response';
-import { requestApi } from './api-client';
+import { ApiClientError, requestApi } from './api-client';
 
 export const listSettingsData = getApiList;
 
@@ -23,11 +23,17 @@ export function settingsErrorMessage(status: number, code: string | null): strin
   return code ? `The request could not be completed (${code}).` : 'The request could not be completed. Please try again.';
 }
 
-type CachedSettingsResponse = { status: number; body: unknown };
+type CachedSettingsResponse = { status: number; body: unknown; code?: string | null; requestId?: string | null };
 
-class SettingsQueryError extends Error {
+class SettingsQueryError extends ApiClientError {
   constructor(readonly result: CachedSettingsResponse) {
-    super(`Settings request failed with status ${result.status}`);
+    super(
+      'http',
+      `Settings request failed with status ${result.status}.`,
+      result.status,
+      result.code ?? getApiErrorCode(result.body),
+      result.requestId ?? null,
+    );
     this.name = 'SettingsQueryError';
   }
 }
@@ -92,8 +98,8 @@ export async function requestSettingsApi(
         queryKey: settingsReadKey(path),
         staleTime: 30_000,
         queryFn: async ({ signal }): Promise<CachedSettingsResponse> => {
-          const { response, body } = await requestApi(`/api/backend${path}`, { ...requestInit, signal });
-          const result = { status: response.status, body };
+          const { response, body, code, requestId } = await requestApi(`/api/backend${path}`, { ...requestInit, signal });
+          const result = { status: response.status, body, code, requestId };
           // HTTP failures must remain failed queries; otherwise TanStack caches
           // an authorization or server error as a successful read.
           if (!response.ok) throw new SettingsQueryError(result);

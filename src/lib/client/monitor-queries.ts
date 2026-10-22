@@ -1,25 +1,20 @@
 import { getApiList } from './api-response';
-import { isAbortError, requestApi } from './api-client';
+import { ApiClientError, isAbortError, requestApi } from './api-client';
 
-export class MonitorQueryError extends Error {
-  readonly status: number;
-  readonly code: string | null;
-
-  constructor(status: number, code: string | null) {
-    super(code ?? 'monitor_query_failed');
+export class MonitorQueryError extends ApiClientError {
+  constructor(status: number, code: string | null, requestId: string | null = null) {
+    super(status === 0 ? 'network' : 'http', code ?? 'monitor_query_failed', status, code, requestId);
     this.name = 'MonitorQueryError';
-    this.status = status;
-    this.code = code;
   }
 }
 
-export function requireMonitorQueryResult<T extends { ok: boolean; status: number; code: string | null }>(result: T): T {
-  if (!result.ok) throw new MonitorQueryError(result.status, result.code);
+export function requireMonitorQueryResult<T extends { ok: boolean; status: number; code: string | null; requestId?: string | null }>(result: T): T {
+  if (!result.ok) throw new MonitorQueryError(result.status, result.code, result.requestId ?? null);
   return result;
 }
 
 export function monitorQueryErrorMessage(error: unknown, fallback: (status: number, code: string | null) => string): string {
-  return error instanceof MonitorQueryError
+  return error instanceof ApiClientError
     ? fallback(error.status, error.code)
     : fallback(0, 'network_error');
 }
@@ -45,6 +40,7 @@ export type MonitorListResponse<TMonitor> = {
   ok: boolean;
   status: number;
   code: string | null;
+  requestId: string | null;
   page: MonitorPage<TMonitor> | null;
 };
 
@@ -88,10 +84,10 @@ export async function fetchMonitorPage<TMonitor>(
   if (query.includeArchived || query.status === 'archived') params.set('include_archived', 'true');
   if (query.cursor) params.set('cursor', query.cursor);
 
-  const { response, body, code } = await requestApi(`/api/backend/monitors?${params.toString()}`, { signal });
+  const { response, body, code, requestId } = await requestApi(`/api/backend/monitors?${params.toString()}`, { signal });
 
   if (!response.ok) {
-    return { ok: false, status: response.status, code, page: null };
+    return { ok: false, status: response.status, code, requestId, page: null };
   }
 
   const result = body as MonitorPage<TMonitor> | null;
@@ -99,6 +95,7 @@ export async function fetchMonitorPage<TMonitor>(
     ok: true,
     status: response.status,
     code: null,
+    requestId: null,
     page: {
       data: Array.isArray(result?.data) ? result.data : [],
       page: { next_cursor: result?.page?.next_cursor ?? null },
@@ -117,6 +114,7 @@ export type MonitorTemplatesResponse = {
   ok: boolean;
   status: number;
   code: string | null;
+  requestId: string | null;
   data: MonitorTemplate[];
 };
 
@@ -128,18 +126,19 @@ export async function fetchMonitorTemplates(
   workspaceId: string,
   signal: AbortSignal,
 ): Promise<MonitorTemplatesResponse> {
-  const { response, body, code } = await requestApi(
+  const { response, body, code, requestId } = await requestApi(
     `/api/backend/templates?workspace_id=${encodeURIComponent(workspaceId)}&limit=100`,
     { signal },
   );
 
-  if (!response.ok) return { ok: false, status: response.status, code, data: [] };
+  if (!response.ok) return { ok: false, status: response.status, code, requestId, data: [] };
 
   const rows = getApiList<unknown>(body);
   return {
     ok: true,
     status: response.status,
     code: null,
+    requestId: null,
     data: rows.map((template: any) => ({
       id: String(template.id),
       name: String(template.name),
@@ -170,21 +169,23 @@ export type ApiResource<T> = {
   ok: boolean;
   status: number;
   code: string | null;
+  requestId: string | null;
   data: T;
 };
 
 async function fetchApiResource<T>(url: string, signal: AbortSignal, parse: (body: unknown) => T): Promise<ApiResource<T>> {
   try {
-    const { response, body, code } = await requestApi(url, { signal });
+    const { response, body, code, requestId } = await requestApi(url, { signal });
     return {
       ok: response.ok,
       status: response.status,
       code,
+      requestId,
       data: response.ok ? parse(body) : parse(null),
     };
   } catch (error) {
     if (isAbortError(error)) throw error;
-    return { ok: false, status: 0, code: 'network_error', data: parse(null) };
+    return { ok: false, status: error instanceof ApiClientError ? error.status : 0, code: error instanceof ApiClientError ? error.code : 'network_error', requestId: error instanceof ApiClientError ? error.requestId : null, data: parse(null) };
   }
 }
 
