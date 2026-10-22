@@ -1,6 +1,29 @@
 import { fetchSharedGet } from './shared-http-query';
 import { getApiErrorCode, getApiList } from './api-response';
 
+export class MonitorQueryError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+
+  constructor(status: number, code: string | null) {
+    super(code ?? 'monitor_query_failed');
+    this.name = 'MonitorQueryError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
+export function requireMonitorQueryResult<T extends { ok: boolean; status: number; code: string | null }>(result: T): T {
+  if (!result.ok) throw new MonitorQueryError(result.status, result.code);
+  return result;
+}
+
+export function monitorQueryErrorMessage(error: unknown, fallback: (status: number, code: string | null) => string): string {
+  return error instanceof MonitorQueryError
+    ? fallback(error.status, error.code)
+    : fallback(0, 'network_error');
+}
+
 export type MonitorListQuery = {
   workspaceId: string;
   limit: number;

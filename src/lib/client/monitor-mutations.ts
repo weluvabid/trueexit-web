@@ -134,9 +134,6 @@ export function lifecycleMonitorMutationOptions(queryClient: QueryClient) {
         },
       );
       const body: unknown = await response.json().catch(() => null);
-      const error = body && typeof body === 'object' && 'error' in body
-        ? (body as { error?: { code?: unknown } }).error
-        : null;
       return {
         ok: response.ok,
         status: response.status,

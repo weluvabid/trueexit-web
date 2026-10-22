@@ -2,7 +2,7 @@
   import { onDestroy } from 'svelte';
   import type { MonitorEditorDraft, FieldPrimitive } from '../lib/client/monitor-editor-state';
   import { buildMonitorJsonDraft, parseMonitorJsonDraft } from '../lib/client/monitor-field-editor';
-  import { fetchMonitorTemplates, monitorTemplateQueryKeys, type MonitorTemplate } from '../lib/client/monitor-queries';
+  import { fetchMonitorTemplates, monitorTemplateQueryKeys, type MonitorTemplate, requireMonitorQueryResult, monitorQueryErrorMessage } from '../lib/client/monitor-queries';
   import { getSharedQueryClient } from '../lib/client/shared-http-query';
 
   export let draft: MonitorEditorDraft;
@@ -103,7 +103,7 @@
     try {
       const result = await queryClient.fetchQuery({
         queryKey: monitorTemplateQueryKeys.workspaceList(workspace),
-        queryFn: ({ signal }) => fetchMonitorTemplates(workspace, signal),
+        queryFn: async ({ signal }) => requireMonitorQueryResult(await fetchMonitorTemplates(workspace, signal)),
         staleTime: 30_000,
         retry: false,
       });
@@ -114,8 +114,8 @@
         return;
       }
       templates = result.data;
-    } catch {
-      if (!disposed && sequence === templateLoadSequence && workspace === workspaceId) templatesError = messageFor(0, 'network_error');
+    } catch (error) {
+      if (!disposed && sequence === templateLoadSequence && workspace === workspaceId) templatesError = monitorQueryErrorMessage(error, messageFor);
     } finally {
       if (!disposed && sequence === templateLoadSequence) templatesLoading = false;
     }

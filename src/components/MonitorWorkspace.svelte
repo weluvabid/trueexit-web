@@ -13,7 +13,7 @@
   import { prepareMonitorSubmission } from '../lib/client/monitor-editor-validation';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import { createMutation } from '@tanstack/svelte-query';
-  import { fetchMonitorPage, fetchWorkspaceTags, fetchMonitorTags, fetchWorkspaceChannels, fetchMonitorDetail, fetchMonitorChannelIds, monitorQueryKeys, monitorResourceQueryKeys, type WorkspaceTag, type MonitorChannel } from '../lib/client/monitor-queries';
+  import { fetchMonitorPage, fetchWorkspaceTags, fetchMonitorTags, fetchWorkspaceChannels, fetchMonitorDetail, fetchMonitorChannelIds, monitorQueryKeys, monitorResourceQueryKeys, type WorkspaceTag, type MonitorChannel, requireMonitorQueryResult, monitorQueryErrorMessage } from '../lib/client/monitor-queries';
   import { createEmptyMonitorDraft, createMonitorDraft, serializeMonitorChannelSelection, type FieldPrimitive } from '../lib/client/monitor-editor-state';
   import { createMonitorMutationOptions, editMonitorMutationOptions, lifecycleMonitorMutationOptions, tagMonitorMutationOptions } from '../lib/client/monitor-mutations';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
@@ -141,7 +141,7 @@
     try {
       const result = await monitorQueryClient.fetchQuery({
         queryKey: monitorResourceQueryKeys.workspaceTags(workspaceId),
-        queryFn: ({ signal }) => fetchWorkspaceTags(workspaceId, signal),
+        queryFn: async ({ signal }) => requireMonitorQueryResult(await fetchWorkspaceTags(workspaceId, signal)),
         staleTime: 30_000,
         retry: false,
       });
@@ -181,7 +181,7 @@
       }
       const result = await monitorQueryClient.fetchQuery({
         queryKey: monitorResourceQueryKeys.monitorTags(workspaceId, monitor.id),
-        queryFn: ({ signal }) => fetchMonitorTags(workspaceId, monitor.id, signal),
+        queryFn: async ({ signal }) => requireMonitorQueryResult(await fetchMonitorTags(workspaceId, monitor.id, signal)),
         staleTime: 0,
         retry: false,
       });
@@ -193,9 +193,9 @@
       }
       monitorTagIds = result.data.map((tag) => tag.id);
       tagReady = true;
-    } catch {
+    } catch (error) {
       if (requestSequenceForTags === tagLoadSequence) {
-        tagError = messageFor(0, 'network_error');
+        tagError = monitorQueryErrorMessage(error, messageFor);
         tagReady = false;
       }
     } finally {
@@ -296,7 +296,7 @@
     try {
       const result = await monitorQueryClient.fetchQuery({
         queryKey: monitorResourceQueryKeys.workspaceChannels(workspaceId),
-        queryFn: ({ signal }) => fetchWorkspaceChannels(workspaceId, signal),
+        queryFn: async ({ signal }) => requireMonitorQueryResult(await fetchWorkspaceChannels(workspaceId, signal)),
         staleTime: 30_000,
         retry: false,
       });
@@ -307,8 +307,8 @@
         return;
       }
       channels = result.data;
-    } catch {
-      if (sequence === editorLoadSequence) channelsError = messageFor(0, 'network_error');
+    } catch (error) {
+      if (sequence === editorLoadSequence) channelsError = monitorQueryErrorMessage(error, messageFor);
     } finally {
       if (sequence === editorLoadSequence) channelsLoading = false;
     }
@@ -342,19 +342,19 @@
       const [detailResult, channelIdsResult, destinationsResult] = await Promise.all([
         monitorQueryClient.fetchQuery({
           queryKey: monitorResourceQueryKeys.monitorDetail(workspaceId, monitor.id),
-          queryFn: ({ signal }) => fetchMonitorDetail<MonitorDetail>(workspaceId, monitor.id, signal),
+          queryFn: async ({ signal }) => requireMonitorQueryResult(await fetchMonitorDetail<MonitorDetail>(workspaceId, monitor.id, signal)),
           staleTime: 0,
           retry: false,
         }),
         monitorQueryClient.fetchQuery({
           queryKey: monitorResourceQueryKeys.monitorChannels(workspaceId, monitor.id),
-          queryFn: ({ signal }) => fetchMonitorChannelIds(workspaceId, monitor.id, signal),
+          queryFn: async ({ signal }) => requireMonitorQueryResult(await fetchMonitorChannelIds(workspaceId, monitor.id, signal)),
           staleTime: 0,
           retry: false,
         }),
         monitorQueryClient.fetchQuery({
           queryKey: monitorResourceQueryKeys.workspaceChannels(workspaceId),
-          queryFn: ({ signal }) => fetchWorkspaceChannels(workspaceId, signal),
+          queryFn: async ({ signal }) => requireMonitorQueryResult(await fetchWorkspaceChannels(workspaceId, signal)),
           staleTime: 30_000,
           retry: false,
         }),
@@ -400,8 +400,8 @@
       });
       secondsToCadence(currentConfig.cadence_seconds);
       editingMonitor = detail;
-    } catch {
-      if (sequence === editorLoadSequence) createError = messageFor(0, 'network_error');
+    } catch (error) {
+      if (sequence === editorLoadSequence) createError = monitorQueryErrorMessage(error, messageFor);
     } finally {
       if (sequence === editorLoadSequence) creating = false;
     }
@@ -580,7 +580,7 @@
     try {
       const result = await monitorQueryClient.fetchQuery({
         queryKey: monitorQueryKeys.list(query),
-        queryFn: ({ signal }) => fetchMonitorPage<Monitor>(query, signal),
+        queryFn: async ({ signal }) => requireMonitorQueryResult(await fetchMonitorPage<Monitor>(query, signal)),
         staleTime: 0,
         retry: false,
       });
@@ -591,8 +591,8 @@
       }
       monitors = result.page.data;
       nextCursor = result.page.page.next_cursor;
-    } catch {
-      if (sequence === requestSequence && isCurrentWorkspace(workspaceId)) listError = messageFor(0, 'network_error');
+    } catch (error) {
+      if (sequence === requestSequence && isCurrentWorkspace(workspaceId)) listError = monitorQueryErrorMessage(error, messageFor);
     } finally {
       if (sequence === requestSequence && !disposed) loadingMonitors = false;
     }
