@@ -17,7 +17,7 @@
   import { createEmptyMonitorDraft, createMonitorDraft, serializeMonitorChannelSelection, type FieldPrimitive } from '../lib/client/monitor-editor-state';
   import { createMonitorMutationOptions, editMonitorMutationOptions, lifecycleMonitorMutationOptions, tagMonitorMutationOptions } from '../lib/client/monitor-mutations';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
-  import { getSharedQueryClient } from '../lib/client/shared-http-query';
+  import { getSharedQueryClient } from '../lib/client/query-client';
 
   type MonitorConfigVersion = { version: number; cadence_seconds: number; config: { fields: Array<{ name: string; path: string; primitive: number; meta?: Record<string, unknown> }> } };
   type MonitorDetail = Monitor & { config_versions?: MonitorConfigVersion[] };

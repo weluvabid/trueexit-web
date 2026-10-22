@@ -1,4 +1,4 @@
-import { QueryClient } from '@tanstack/svelte-query';
+import { getSharedQueryClient } from './query-client';
 
 type CachedHttpResponse = {
   status: number;
@@ -19,31 +19,6 @@ function toResponse(result: CachedHttpResponse): Response {
     status: result.status,
     statusText: result.statusText,
     headers: result.headers,
-  });
-}
-
-declare global {
-  interface Window {
-    /** A single browser QueryClient shared by independently hydrated page widgets. */
-    __trueExitSharedQueryClient?: QueryClient;
-  }
-}
-
-export function getSharedQueryClient(): QueryClient {
-  if (typeof window === 'undefined') {
-    // This helper is intended for browser-side requests. A fresh instance avoids
-    // sharing user data between server renders.
-    return new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 1_500, gcTime: 60_000 } } });
-  }
-  return window.__trueExitSharedQueryClient ??= new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-        staleTime: 1_500,
-        gcTime: 60_000,
-        refetchOnWindowFocus: false,
-      },
-    },
   });
 }
 

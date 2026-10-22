@@ -3,7 +3,7 @@
   import type { MonitorEditorDraft, FieldPrimitive } from '../lib/client/monitor-editor-state';
   import { buildMonitorJsonDraft, parseMonitorJsonDraft } from '../lib/client/monitor-field-editor';
   import { fetchMonitorTemplates, monitorTemplateQueryKeys, type MonitorTemplate, requireMonitorQueryResult, monitorQueryErrorMessage } from '../lib/client/monitor-queries';
-  import { getSharedQueryClient } from '../lib/client/shared-http-query';
+  import { getSharedQueryClient } from '../lib/client/query-client';
 
   export let draft: MonitorEditorDraft;
   export let workspaceId = '';

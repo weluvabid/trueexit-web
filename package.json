@@ -15,7 +15,6 @@
   "dependencies": {
     "@astrojs/node": "^11.1.8",
     "@astrojs/svelte": "^9.1.0",
-    "@nanostores/query": "^0.3.4",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/svelte-form": "^1.33.5",
     "@tanstack/svelte-query": "^6.3.5",
@@ -25,7 +24,6 @@
     "astro": "^7.4.1",
     "cron-schedule": "^6.0.0",
     "cronstrue": "^3.37.0",
-    "nanostores": "^1.5.5",
     "svelte": "^5.57.2",
     "tailwindcss": "^4.3.3",
     "valibot": "^1.5.0"
