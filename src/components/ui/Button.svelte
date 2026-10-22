@@ -1,3 +1,4 @@
+<svelte:options runes={true} />
 <script lang="ts">
   type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
   type Size = 'sm' | 'md' | 'lg';

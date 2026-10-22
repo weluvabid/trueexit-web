@@ -1,3 +1,4 @@
+<svelte:options runes={true} />
 <script lang="ts">
   let { mode, section = $bindable() }: { mode: 'workspace' | 'account'; section: 'workspace' | 'people' | 'destinations' | 'profile' | 'preferences' | 'security' | 'account' } = $props();
 </script>

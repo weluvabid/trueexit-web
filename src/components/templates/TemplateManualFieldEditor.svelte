@@ -1,3 +1,4 @@
+<svelte:options runes={true} />
 <script lang="ts">
   import type { FieldDefinition, Primitive } from '../../lib/client/template-types';
 

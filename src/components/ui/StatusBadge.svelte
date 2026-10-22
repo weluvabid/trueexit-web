@@ -1,3 +1,4 @@
+<svelte:options runes={true} />
 <script lang="ts">
   type Tone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
   let {

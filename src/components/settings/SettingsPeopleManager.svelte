@@ -1,3 +1,4 @@
+<svelte:options runes={true} />
 <script lang="ts">
   import { getCachedSettingsResponse, getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../../lib/client/settings-api';
   import { formatDateTime } from '../../lib/client/date-format';

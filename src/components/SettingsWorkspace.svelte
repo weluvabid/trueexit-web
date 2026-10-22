@@ -1,3 +1,4 @@
+<svelte:options runes={true} />
 <script lang="ts">
   import { can } from '../lib/client/permissions';
   import { onMount } from 'svelte';

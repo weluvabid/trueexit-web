@@ -1,3 +1,4 @@
+<svelte:options runes={true} />
 <script lang="ts">
   export type SelectOption = { value: string; label: string };
 

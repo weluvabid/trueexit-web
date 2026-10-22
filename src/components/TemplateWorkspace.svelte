@@ -1,3 +1,4 @@
+<svelte:options runes={true} />
 <script lang="ts">
   import { getSharedQueryClient } from '../lib/client/query-client';
   import { templateQueryKeys } from '../lib/client/template-queries';

@@ -1,3 +1,4 @@
+<svelte:options runes={true} />
 <script lang="ts">
   import './SettingsDestinationManager.css';
   import { getCachedSettingsResponse, getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../../lib/client/settings-api';
