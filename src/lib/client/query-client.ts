@@ -13,6 +13,7 @@ const PERSISTENCE_MAX_AGE = 24 * 60 * 60 * 1_000;
 const PERSISTENCE_USER_MARKER = 'trueexit.query-cache-user';
 
 let browserRestorePromise: Promise<void> = Promise.resolve();
+let stopBrowserPersistence: (() => void) | null = null;
 
 const queryClientOptions = {
   defaultOptions: {
@@ -102,13 +103,21 @@ function startBrowserPersistence(queryClient: QueryClient): void {
   browserRestorePromise = persistQueryClientRestore(persistenceOptions)
     .catch(() => undefined)
     .then(() => {
-      persistQueryClientSubscribe(persistenceOptions);
+      stopBrowserPersistence = persistQueryClientSubscribe(persistenceOptions);
     });
 }
 
 /** Clear both in-memory and persisted server state when signing out. */
 export async function clearPersistedQueryCache(): Promise<void> {
   const queryClient = getSharedQueryClient();
+
+  // Do not clear storage while restoration is still in flight: a late restore
+  // could repopulate the in-memory cache, and its subscription could write the
+  // old account's data back after the persisted record had been deleted.
+  await browserRestorePromise;
+
+  stopBrowserPersistence?.();
+  stopBrowserPersistence = null;
   queryClient.clear();
 
   const userId = getBrowserUserId();
