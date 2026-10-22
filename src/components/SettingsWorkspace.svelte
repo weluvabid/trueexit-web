@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import { fetchSharedGet, invalidateSharedGetCache } from '../lib/client/shared-http-query';
+  import { buildNotificationChannelConfig } from '../lib/client/settings-channel-config';
 
   export let mode: 'workspace' | 'account' = 'workspace';
 
@@ -297,39 +298,12 @@
   }
 
   function channelConfig(type: ChannelKind, address: string, headersText: string): Record<string, unknown> | null {
-    const value = address.trim();
-    if (type === 'email') {
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) || value.length > 320) {
-        error = 'Enter a valid recipient email address.'; return null;
-      }
-      return { to: value };
+    const result = buildNotificationChannelConfig(type, address, headersText);
+    if (!result.ok) {
+      error = result.error;
+      return null;
     }
-    let parsed: URL;
-    try { parsed = new URL(value); } catch { error = 'Enter a valid HTTPS webhook URL.'; return null; }
-    if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.hash) {
-      error = 'Webhook destinations must use HTTPS and cannot contain embedded credentials or fragments.'; return null;
-    }
-    const host = parsed.hostname.toLowerCase();
-    if (type === 'slack' && !(['hooks.slack.com', 'hooks.slack-gov.com'].includes(host) && parsed.pathname.startsWith('/services/'))) {
-      error = 'Use a supported Slack incoming-webhook URL.'; return null;
-    }
-    if (type === 'discord' && !(host === 'discord.com' || host === 'discordapp.com') || (type === 'discord' && !parsed.pathname.startsWith('/api/webhooks/'))) {
-      error = 'Use a supported Discord webhook URL.'; return null;
-    }
-    const config: Record<string, unknown> = { url: value };
-    if (headersText.trim()) {
-      try {
-        const parsedHeaders: unknown = JSON.parse(headersText);
-        if (!parsedHeaders || typeof parsedHeaders !== 'object' || Array.isArray(parsedHeaders) ||
-            Object.values(parsedHeaders).some((entry) => typeof entry !== 'string')) {
-          error = 'Custom headers must be a JSON object with string values.'; return null;
-        }
-        config.headers = parsedHeaders;
-      } catch {
-        error = 'Custom headers must be valid JSON.'; return null;
-      }
-    }
-    return config;
+    return result.config;
   }
 
   async function validateChannel(type: ChannelKind, label: string, priority: number, enabled: boolean, config: Record<string, unknown>) {

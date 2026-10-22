@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import '../styles/investigation.css';
+  import { formatInvestigationDate, formatInvestigationValue, formatInvestigationLabel, getHealthCounts } from '../lib/client/investigation-format';
 
   type Page<T> = { data: T[]; page?: { next_cursor: string | null } };
   type Monitor = {
@@ -99,29 +100,10 @@
     return `/api/backend/${path}?${params.toString()}`;
   }
 
-  function formatDate(value: unknown): string {
-    if (typeof value !== 'string' || !value) return 'Time unavailable';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return 'Time unavailable';
-    return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-  }
-
-  function formatValue(value: unknown): string {
-    if (value === null || value === undefined || value === '') return '—';
-    if (typeof value === 'string') return value;
-    try { return JSON.stringify(value); } catch { return String(value); }
-  }
-
-  function label(value: unknown): string {
-    if (typeof value !== 'string' || !value) return 'Unknown';
-    return value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
-  }
-
-  function healthCounts(summary: Record<string, any> | null | undefined): Array<[string, unknown]> {
-    if (!summary) return [];
-    return ['field_count', 'normal', 'suspected', 'confirmed', 'ongoing', 'recovered', 'unknown']
-      .filter((key) => key in summary).map((key) => [key, summary[key]]);
-  }
+  const formatDate = formatInvestigationDate;
+  const formatValue = formatInvestigationValue;
+  const label = formatInvestigationLabel;
+  const healthCounts = getHealthCounts;
 
   async function loadMonitorContext() {
     if (!workspaceId) return;

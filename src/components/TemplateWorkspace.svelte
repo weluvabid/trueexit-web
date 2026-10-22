@@ -3,9 +3,9 @@
   import { can } from '../lib/client/permissions';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
+  import type { FieldDefinition, Primitive } from '../lib/client/template-types';
+  import { addTemplateField, removeTemplateField, updateTemplateField, discoveredFieldKey, mergeDiscoveredFields } from '../lib/client/template-field-model';
 
-  type Primitive = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
-  type FieldDefinition = { name: string; path: string; primitive: Primitive; meta?: Record<string, unknown> };
   type Template = {
     id: string; owner_user_id: string | null; kind: 'built_in' | 'custom'; name: string;
     description: string; fields: FieldDefinition[]; version: number; created_at: string; updated_at: string;
@@ -150,10 +150,10 @@
     }
   }
 
-  function addField() { fields = [...fields, { name: '', path: '', primitive: 1 }]; }
-  function removeField(index: number) { if (fields.length > 1) fields = fields.filter((_, i) => i !== index); }
+  function addField() { fields = addTemplateField(fields); }
+  function removeField(index: number) { fields = removeTemplateField(fields, index); }
   function updateField(index: number, key: keyof FieldDefinition, value: string | number) {
-    fields = fields.map((field, i) => i === index ? { ...field, [key]: value } as FieldDefinition : field);
+    fields = updateTemplateField(fields, index, key, value);
   }
 
   async function discoverFields() {
@@ -177,17 +177,14 @@
   }
 
   function toggleDiscovered(field: DiscoveredField, checked: boolean) {
-    const key = `${field.name}\u0000${field.path}`;
+    const key = discoveredFieldKey(field);
     selectedDiscovered = checked ? [...selectedDiscovered, key] : selectedDiscovered.filter((item) => item !== key);
   }
 
   function addDiscoveredFields() {
-    const chosen = discovered.filter((field) => selectedDiscovered.includes(`${field.name}\u0000${field.path}`));
-    if (!chosen.length) return;
-    const combined = [...fields.filter((field) => field.name.trim() || field.path.trim()), ...chosen.map(({ name, path, primitive, meta }) => ({ name, path, primitive, ...(meta ? { meta } : {}) }))];
-    const unique = new Map<string, FieldDefinition>();
-    for (const field of combined) unique.set(`${field.name}\u0000${field.path}`, field);
-    fields = unique.size ? [...unique.values()] : [{ name: '', path: '', primitive: 1 }];
+    const merged = mergeDiscoveredFields(fields, discovered, selectedDiscovered);
+    if (merged === fields) return;
+    fields = merged;
     selectedDiscovered = [];
   }
 
