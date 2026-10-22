@@ -1,4 +1,4 @@
-import { fetchSharedGet } from './shared-http-query';
+import { getSharedQueryClient } from './query-client';
 import { getApiErrorCode } from './api-response';
 
 export interface CurrentUserContext {
@@ -26,18 +26,15 @@ export type BootstrapResource<T> =
   | { ok: false; status: number; code: string | null };
 
 type SharedHttpResult = { ok: boolean; status: number; body: unknown; code: string | null };
-type SharedBootstrapResult = { me: SharedHttpResult; workspaces: SharedHttpResult };
 
-declare global {
-  interface Window {
-    /** Shared by the app shell and hydrated page component for this document lifetime. */
-    __trueExitWorkspaceBootstrapPromise?: Promise<SharedBootstrapResult>;
-  }
-}
+const workspaceBootstrapKeys = {
+  me: ['workspace-bootstrap', 'me'] as const,
+  workspaces: ['workspace-bootstrap', 'workspaces', { limit: 50 }] as const,
+};
 
 async function readResource(path: string): Promise<SharedHttpResult> {
   try {
-    const response = await fetchSharedGet(path, {
+    const response = await fetch(path, {
       method: 'GET',
       headers: { Accept: 'application/json' },
       credentials: 'same-origin',
@@ -52,42 +49,27 @@ async function readResource(path: string): Promise<SharedHttpResult> {
 }
 
 /**
- * One in-flight bootstrap request pair per document. The app shell and the
- * hydrated page workspace consume the same promise instead of independently
- * requesting identity and workspace inventory.
+ * Bootstrap resources share the application QueryClient, so concurrent shell
+ * and page consumers deduplicate through query identity rather than a separate
+ * document-level promise. The server still receives a fresh client per render.
  */
 export function loadWorkspaceBootstrap(): Promise<{
   me: BootstrapResource<CurrentUserContext>;
   workspaces: BootstrapResource<WorkspacePage>;
 }> {
-  if (typeof window === 'undefined') {
-    return Promise.all([
-      readResource('/api/backend/me'),
-      readResource('/api/backend/workspaces?limit=50'),
-    ]).then(([me, workspaces]) => normalizeBootstrap(me, workspaces));
-  }
-
-  let shared = window.__trueExitWorkspaceBootstrapPromise;
-  if (!shared) {
-    shared = Promise.all([
-      readResource('/api/backend/me'),
-      readResource('/api/backend/workspaces?limit=50'),
-    ]).then(([me, workspaces]) => ({ me, workspaces }));
-    window.__trueExitWorkspaceBootstrapPromise = shared;
-
-    // This promise exists only to deduplicate concurrent shell/page bootstrap
-    // work. Keeping a settled result forever makes a transient failure (or an
-    // authentication/workspace transition) permanent for the lifetime of the
-    // document. The shared GET cache provides a short reuse window after this
-    // promise settles, while failed reads remain immediately retryable.
-    void shared.finally(() => {
-      if (window.__trueExitWorkspaceBootstrapPromise === shared) {
-        window.__trueExitWorkspaceBootstrapPromise = undefined;
-      }
-    }).catch(() => undefined);
-  }
-
-  return shared.then(({ me, workspaces }) => normalizeBootstrap(me, workspaces));
+  const queryClient = getSharedQueryClient();
+  return Promise.all([
+    queryClient.fetchQuery({
+      queryKey: workspaceBootstrapKeys.me,
+      queryFn: () => readResource('/api/backend/me'),
+      staleTime: 30_000,
+    }),
+    queryClient.fetchQuery({
+      queryKey: workspaceBootstrapKeys.workspaces,
+      queryFn: () => readResource('/api/backend/workspaces?limit=50'),
+      staleTime: 30_000,
+    }),
+  ]).then(([me, workspaces]) => normalizeBootstrap(me, workspaces));
 }
 
 function normalizeBootstrap(me: SharedHttpResult, workspaces: SharedHttpResult): {
