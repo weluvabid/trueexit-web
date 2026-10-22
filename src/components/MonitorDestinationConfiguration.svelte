@@ -1,31 +1,46 @@
+<svelte:options runes={true} />
+
 <script lang="ts">
   import type { MonitorEditorDraft, ChannelKind } from '../lib/client/monitor-editor-state';
   import type { MonitorChannel } from '../lib/client/monitor-queries';
   import { buildNotificationChannelConfig } from '../lib/client/settings-channel-config';
 
-  export let draft: MonitorEditorDraft;
-  export let channels: MonitorChannel[] = [];
-  export let channelsLoading = false;
-  export let channelsError = '';
-  export let canManageChannels = false;
+  let {
+    draft = $bindable(),
+    channels = [],
+    channelsLoading = false,
+    channelsError = '',
+    canManageChannels = false,
+  }: {
+    draft: MonitorEditorDraft;
+    channels?: MonitorChannel[];
+    channelsLoading?: boolean;
+    channelsError?: string;
+    canManageChannels?: boolean;
+  } = $props();
 
-  let selectedExistingChannelId = '';
-  let newChannelOpen = false;
-  let newChannelType: ChannelKind = 'webhook';
-  let newChannelLabel = '';
-  let newChannelAddress = '';
-  let newChannelPriority = 0;
-  let newChannelError = '';
-  let newChannelHeaders = '';
+  let selectedExistingChannelId = $state('');
+  let newChannelOpen = $state(false);
+  let newChannelType = $state<ChannelKind>('webhook');
+  let newChannelLabel = $state('');
+  let newChannelAddress = $state('');
+  let newChannelPriority = $state(0);
+  let newChannelError = $state('');
+  let newChannelHeaders = $state('');
 
-  $: availableChannels = channels.filter((channel) => channel.enabled && !draft.channelSelection.some((item) => item.kind === 'existing' && item.channel_id === channel.id));
-  $: if (!availableChannels.some((channel) => channel.id === selectedExistingChannelId)) {
-    selectedExistingChannelId = availableChannels[0]?.id ?? '';
-  }
+  const availableChannels = $derived(
+    channels.filter((channel) => channel.enabled && !draft.channelSelection.some((item) => item.kind === 'existing' && item.channel_id === channel.id)),
+  );
+
+  const effectiveSelectedChannelId = $derived(
+    availableChannels.some((channel) => channel.id === selectedExistingChannelId)
+      ? selectedExistingChannelId
+      : availableChannels[0]?.id ?? '',
+  );
 
   function addExistingChannel() {
-    if (!selectedExistingChannelId || draft.channelSelection.length >= 25) return;
-    const channel = channels.find((item) => item.id === selectedExistingChannelId);
+    if (!effectiveSelectedChannelId || draft.channelSelection.length >= 25) return;
+    const channel = channels.find((item) => item.id === effectiveSelectedChannelId);
     if (!channel || !channel.enabled || draft.channelSelection.some((item) => item.kind === 'existing' && item.channel_id === channel.id)) return;
     draft = { ...draft, channelSelection: [...draft.channelSelection, { kind: 'existing', channel_id: channel.id, label: channel.label }] };
   }
@@ -83,23 +98,23 @@
   {#if channelsLoading}
     <p class="monitor-form-hint">Loading workspace destinations…</p>
   {:else if availableChannels.length > 0}
-    <div class="monitor-channel-add"><label class="monitor-form-field"><span>Saved destination</span><select bind:value={selectedExistingChannelId}><option value="">Choose a destination…</option>{#each availableChannels as channel (channel.id)}<option value={channel.id}>{channel.label} · {channel.type}</option>{/each}</select></label><button class="monitor-button monitor-button--quiet" type="button" on:click={addExistingChannel} disabled={!selectedExistingChannelId || draft.channelSelection.length >= 25}>Add destination</button></div>
+    <div class="monitor-channel-add"><label class="monitor-form-field"><span>Saved destination</span><select value={effectiveSelectedChannelId} onchange={(event) => { selectedExistingChannelId = event.currentTarget.value; }}><option value="">Choose a destination…</option>{#each availableChannels as channel (channel.id)}<option value={channel.id}>{channel.label} · {channel.type}</option>{/each}</select></label><button class="monitor-button monitor-button--quiet" type="button" onclick={addExistingChannel} disabled={!effectiveSelectedChannelId || draft.channelSelection.length >= 25}>Add destination</button></div>
   {:else}
     <p class="monitor-form-hint">No saved destinations available to select.</p>
   {/if}
   {#if draft.channelSelection.length > 0}
     <div class="monitor-selected-channels" aria-label="Selected notification destinations">
       {#each draft.channelSelection as selection, index}
-        <div class="monitor-selected-channel"><span class="monitor-selected-channel__icon" aria-hidden="true">{selection.kind === 'existing' ? '↗' : '＋'}</span><span><strong>{selection.kind === 'existing' ? selection.label : selection.displayLabel}</strong><small>{selection.kind === 'existing' ? 'Saved destination' : `New ${selection.type} destination`}</small></span><button type="button" aria-label={`Remove ${selection.kind === 'existing' ? selection.label : selection.displayLabel}`} on:click={() => removeChannelSelection(index)}>×</button></div>
+        <div class="monitor-selected-channel"><span class="monitor-selected-channel__icon" aria-hidden="true">{selection.kind === 'existing' ? '↗' : '＋'}</span><span><strong>{selection.kind === 'existing' ? selection.label : selection.displayLabel}</strong><small>{selection.kind === 'existing' ? 'Saved destination' : `New ${selection.type} destination`}</small></span><button type="button" aria-label={`Remove ${selection.kind === 'existing' ? selection.label : selection.displayLabel}`} onclick={() => removeChannelSelection(index)}>×</button></div>
       {/each}
     </div>
   {/if}
   {#if canManageChannels}
-    <button class="monitor-inline-configure" type="button" on:click={() => { newChannelOpen = !newChannelOpen; newChannelError = ''; }}>{newChannelOpen ? '− Close channel setup' : '＋ Add a channel'}</button>
+    <button class="monitor-inline-configure" type="button" onclick={() => { newChannelOpen = !newChannelOpen; newChannelError = ''; }}>{newChannelOpen ? '− Close channel setup' : '＋ Add a channel'}</button>
     {#if newChannelOpen}
-      <div class="monitor-channel-modal-backdrop" role="presentation" on:click={(event) => { if (event.target === event.currentTarget) newChannelOpen = false; }}>
+      <div class="monitor-channel-modal-backdrop" role="presentation" onclick={(event) => { if (event.target === event.currentTarget) newChannelOpen = false; }}>
         <section class="monitor-new-channel-panel" role="dialog" aria-modal="true" aria-labelledby="monitor-channel-modal-title">
-          <header class="monitor-channel-modal__header"><div><p class="eyebrow">NOTIFICATION DESTINATION</p><h3 id="monitor-channel-modal-title">Add a channel</h3><p>Configure a destination and add it to this monitor draft.</p></div><button class="monitor-modal-close" type="button" aria-label="Close channel setup" on:click={() => { newChannelOpen = false; newChannelError = ''; }}>×</button></header>
+          <header class="monitor-channel-modal__header"><div><p class="eyebrow">NOTIFICATION DESTINATION</p><h3 id="monitor-channel-modal-title">Add a channel</h3><p>Configure a destination and add it to this monitor draft.</p></div><button class="monitor-modal-close" type="button" aria-label="Close channel setup" onclick={() => { newChannelOpen = false; newChannelError = ''; }}>×</button></header>
           {#if newChannelError}<p class="monitor-form-error" role="alert">{newChannelError}</p>{/if}
           <div class="monitor-form-grid">
             <label class="monitor-form-field"><span>Provider</span><select bind:value={newChannelType}><option value="webhook">Custom webhook</option><option value="email">Email</option><option value="slack">Slack incoming webhook</option><option value="discord">Discord webhook</option></select></label>
@@ -107,7 +122,7 @@
             <label class="monitor-form-field monitor-form-field--wide"><span>{newChannelType === 'email' ? 'Recipient email' : 'HTTPS webhook URL'} <b>*</b></span><input bind:value={newChannelAddress} type={newChannelType === 'email' ? 'email' : 'url'} autocomplete="off" placeholder={newChannelType === 'email' ? 'ops@example.com' : newChannelType === 'slack' ? 'https://hooks.slack.com/services/…' : newChannelType === 'discord' ? 'https://discord.com/api/webhooks/…' : 'https://hooks.example.com/trueexit'} /></label>
             {#if newChannelType !== 'email'}<label class="monitor-form-field monitor-form-field--wide"><span>Custom headers <small>Optional JSON object</small></span><textarea bind:value={newChannelHeaders} rows="2" spellcheck="false" placeholder={'{ "Authorization": "Bearer …" }'}></textarea><small>Stored encrypted. Never sent back to the browser after saving.</small></label>{/if}
           </div>
-          <div class="monitor-new-channel-actions"><p>Channel settings are staged in this form and submitted with the monitor.</p><div><button class="monitor-button monitor-button--quiet" type="button" on:click={() => { newChannelOpen = false; newChannelError = ''; }}>Cancel</button><button class="monitor-button monitor-button--primary" type="button" on:click={addNewChannel}>Add to monitor</button></div></div>
+          <div class="monitor-new-channel-actions"><p>Channel settings are staged in this form and submitted with the monitor.</p><div><button class="monitor-button monitor-button--quiet" type="button" onclick={() => { newChannelOpen = false; newChannelError = ''; }}>Cancel</button><button class="monitor-button monitor-button--primary" type="button" onclick={addNewChannel}>Add to monitor</button></div></div>
         </section>
       </div>
     {/if}
