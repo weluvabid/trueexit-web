@@ -25,6 +25,7 @@
 
   let members: Member[] = [];
   let invitations: Invitation[] = [];
+  let invitationsUnavailable = false;
   let loading = false;
   let busyKey = '';
   let error = '';
@@ -52,30 +53,43 @@
     error = '';
     notice = '';
     inviteEmail = '';
-    if (!id) { members = []; invitations = []; loading = false; return; }
+    if (!id) { members = []; invitations = []; invitationsUnavailable = false; loading = false; return; }
     const encodedId = encodeURIComponent(id);
     const cachedMembers = getCachedSettingsResponse(`/workspaces/${encodedId}/members`);
     const cachedInvitations = getCachedSettingsResponse(`/workspaces/${encodedId}/invitations`);
     members = cachedMembers?.response.ok ? listSettingsData<Member>(cachedMembers.body) : [];
     invitations = cachedInvitations?.response.ok ? listSettingsData<Invitation>(cachedInvitations.body) : [];
-    loading = !cachedMembers || !cachedInvitations;
-    try {
-      const [membersResult, invitationsResult] = await Promise.all([
-        request(`/workspaces/${encodedId}/members`),
-        request(`/workspaces/${encodedId}/invitations`),
-      ]);
-      if (currentGeneration !== generation || id !== workspaceId) return;
-      members = membersResult.response.ok ? listSettingsData<Member>(membersResult.body) : [];
-      invitations = invitationsResult.response.ok ? listSettingsData<Invitation>(invitationsResult.body) : [];
-      const failed = [membersResult, invitationsResult].find(
-        (item) => !item.response.ok && item.response.status !== 403 && item.response.status !== 404,
-      );
-      if (failed) error = settingsErrorMessage(failed.response.status, getSettingsErrorCode(failed.body));
-    } catch {
-      if (currentGeneration === generation && id === workspaceId) error = settingsErrorMessage(0, 'network_error');
-    } finally {
-      if (currentGeneration === generation) loading = false;
+    invitationsUnavailable = cachedInvitations?.response.status === 404;
+    // Member availability controls the section's loading state. The invitations
+    // endpoint is independent and must not keep the whole People section loading.
+    loading = !cachedMembers;
+    const [membersSettled, invitationsSettled] = await Promise.allSettled([
+      request(`/workspaces/${encodedId}/members`),
+      request(`/workspaces/${encodedId}/invitations`),
+    ]);
+    if (currentGeneration !== generation || id !== workspaceId) return;
+
+    if (membersSettled.status === 'fulfilled') {
+      const result = membersSettled.value;
+      if (result.response.ok) members = listSettingsData<Member>(result.body);
+      else if (result.response.status !== 403 && result.response.status !== 404) {
+        error = settingsErrorMessage(result.response.status, getSettingsErrorCode(result.body));
+      }
+    } else {
+      error = settingsErrorMessage(0, 'network_error');
     }
+
+    if (invitationsSettled.status === 'fulfilled') {
+      const result = invitationsSettled.value;
+      invitationsUnavailable = result.response.status === 404;
+      if (result.response.ok) invitations = listSettingsData<Invitation>(result.body);
+      else if (result.response.status !== 403 && result.response.status !== 404 && !error) {
+        error = settingsErrorMessage(result.response.status, getSettingsErrorCode(result.body));
+      }
+    } else if (!error) {
+      error = settingsErrorMessage(0, 'network_error');
+    }
+    loading = false;
   }
 
   async function perform<T = unknown>(key: string, id: string, path: string, init: RequestInit = {}): Promise<{ ok: boolean; value: T | null }> {
@@ -156,7 +170,7 @@
   <div class="settings-card__heading"><div><p class="settings-kicker">TEAM DIRECTORY</p><h2 id="settings-people-title">The people behind the signals.</h2><p>Review access and adjust workspace roles. Account-owner safeguards are enforced by the API.</p></div><span class="settings-card__symbol">◎</span></div>
   {#if error}<div class="settings-alert settings-alert--error" role="alert"><strong>Couldn’t complete that.</strong><span>{error}</span>{#if error.includes('verify your identity')}<a href="/login">Sign in again ↗</a>{/if}</div>{/if}
   {#if notice}<div class="settings-alert settings-alert--success" role="status">{notice}</div>{/if}
-  {#if loading}<p class="settings-empty" aria-live="polite">Loading workspace members and invitations…</p>{/if}
+  {#if loading}<p class="settings-empty" aria-live="polite">Loading workspace members…</p>{/if}
   {#if members.length}
     <div class="settings-table-wrap"><table class="settings-table"><thead><tr><th>Person</th><th>Access</th><th>Actions</th></tr></thead><tbody>
       {#each members as member (member.user_id)}
@@ -169,7 +183,7 @@
 <section class="settings-card" aria-labelledby="settings-invitations-title">
   <div class="settings-card__heading"><div><p class="settings-kicker">INVITATIONS</p><h2 id="settings-invitations-title">Bring the right people in.</h2><p>Invitations are recorded by the API. Email delivery is currently stubbed and is not sent automatically.</p></div><span class="settings-card__symbol">↗</span></div>
   {#if canManageWorkspace}
-    <form class="settings-inline-form" on:submit={sendInvitation}><label class="settings-field"><span>Email address</span><input bind:value={inviteEmail} type="email" maxlength="320" required placeholder="teammate@company.com" /></label><button class="settings-button settings-button--primary" type="submit" disabled={!!busyKey || loading}>{busyKey === 'invite' ? 'Adding…' : 'Create invitation'}</button></form>
+    <form class="settings-inline-form" on:submit={sendInvitation}><label class="settings-field"><span>Email address</span><input bind:value={inviteEmail} type="email" maxlength="320" required placeholder="teammate@company.com" /></label><button class="settings-button settings-button--primary" type="submit" disabled={!!busyKey}>{busyKey === 'invite' ? 'Adding…' : 'Create invitation'}</button></form>
   {:else}<p class="settings-note">Only workspace owners and admins can manage invitations.</p>{/if}
-  {#if invitations.length}<div class="settings-list">{#each invitations as invitation (invitation.id)}<div class="settings-list-row"><div><strong>{invitation.email}</strong><small>Expires {formatDate(invitation.expires_at)} · {invitation.role}</small></div>{#if canManageWorkspace}<button class="settings-text-button settings-text-button--danger" type="button" on:click={() => revokeInvitation(invitation)} disabled={!!busyKey}>Revoke</button>{/if}</div>{/each}</div>{:else if !loading}<p class="settings-empty">No pending invitations.</p>{/if}
+  {#if invitations.length}<div class="settings-list">{#each invitations as invitation (invitation.id)}<div class="settings-list-row"><div><strong>{invitation.email}</strong><small>Expires {formatDate(invitation.expires_at)} · {invitation.role}</small></div>{#if canManageWorkspace}<button class="settings-text-button settings-text-button--danger" type="button" on:click={() => revokeInvitation(invitation)} disabled={!!busyKey}>Revoke</button>{/if}</div>{/each}</div>{:else if invitationsUnavailable}<p class="settings-empty">Invitations are currently unavailable for this workspace.</p>{:else if !loading}<p class="settings-empty">No pending invitations.</p>{/if}
 </section>
