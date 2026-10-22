@@ -2,7 +2,8 @@
   import { can } from '../lib/client/permissions';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
-  import { fetchSharedGet, invalidateSharedGetCache } from '../lib/client/shared-http-query';
+  import { invalidateSharedGetCache } from '../lib/client/shared-http-query';
+  import { getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../lib/client/settings-api';
   import { buildNotificationChannelConfig } from '../lib/client/settings-channel-config';
 
   export let mode: 'workspace' | 'account' = 'workspace';
@@ -40,7 +41,6 @@
     total_attempts?: number;
     successful_attempts?: number;
   };
-  type ApiError = { error?: { code?: string; details?: unknown }; request_id?: string };
   type AccountPage = { data: Account[] };
   type List<T> = { data: T[] };
 
@@ -89,46 +89,11 @@
   $: selectedAccount = accounts.find((item) => item.account_id === selectedWorkspace?.account_id) ?? null;
   $: ownedAccounts = accounts;
 
-  function listData<T>(body: unknown): T[] {
-    if (Array.isArray(body)) return body as T[];
-    if (body && typeof body === 'object' && 'data' in body && Array.isArray(body.data)) return body.data as T[];
-    return [];
-  }
-
-  function getErrorCode(body: unknown): string | null {
-    if (!body || typeof body !== 'object' || !('error' in body)) return null;
-    const detail = (body as ApiError).error;
-    return typeof detail?.code === 'string' ? detail.code : null;
-  }
-
-  function errorMessage(status: number, code: string | null): string {
-    if (code === 'recent_authentication_required') return 'For security, verify your identity again, then retry this action.';
-    if (code === 'channel_in_use') return 'This destination is still assigned to one or more monitors. Remove those assignments before deleting it.';
-    if (code === 'channel_secret_migration_required') return 'This destination uses a legacy secret format. Its secret must be migrated before this change can be saved.';
-    if (code === 'idempotency_key_reused') return 'This operation key was already used for a different request. Refresh the page before trying again.';
-    if (status === 401) return 'Your session needs attention. Sign in again to continue.';
-    if (status === 403) return 'You do not have permission to perform this action in this workspace.';
-    if (status === 404) return 'This workspace or resource is no longer available. Refresh and try again.';
-    if (status === 409) return 'The resource changed or is still in use. Refresh the current section and try again.';
-    if (status === 422) return 'The request was not accepted. Check the entered values and try again.';
-    if (status === 0) return 'Could not reach TrueExit. Check your connection and try again.';
-    if (status >= 500) return 'TrueExit could not complete this request right now. Try again shortly.';
-    return code ? `The request could not be completed (${code}).` : 'The request could not be completed. Please try again.';
-  }
-
   async function request(path: string, init: RequestInit = {}): Promise<{ response: Response; body: unknown }> {
     const method = (init.method ?? 'GET').toUpperCase();
-    const headers = new Headers(init.headers);
-    headers.set('Accept', 'application/json');
-    if (init.body !== undefined && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-    if (!['GET', 'HEAD'].includes(method) && !headers.has('Idempotency-Key')) headers.set('Idempotency-Key', crypto.randomUUID());
-    const requestInit: RequestInit = { ...init, headers, credentials: 'same-origin', cache: 'no-store' };
-    const response = method === 'GET'
-      ? await fetchSharedGet(`/api/backend${path}`, requestInit)
-      : await fetch(`/api/backend${path}`, requestInit);
-    const body = response.status === 204 ? null : await response.json().catch(() => null);
-    if (!['GET', 'HEAD'].includes(method) && response.ok) void invalidateSharedGetCache();
-    return { response, body };
+    const result = await requestSettingsApi(path, init);
+    if (!['GET', 'HEAD'].includes(method) && result.response.ok) void invalidateSharedGetCache();
+    return result;
   }
 
   async function perform<T = unknown>(key: string, path: string, init: RequestInit = {}): Promise<T | null> {
@@ -138,12 +103,12 @@
     try {
       const { response, body } = await request(path, init);
       if (!response.ok) {
-        error = errorMessage(response.status, getErrorCode(body));
+        error = settingsErrorMessage(response.status, getSettingsErrorCode(body));
         return null;
       }
       return body as T;
     } catch {
-      error = errorMessage(0, 'network_error');
+      error = settingsErrorMessage(0, 'network_error');
       return null;
     } finally {
       busyKey = '';
@@ -158,7 +123,7 @@
       const bootstrap = await loadWorkspaceBootstrap();
       if (generation !== loadGeneration) return;
       if (!bootstrap.workspaces.ok) {
-        error = errorMessage(bootstrap.workspaces.status, bootstrap.workspaces.code);
+        error = settingsErrorMessage(bootstrap.workspaces.status, bootstrap.workspaces.code);
         workspaces = [];
         return;
       }
@@ -175,11 +140,11 @@
       }
       const accountsResult = await request('/accounts');
       if (generation !== loadGeneration) return;
-      if (accountsResult.response.ok) accounts = listData<Account>(accountsResult.body);
-      else if (accountsResult.response.status !== 404) error = errorMessage(accountsResult.response.status, getErrorCode(accountsResult.body));
+      if (accountsResult.response.ok) accounts = listSettingsData<Account>(accountsResult.body);
+      else if (accountsResult.response.status !== 404) error = settingsErrorMessage(accountsResult.response.status, getSettingsErrorCode(accountsResult.body));
       await loadWorkspaceSections();
     } catch {
-      if (generation === loadGeneration) error = errorMessage(0, 'network_error');
+      if (generation === loadGeneration) error = settingsErrorMessage(0, 'network_error');
     } finally {
       if (generation === loadGeneration) loading = false;
     }
@@ -200,11 +165,11 @@
       request(`/workspaces/${id}/channels`),
     ]);
     if (generation !== workspaceSectionsGeneration || workspaceId !== selectedWorkspaceId) return;
-    members = membersResult.response.ok ? listData<Member>(membersResult.body) : [];
-    invitations = invitationsResult.response.ok ? listData<Invitation>(invitationsResult.body) : [];
-    channels = channelsResult.response.ok ? listData<Channel>(channelsResult.body) : [];
+    members = membersResult.response.ok ? listSettingsData<Member>(membersResult.body) : [];
+    invitations = invitationsResult.response.ok ? listSettingsData<Invitation>(invitationsResult.body) : [];
+    channels = channelsResult.response.ok ? listSettingsData<Channel>(channelsResult.body) : [];
     const failed = [membersResult, invitationsResult, channelsResult].find((item) => !item.response.ok && item.response.status !== 403 && item.response.status !== 404);
-    if (failed && !error) error = errorMessage(failed.response.status, getErrorCode(failed.body));
+    if (failed && !error) error = settingsErrorMessage(failed.response.status, getSettingsErrorCode(failed.body));
   }
 
 
