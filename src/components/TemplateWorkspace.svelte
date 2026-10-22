@@ -5,6 +5,7 @@
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import type { FieldDefinition, Primitive } from '../lib/client/template-types';
+  import TemplateManualFieldEditor from './templates/TemplateManualFieldEditor.svelte';
   import { addTemplateField, removeTemplateField, updateTemplateField, discoveredFieldKey, mergeDiscoveredFields } from '../lib/client/template-field-model';
   import { validateTemplateDraft } from '../lib/client/template-validation';
   import { templateErrorMessage } from '../lib/client/template-errors';
@@ -307,10 +308,7 @@
           {#if discovered.length}<div class="template-discovered">{#each discovered as field}<label class="template-discovered__row"><input type="checkbox" checked={selectedDiscovered.includes(`${field.name}\u0000${field.path}`)} on:change={(event) => toggleDiscovered(field, event.currentTarget.checked)} /><span><strong>{field.name}</strong><small>{field.path}</small></span><span>{primitiveNames[field.primitive] ?? 'Unknown'}</span></label>{/each}</div>{/if}
         </section>
         {:else}
-        <section class="template-fields template-fields--editor"><div class="template-section-heading"><div><h3>Define fields manually</h3><p>Add a field and provide its JSON path and interpretation type. Nested paths use dot notation.</p></div><button class="template-button template-button--primary" type="button" on:click={addField}>＋ Add field</button></div>
-          {#each fields as field, index}<div class="template-field-row"><label class="template-label">Field name<input value={field.name} on:input={(event) => updateField(index, 'name', event.currentTarget.value)} required placeholder="processed_rows" /></label><label class="template-label">JSON path<input value={field.path} on:input={(event) => updateField(index, 'path', event.currentTarget.value)} required placeholder="backup.processed_rows" /></label><label class="template-label">Type<select value={field.primitive} on:change={(event) => updateField(index, 'primitive', Number(event.currentTarget.value))}>{#each primitiveOptions as option}<option value={option.value}>{option.label}</option>{/each}</select></label><button class="template-icon-button" type="button" aria-label={`Remove field ${index + 1}`} on:click={() => removeField(index)} disabled={fields.length === 1}>×</button></div>{/each}
-          <p class="template-muted template-small">At least one valid field is required. Advanced assertion, reasoning, and checksum metadata are preserved when editing existing fields.</p>
-        </section>
+        <TemplateManualFieldEditor {fields} {primitiveOptions} onAddField={addField} onRemoveField={removeField} onUpdateField={updateField} />
         {/if}
         <footer class="template-dialog__footer"><button class="template-button" type="button" on:click={closeForm} disabled={saving}>Cancel</button><button class="template-button template-button--primary" type="submit" disabled={saving}>{saving ? 'Saving…' : mode === 'create' ? 'Create template' : 'Save changes'}</button></footer>
       </form>
