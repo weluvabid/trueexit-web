@@ -62,6 +62,16 @@ export const monitorQueryKeys = {
   }] as const,
 };
 
+export function monitorListQueryOptions<TMonitor>(query: MonitorListQuery) {
+  return {
+    queryKey: monitorQueryKeys.list(query),
+    queryFn: async ({ signal }: { signal: AbortSignal }) =>
+      requireMonitorQueryResult(await fetchMonitorPage<TMonitor>(query, signal)),
+    staleTime: 0,
+    retry: false as const,
+  };
+}
+
 export async function fetchMonitorPage<TMonitor>(
   query: MonitorListQuery,
   signal: AbortSignal,

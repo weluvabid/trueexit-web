@@ -1,26 +1,33 @@
+<svelte:options runes={true} />
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { createQuery } from '@tanstack/svelte-query';
   import type { MonitorEditorDraft, FieldPrimitive } from '../lib/client/monitor-editor-state';
   import { buildMonitorJsonDraft, parseMonitorJsonDraft } from '../lib/client/monitor-field-editor';
-  import { fetchMonitorTemplates, monitorTemplateQueryKeys, type MonitorTemplate, requireMonitorQueryResult, monitorQueryErrorMessage } from '../lib/client/monitor-queries';
+  import { fetchMonitorTemplates, monitorTemplateQueryKeys, requireMonitorQueryResult, monitorQueryErrorMessage } from '../lib/client/monitor-queries';
   import { getSharedQueryClient } from '../lib/client/query-client';
 
-  export let draft: MonitorEditorDraft;
-  export let workspaceId = '';
-  export let fieldError = '';
+  let { draft, workspaceId = '', fieldError = $bindable('') }: { draft: MonitorEditorDraft; workspaceId?: string; fieldError?: string } = $props();
 
-  let fieldMode: 'json' | 'fields' | 'templates' = 'fields';
-  let jsonDraft = '';
-  let jsonError = '';
-  let templates: MonitorTemplate[] = [];
-  let templatesLoading = false;
-  let templatesError = '';
-  let selectedTemplateId = '';
-  let templateApplyMode: 'replace' | 'merge' = 'replace';
-  let templateLoadSequence = 0;
-  let observedWorkspaceId = workspaceId;
-  let disposed = false;
+  let fieldMode = $state<'json' | 'fields' | 'templates'>('fields');
+  let jsonDraft = $state('');
+  let jsonError = $state('');
+
+  let templateActionError = $state('');
+  let selectedTemplateId = $state('');
+  let templateApplyMode = $state<'replace' | 'merge'>('replace');
+  let observedWorkspaceId = $state(workspaceId);
+
   const queryClient = getSharedQueryClient();
+  const templatesQuery = createQuery(() => ({
+    queryKey: monitorTemplateQueryKeys.workspaceList(workspaceId),
+    queryFn: async ({ signal }) => requireMonitorQueryResult(await fetchMonitorTemplates(workspaceId, signal)),
+    enabled: fieldMode === 'templates' && Boolean(workspaceId),
+    staleTime: 30_000,
+    retry: false,
+  }), () => queryClient);
+  const templates = $derived(templatesQuery.data?.data ?? []);
+  const templatesLoading = $derived(fieldMode === 'templates' && Boolean(workspaceId) && templatesQuery.isFetching);
+  const templatesError = $derived(templateActionError || (templatesQuery.error ? monitorQueryErrorMessage(templatesQuery.error, messageFor) : ''));
 
   const primitiveValues: Record<FieldPrimitive, number> = {
     size: 0, count: 1, duration: 2, timestamp: 3, boolean: 4, categorical: 5, checksum: 6, text: 7,
@@ -39,22 +46,19 @@
     return code ? `The request could not be completed (${code}).` : 'The request could not be completed. Please try again.';
   }
 
-  $: if (workspaceId !== observedWorkspaceId) {
-    observedWorkspaceId = workspaceId;
-    ++templateLoadSequence;
-    templates = [];
-    templatesLoading = false;
-    templatesError = '';
-    selectedTemplateId = '';
-    if (fieldMode === 'templates' && workspaceId) void loadTemplates();
-  }
+  $effect(() => {
+    if (workspaceId !== observedWorkspaceId) {
+      observedWorkspaceId = workspaceId;
+      selectedTemplateId = '';
+      templateActionError = '';
+    }
+  });
 
   export function reset() {
-    ++templateLoadSequence;
     fieldMode = 'fields';
     jsonDraft = '';
     jsonError = '';
-    templatesError = '';
+    templateActionError = '';
     selectedTemplateId = '';
     templateApplyMode = 'replace';
     fieldError = '';
@@ -90,37 +94,6 @@
     }
   }
 
-  async function loadTemplates() {
-    const workspace = workspaceId;
-    const sequence = ++templateLoadSequence;
-    if (!workspace) {
-      templates = [];
-      templatesLoading = false;
-      return;
-    }
-    templatesLoading = true;
-    templatesError = '';
-    try {
-      const result = await queryClient.fetchQuery({
-        queryKey: monitorTemplateQueryKeys.workspaceList(workspace),
-        queryFn: async ({ signal }) => requireMonitorQueryResult(await fetchMonitorTemplates(workspace, signal)),
-        staleTime: 30_000,
-        retry: false,
-      });
-      if (disposed || sequence !== templateLoadSequence || workspace !== workspaceId) return;
-      if (!result.ok) {
-        templatesError = messageFor(result.status, result.code);
-        await queryClient.invalidateQueries({ queryKey: monitorTemplateQueryKeys.workspaceList(workspace) });
-        return;
-      }
-      templates = result.data;
-    } catch (error) {
-      if (!disposed && sequence === templateLoadSequence && workspace === workspaceId) templatesError = monitorQueryErrorMessage(error, messageFor);
-    } finally {
-      if (!disposed && sequence === templateLoadSequence) templatesLoading = false;
-    }
-  }
-
   function addField() {
     if (draft.fields.length >= 50) return;
     draft.fields = [...draft.fields, { key: draft.nextFieldKey++, name: '', path: '', primitive: 'count' }];
@@ -138,27 +111,24 @@
     if (!template || !template.fields.length) return;
     const mapped = template.fields.map((field) => ({ key: draft.nextFieldKey++, name: field.name, path: field.path, primitive: (Object.entries(primitiveValues).find(([, value]) => value === field.primitive)?.[0] ?? 'text') as FieldPrimitive }));
     if (mapped.length > 50 || (templateApplyMode === 'merge' && draft.fields.length + mapped.length > 50)) {
-      templatesError = 'The resulting configuration would exceed the 50-field limit. Choose a smaller template or replace the current fields.';
+      templateActionError = 'The resulting configuration would exceed the 50-field limit. Choose a smaller template or replace the current fields.';
       return;
     }
     if (templateApplyMode === 'merge') {
       const existing = new Set(draft.fields.map((field) => field.path));
       const duplicates = mapped.filter((field) => existing.has(field.path));
       if (duplicates.length) {
-        templatesError = `Cannot merge because these paths already exist: ${duplicates.map((field) => field.path).join(', ')}.`;
+        templateActionError = `Cannot merge because these paths already exist: ${duplicates.map((field) => field.path).join(', ')}.`;
         return;
       }
       draft.fields = [...draft.fields, ...mapped];
     } else draft.fields = mapped;
     fieldError = '';
-    templatesError = '';
+    templateActionError = '';
     fieldMode = 'fields';
   }
 
-  onDestroy(() => {
-    disposed = true;
-    ++templateLoadSequence;
-  });
+
 </script>
 
           <div class="monitor-create-section">
@@ -166,7 +136,7 @@
             <div class="monitor-field-modes" role="tablist" aria-label="Field configuration method">
               <button type="button" role="tab" aria-selected={fieldMode === 'json'} class:active={fieldMode === 'json'} on:click={() => { try { syncJsonFromFields(); fieldMode = 'json'; } catch { /* Error is shown inline. */ } }}>JSON <small>Paste an object</small></button>
               <button type="button" role="tab" aria-selected={fieldMode === 'fields'} class:active={fieldMode === 'fields'} on:click={() => { if (fieldMode === 'json' && jsonDraft.trim()) applyJsonDraft(); else fieldMode = 'fields'; }}>Fields <small>Edit paths</small></button>
-              <button type="button" role="tab" aria-selected={fieldMode === 'templates'} class:active={fieldMode === 'templates'} on:click={() => { if (fieldMode === 'json' && jsonDraft.trim()) { applyJsonDraft(); if (fieldMode === 'json') return; } fieldMode = 'templates'; void loadTemplates(); }}>Templates <small>Start from a template</small></button>
+              <button type="button" role="tab" aria-selected={fieldMode === 'templates'} class:active={fieldMode === 'templates'} on:click={() => { if (fieldMode === 'json' && jsonDraft.trim()) { applyJsonDraft(); if (fieldMode === 'json') return; } fieldMode = 'templates'; }}>Templates <small>Start from a template</small></button>
             </div>
             {#if fieldError}<p class="monitor-form-error" role="alert">{fieldError}</p>{/if}
             {#if fieldMode === 'json'}

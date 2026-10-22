@@ -1,6 +1,6 @@
+<svelte:options runes={true} />
 <script lang="ts">
-  export let initialMode: 'inventory' | 'create' | 'edit' = 'inventory';
-  export let monitorId = '';
+  let { initialMode = 'inventory', monitorId = '' }: { initialMode?: 'inventory' | 'create' | 'edit'; monitorId?: string } = $props();
   import { can } from '../lib/client/permissions';
   import { onMount } from 'svelte';
   import MonitorInventory from './MonitorInventory.svelte';
@@ -12,8 +12,8 @@
   import { formatMonitorCadence } from '../lib/client/monitor-format';
   import { prepareMonitorSubmission } from '../lib/client/monitor-editor-validation';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
-  import { createMutation } from '@tanstack/svelte-query';
-  import { fetchMonitorPage, fetchWorkspaceTags, fetchMonitorTags, fetchWorkspaceChannels, fetchMonitorDetail, fetchMonitorChannelIds, monitorQueryKeys, monitorResourceQueryKeys, type WorkspaceTag, type MonitorChannel, requireMonitorQueryResult, monitorQueryErrorMessage } from '../lib/client/monitor-queries';
+  import { createMutation, createQuery } from '@tanstack/svelte-query';
+  import { fetchWorkspaceTags, fetchMonitorTags, fetchWorkspaceChannels, fetchMonitorDetail, fetchMonitorChannelIds, monitorResourceQueryKeys, monitorListQueryOptions, type MonitorListQuery, type MonitorListResponse, type WorkspaceTag, type MonitorChannel, requireMonitorQueryResult, monitorQueryErrorMessage } from '../lib/client/monitor-queries';
   import { createEmptyMonitorDraft, createMonitorDraft, serializeMonitorChannelSelection, type FieldPrimitive } from '../lib/client/monitor-editor-state';
   import { createMonitorMutationOptions, editMonitorMutationOptions, lifecycleMonitorMutationOptions, tagMonitorMutationOptions } from '../lib/client/monitor-mutations';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
@@ -29,62 +29,70 @@
   const lifecycleMonitorMutation = createMutation(() => lifecycleMonitorMutationOptions(monitorQueryClient), () => monitorQueryClient);
   type Channel = MonitorChannel;
 
+  let activeListQuery = $state<MonitorListQuery | null>(null);
+  const monitorsQuery = createQuery(() => ({
+    ...(activeListQuery ? monitorListQueryOptions<Monitor>(activeListQuery) : {
+      queryKey: ['monitors', 'list', 'inactive'] as const,
+      queryFn: async (): Promise<MonitorListResponse<Monitor>> => ({ ok: true, status: 200, code: null, page: { data: [], page: { next_cursor: null } } }),
+    }),
+    enabled: Boolean(activeListQuery?.workspaceId),
+  }), () => monitorQueryClient);
+  const monitors = $derived(monitorsQuery.data?.page?.data ?? []);
+  const nextCursor = $derived(monitorsQuery.data?.page?.page.next_cursor ?? null);
+  const loadingMonitors = $derived(Boolean(activeListQuery?.workspaceId) && monitorsQuery.isFetching);
+  const listError = $derived(monitorsQuery.error ? monitorQueryErrorMessage(monitorsQuery.error, messageFor) : '');
+
   const primitiveValues: Record<FieldPrimitive, number> = {
     size: 0, count: 1, duration: 2, timestamp: 3, boolean: 4, categorical: 5, checksum: 6, text: 7,
   };
 
-  let workspaces: WorkspaceContext[] = [];
-  let selectedWorkspaceId = '';
-  let monitors: Monitor[] = [];
-  let search = '';
-  let statusFilter: 'all' | MonitorStatus = 'all';
-  let includeArchived = false;
-  let sort = 'updated_at';
-  let direction: 'asc' | 'desc' = 'desc';
-  let nextCursor: string | null = null;
-  let cursorStack: (string | null)[] = [null];
-  let pageIndex = 0;
-  let loadingWorkspaces = true;
-  let loadingMonitors = false;
-  let bootError = '';
-  let listError = '';
-  let actionError = '';
-  let actionMessage = '';
-  let busyMonitorId = '';
-  let requestSequence = 0;
-  let editorLoadSequence = 0;
-  let disposed = false;
-  let tagLoadSequence = 0;
+  let workspaces: WorkspaceContext[] = $state([]);
+  let selectedWorkspaceId = $state('');
+  let search = $state('');
+  let statusFilter: 'all' | MonitorStatus = $state('all');
+  let includeArchived = $state(false);
+  let sort = $state('updated_at');
+  let direction: 'asc' | 'desc' = $state('desc');
+  let cursorStack: (string | null)[] = $state([null]);
+  let pageIndex = $state(0);
+  let loadingWorkspaces = $state(true);
+  let bootError = $state('');
+  let actionError = $state('');
+  let actionMessage = $state('');
+  let busyMonitorId = $state('');
+  let editorLoadSequence = $state(0);
+  let disposed = $state(false);
+  let tagLoadSequence = $state(0);
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
-  let createOpen = initialMode !== 'inventory';
-  let fieldConfiguration: InstanceType<typeof MonitorFieldConfiguration>;
-  let cadenceError = '';
-  let cadencePreview = 'Every 5 minutes';
-  let editingMonitor: MonitorDetail | null = null;
-  let workspaceTags: WorkspaceTag[] = [];
-  let tagFilter = '';
-  let tagModalOpen = false;
-  let taggingMonitor: Monitor | null = null;
-  let monitorTagIds: string[] = [];
-  let newTagNames: string[] = [];
-  let tagInput = '';
-  let tagBusy = false;
-  let tagReady = false;
-  let tagError = '';
-  let tagRequestKey = '';
-  let tagRequestBody = '';
-  let createRequestKey = '';
-  let createRequestBody = '';
-  let editRequestKey = '';
-  let editRequestBody = '';
-  let creating = false;
-  let createError = '';
-  let createMessage = '';
-  let editorDraft = createEmptyMonitorDraft();
-  let fieldError = '';
-  let channels: Channel[] = [];
-  let channelsLoading = false;
-  let channelsError = '';
+  let createOpen = $state(initialMode !== 'inventory');
+  let fieldConfiguration = $state<InstanceType<typeof MonitorFieldConfiguration> | undefined>(undefined);
+  let cadenceError = $state('');
+  let cadencePreview = $state('Every 5 minutes');
+  let editingMonitor: MonitorDetail | null = $state(null);
+  let workspaceTags: WorkspaceTag[] = $state([]);
+  let tagFilter = $state('');
+  let tagModalOpen = $state(false);
+  let taggingMonitor: Monitor | null = $state(null);
+  let monitorTagIds: string[] = $state([]);
+  let newTagNames: string[] = $state([]);
+  let tagInput = $state('');
+  let tagBusy = $state(false);
+  let tagReady = $state(false);
+  let tagError = $state('');
+  let tagRequestKey = $state('');
+  let tagRequestBody = $state('');
+  let createRequestKey = $state('');
+  let createRequestBody = $state('');
+  let editRequestKey = $state('');
+  let editRequestBody = $state('');
+  let creating = $state(false);
+  let createError = $state('');
+  let createMessage = $state('');
+  let editorDraft = $state(createEmptyMonitorDraft());
+  let fieldError = $state('');
+  let channels: Channel[] = $state([]);
+  let channelsLoading = $state(false);
+  let channelsError = $state('');
 
   function resetEditorDraft() {
     editorDraft = createEmptyMonitorDraft();
@@ -129,8 +137,8 @@
 
 
 
-  $: selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null;
-  $: canManageChannels = can(selectedWorkspace, 'workspace.destinations.manage');
+  const selectedWorkspace = $derived(workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null);
+  const canManageChannels = $derived(can(selectedWorkspace, 'workspace.destinations.manage'));
 
   async function loadWorkspaceTags(): Promise<boolean> {
     const workspaceId = selectedWorkspaceId;
@@ -548,24 +556,17 @@
   function resetPagination() {
     cursorStack = [null];
     pageIndex = 0;
-    nextCursor = null;
   }
 
   async function loadMonitors(cursor: string | null = null) {
-    const sequence = ++requestSequence;
     const workspaceId = selectedWorkspaceId;
     if (!workspaceId || disposed) {
-      monitors = [];
-      nextCursor = null;
-      loadingMonitors = false;
+      activeListQuery = null;
       return;
     }
 
-    loadingMonitors = true;
-    listError = '';
     actionError = '';
-
-    const query = {
+    const query: MonitorListQuery = {
       workspaceId,
       limit: 25,
       sort,
@@ -575,26 +576,16 @@
       tagId: tagFilter,
       includeArchived,
       cursor,
-    } as const;
+    };
+    activeListQuery = query;
 
+    // fetchQuery shares the same key and query function as the reactive observer.
+    // It lets existing mutation/navigation handlers await the refresh without
+    // maintaining a second copy of query data or query lifecycle state.
     try {
-      const result = await monitorQueryClient.fetchQuery({
-        queryKey: monitorQueryKeys.list(query),
-        queryFn: async ({ signal }) => requireMonitorQueryResult(await fetchMonitorPage<Monitor>(query, signal)),
-        staleTime: 0,
-        retry: false,
-      });
-      if (sequence !== requestSequence || !isCurrentWorkspace(workspaceId)) return;
-      if (!result.ok || !result.page) {
-        listError = messageFor(result.status, result.code);
-        return;
-      }
-      monitors = result.page.data;
-      nextCursor = result.page.page.next_cursor;
-    } catch (error) {
-      if (sequence === requestSequence && isCurrentWorkspace(workspaceId)) listError = monitorQueryErrorMessage(error, messageFor);
-    } finally {
-      if (sequence === requestSequence && !disposed) loadingMonitors = false;
+      await monitorQueryClient.fetchQuery(monitorListQueryOptions<Monitor>(query));
+    } catch {
+      // The reactive query owns error state; the component derives listError from it.
     }
   }
 
@@ -690,12 +681,11 @@
     void bootstrap();
     return () => {
       disposed = true;
-      requestSequence += 1;
       editorLoadSequence += 1;
       tagLoadSequence += 1;
       if (searchTimer) clearTimeout(searchTimer);
       // Do not cancel or clear the application-wide cache when this island unmounts.
-      // Request sequencing above prevents this component from applying stale results.
+      // Query identity and the editor/tag sequence guards prevent stale results from applying.
     };
   });
 </script>
