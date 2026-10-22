@@ -22,6 +22,48 @@ export function settingsErrorMessage(status: number, code: string | null): strin
   return code ? `The request could not be completed (${code}).` : 'The request could not be completed. Please try again.';
 }
 
+type CachedSettingsResponse = { status: number; body: unknown };
+
+class SettingsQueryError extends Error {
+  constructor(readonly result: CachedSettingsResponse) {
+    super(`Settings request failed with status ${result.status}`);
+    this.name = 'SettingsQueryError';
+  }
+}
+
+function responseFromResult(result: CachedSettingsResponse): Response {
+  return new Response(result.body === null ? null : JSON.stringify(result.body), {
+    status: result.status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function settingsReadKey(path: string) {
+  return ['settings-api', path] as const;
+}
+
+async function invalidateSettingsAfterMutation(path: string): Promise<void> {
+  const client = getSharedQueryClient();
+  const segments = path.split('?')[0].split('/').filter(Boolean).map((segment) => decodeURIComponent(segment));
+  const [resource, id, child] = segments;
+  const invalidations: Promise<unknown>[] = [];
+
+  if (resource === 'workspaces' && id && child === 'members') {
+    invalidations.push(client.invalidateQueries({ queryKey: settingsReadKey(`/workspaces/${encodeURIComponent(id)}/members`) }));
+  } else if (resource === 'workspaces' && id && child === 'invitations') {
+    invalidations.push(client.invalidateQueries({ queryKey: settingsReadKey(`/workspaces/${encodeURIComponent(id)}/invitations`) }));
+  } else if (resource === 'workspaces' && id && child === 'channels') {
+    invalidations.push(client.invalidateQueries({ queryKey: settingsReadKey(`/workspaces/${encodeURIComponent(id)}/channels`) }));
+  } else if (resource === 'workspaces' || resource === 'accounts') {
+    invalidations.push(
+      client.invalidateQueries({ queryKey: settingsReadKey('/accounts') }),
+      client.invalidateQueries({ queryKey: ['workspace-bootstrap'] }),
+    );
+  }
+
+  await Promise.all(invalidations);
+}
+
 export async function requestSettingsApi(
   path: string,
   init: RequestInit = {},
@@ -37,30 +79,33 @@ export async function requestSettingsApi(
   const client = getSharedQueryClient();
 
   if (method === 'GET') {
-    // Cache parsed settings resources under their request path. Query identity
-    // includes the workspace/resource path, while the signal remains owned by
-    // TanStack Query rather than the legacy shared HTTP cache.
-    const result = await client.fetchQuery({
-      queryKey: ['settings-api', path],
-      staleTime: 30_000,
-      queryFn: async ({ signal }) => {
-        const response = await fetch(`/api/backend${path}`, { ...requestInit, signal });
-        const body = response.status === 204 ? null : await response.json().catch(() => null);
-        return { status: response.status, body };
-      },
-    });
-    const response = new Response(result.body === null ? null : JSON.stringify(result.body), {
-      status: result.status,
-      headers: { 'Content-Type': 'application/json' },
-    });
-    return { response, body: result.body };
+    try {
+      const result = await client.fetchQuery({
+        queryKey: settingsReadKey(path),
+        staleTime: 30_000,
+        queryFn: async ({ signal }): Promise<CachedSettingsResponse> => {
+          const response = await fetch(`/api/backend${path}`, { ...requestInit, signal });
+          const body = response.status === 204 ? null : await response.json().catch(() => null);
+          const result = { status: response.status, body };
+          // HTTP failures must remain failed queries; otherwise TanStack caches
+          // an authorization or server error as a successful read.
+          if (!response.ok) throw new SettingsQueryError(result);
+          return result;
+        },
+      });
+      return { response: responseFromResult(result), body: result.body };
+    } catch (error) {
+      if (error instanceof SettingsQueryError) {
+        return { response: responseFromResult(error.result), body: error.result.body };
+      }
+      throw error;
+    }
   }
 
   const response = await fetch(`/api/backend${path}`, requestInit);
   const body = response.status === 204 ? null : await response.json().catch(() => null);
   if (!['GET', 'HEAD'].includes(method) && response.ok) {
-    // Settings resources now live under their own TanStack Query key family.
-    await client.invalidateQueries({ queryKey: ['settings-api'] });
+    await invalidateSettingsAfterMutation(path);
   }
   return { response, body };
 }
