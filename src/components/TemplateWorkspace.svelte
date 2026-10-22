@@ -8,6 +8,7 @@
   import { addTemplateField, removeTemplateField, updateTemplateField, discoveredFieldKey, mergeDiscoveredFields } from '../lib/client/template-field-model';
   import { validateTemplateDraft } from '../lib/client/template-validation';
   import { templateErrorMessage } from '../lib/client/template-errors';
+  import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
 
   type Template = {
     id: string; owner_user_id: string | null; kind: 'built_in' | 'custom'; name: string;
@@ -100,9 +101,8 @@
     if (!result.workspaces.ok) { bootError = templateErrorMessage(result.workspaces.status, result.workspaces.code); loading = false; return; }
     workspaces = result.workspaces.data.data;
     const personal = result.me.ok ? result.me.data.personal_workspace_id : null;
-    let storedWorkspaceId = '';
-    try { storedWorkspaceId = localStorage.getItem('trueexit.active-workspace-id') ?? ''; } catch { /* Storage may be unavailable. */ }
-    workspaceId = workspaces.find((w) => w.id === storedWorkspaceId)?.id ?? workspaces.find((w) => w.id === personal)?.id ?? workspaces[0]?.id ?? '';
+    workspaceId = resolveWorkspaceId(workspaces, [readActiveWorkspaceId(), personal]);
+    writeActiveWorkspaceId(workspaceId);
     if (!workspaceId) { loading = false; return; }
     await loadTemplates(null);
   }

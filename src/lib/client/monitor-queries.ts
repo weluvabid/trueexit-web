@@ -1,6 +1,6 @@
-import { fetchSharedGet } from './shared-http-query';
+import { fetchSharedGet, getSharedQueryClient } from './shared-http-query';
 import { getApiErrorCode, getApiList } from './api-response';
-import { QueryClient } from '@tanstack/svelte-query';
+import type { QueryClient } from '@tanstack/svelte-query';
 
 export type MonitorListQuery = {
   workspaceId: string;
@@ -27,22 +27,12 @@ export type MonitorListResponse<TMonitor> = {
 };
 
 /**
- * Monitor inventory server-state cache. The component owns its QueryClient so
- * cached workspace data cannot leak between independently mounted workspaces.
- * A zero staleTime preserves the existing always-refresh-on-load behavior;
- * TanStack Query still deduplicates concurrent requests and handles aborts.
+ * Use the same browser QueryClient as the shared HTTP GET layer. Monitor query
+ * keys remain separately namespaced, while cache invalidation and request
+ * lifecycle ownership now have one application-wide source.
  */
 export function createMonitorQueryClient(): QueryClient {
-  return new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-        staleTime: 0,
-        gcTime: 60_000,
-        refetchOnWindowFocus: false,
-      },
-    },
-  });
+  return getSharedQueryClient();
 }
 
 export const monitorQueryKeys = {
@@ -82,10 +72,7 @@ export async function fetchMonitorPage<TMonitor>(
     signal,
   });
   const body: unknown = await response.json().catch(() => null);
-  const error = body && typeof body === 'object' && 'error' in body
-    ? (body as { error?: { code?: unknown } }).error
-    : null;
-  const code = typeof error?.code === 'string' ? error.code : null;
+  const code = getApiErrorCode(body);
 
   if (!response.ok) {
     return { ok: false, status: response.status, code, page: null };
@@ -132,18 +119,11 @@ export async function fetchMonitorTemplates(
     signal,
   });
   const body: unknown = await response.json().catch(() => null);
-  const error = body && typeof body === 'object' && 'error' in body
-    ? (body as { error?: { code?: unknown } }).error
-    : null;
-  const code = typeof error?.code === 'string' ? error.code : null;
+  const code = getApiErrorCode(body);
 
   if (!response.ok) return { ok: false, status: response.status, code, data: [] };
 
-  const rows = Array.isArray(body)
-    ? body
-    : body && typeof body === 'object' && 'data' in body && Array.isArray(body.data)
-      ? body.data
-      : [];
+  const rows = getApiList<unknown>(body);
   return {
     ok: true,
     status: response.status,

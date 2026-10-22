@@ -135,10 +135,10 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
 
     <script>
       import { loadWorkspaceBootstrap } from '../lib/client/workspace-bootstrap';
-       import { fetchSharedGet } from '../lib/client/shared-http-query';
+      import { fetchSharedGet } from '../lib/client/shared-http-query';
+      import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
 
       (() => {
-        const ACTIVE_WORKSPACE_KEY = 'trueexit.active-workspace-id';
         const header = document.querySelector('[data-app-header]');
         const workspaceTrigger = document.querySelector('[data-workspace-trigger]');
         const workspaceOptions = document.querySelector('[data-workspace-options]');
@@ -227,7 +227,7 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
           if (!next || id === activeWorkspaceId) { closeWorkspaceMenu(); return; }
           const confirmed = window.confirm(`Switch to “${next.name}”? This reloads the current page, so any unsaved changes may be lost.`);
           if (!confirmed) return;
-          try { localStorage.setItem(ACTIVE_WORKSPACE_KEY, id); } catch { /* Storage can be unavailable in restricted contexts. */ }
+          writeActiveWorkspaceId(id);
           const url = new URL(window.location.href);
           if (url.pathname.startsWith('/monitors/')) url.searchParams.set('workspace_id', id);
           else url.searchParams.delete('workspace_id');
@@ -339,7 +339,7 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
         }
 
         async function searchWorkspace(query, sequence) {
-          const workspaceId = activeWorkspaceId || (() => { try { return localStorage.getItem(ACTIVE_WORKSPACE_KEY) || ''; } catch { return ''; } })();
+          const workspaceId = activeWorkspaceId || readActiveWorkspaceId();
           if (!workspaceId) {
             if (sequence === searchRequestSequence) { workspaceSearchStatus.textContent = 'Choose a workspace to search its resources.'; }
             return;
@@ -398,14 +398,10 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
             const me = result.me.ok ? result.me.data : null;
             workspaces = availableWorkspaces;
             const requested = new URLSearchParams(window.location.search).get('workspace_id');
-            let stored = null;
-            try { stored = localStorage.getItem(ACTIVE_WORKSPACE_KEY); } catch { /* Storage can be unavailable. */ }
-            const preferred = [requested, stored, me?.personal_workspace_id];
-            activeWorkspaceId = preferred.find((id) => id && workspaces.some((workspace) => workspace.id === id)) || workspaces[0]?.id || '';
+            const stored = readActiveWorkspaceId();
+            activeWorkspaceId = resolveWorkspaceId(workspaces, [requested, stored, me?.personal_workspace_id]);
             renderWorkspaces();
-            if (activeWorkspaceId && stored !== activeWorkspaceId) {
-              try { localStorage.setItem(ACTIVE_WORKSPACE_KEY, activeWorkspaceId); } catch { /* Storage can be unavailable. */ }
-            }
+            if (activeWorkspaceId && stored !== activeWorkspaceId) writeActiveWorkspaceId(activeWorkspaceId);
           } catch {
             workspaceName.textContent = 'Workspace unavailable';
             workspaceTrigger.disabled = true;

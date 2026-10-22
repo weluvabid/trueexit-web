@@ -14,6 +14,7 @@
   import { createMonitorMutationOptions, editMonitorMutationOptions, lifecycleMonitorMutationOptions, tagMonitorMutationOptions } from '../lib/client/monitor-mutations';
   import { buildMonitorJsonDraft, parseMonitorJsonDraft } from '../lib/client/monitor-field-editor';
   import { buildNotificationChannelConfig } from '../lib/client/settings-channel-config';
+  import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
 
   type MonitorConfigVersion = { version: number; cadence_seconds: number; config: { fields: Array<{ name: string; path: string; primitive: number; meta?: Record<string, unknown> }> } };
   type MonitorDetail = Monitor & { config_versions?: MonitorConfigVersion[] };
@@ -768,12 +769,9 @@
 
     workspaces = result.workspaces.data.data;
     const personalId = result.me.ok ? result.me.data.personal_workspace_id : null;
-    let storedWorkspaceId = '';
-    try { storedWorkspaceId = localStorage.getItem('trueexit.active-workspace-id') ?? ''; } catch { /* Storage may be unavailable. */ }
     const requestedWorkspaceId = new URLSearchParams(window.location.search).get('workspace_id') ?? '';
-    const initialWorkspace = workspaces.find((workspace) => workspace.id === requestedWorkspaceId) ?? workspaces.find((workspace) => workspace.id === storedWorkspaceId) ?? workspaces.find((workspace) => workspace.id === personalId) ?? workspaces[0];
-    if (initialWorkspace) { try { localStorage.setItem('trueexit.active-workspace-id', initialWorkspace.id); } catch { /* Storage may be unavailable. */ } }
-    selectedWorkspaceId = initialWorkspace?.id ?? '';
+    selectedWorkspaceId = resolveWorkspaceId(workspaces, [requestedWorkspaceId, readActiveWorkspaceId(), personalId]);
+    writeActiveWorkspaceId(selectedWorkspaceId);
     loadingWorkspaces = false;
     if (selectedWorkspaceId) void loadWorkspaceTags();
     if (selectedWorkspaceId && initialMode === 'inventory') await loadMonitors(null);

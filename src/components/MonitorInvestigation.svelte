@@ -4,6 +4,7 @@
   import '../styles/investigation.css';
   import { formatInvestigationDate, formatInvestigationValue, formatInvestigationLabel, getHealthCounts } from '../lib/client/investigation-format';
   import { buildInvestigationApiPath, getInvestigationErrorMessage, readInvestigationResource, type Resource } from '../lib/client/investigation-api';
+  import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
 
   type Page<T> = { data: T[]; page?: { next_cursor: string | null } };
   type Monitor = {
@@ -257,11 +258,8 @@
     workspaces = result.workspaces.data.data;
     const personalId = result.me.ok ? result.me.data.personal_workspace_id : null;
     const requestedWorkspaceId = new URLSearchParams(window.location.search).get('workspace_id');
-    let storedWorkspaceId = '';
-    try { storedWorkspaceId = localStorage.getItem('trueexit.active-workspace-id') ?? ''; } catch { /* Storage may be unavailable. */ }
-    const initial = workspaces.find((workspace) => workspace.id === requestedWorkspaceId) ?? workspaces.find((workspace) => workspace.id === storedWorkspaceId) ?? workspaces.find((workspace) => workspace.id === personalId) ?? workspaces[0];
-    workspaceId = initial?.id ?? '';
-    if (workspaceId) { try { localStorage.setItem('trueexit.active-workspace-id', workspaceId); } catch { /* Storage may be unavailable. */ } }
+    workspaceId = resolveWorkspaceId(workspaces, [requestedWorkspaceId, readActiveWorkspaceId(), personalId]);
+    writeActiveWorkspaceId(workspaceId);
     workspaceGeneration += 1;
     bootLoading = false;
     if (!workspaceId) { bootError = 'No workspace is available to inspect this monitor.'; return; }
@@ -269,7 +267,7 @@
   }
 
   async function changeWorkspace() {
-    try { localStorage.setItem('trueexit.active-workspace-id', workspaceId); } catch { /* Storage may be unavailable. */ }
+    writeActiveWorkspaceId(workspaceId);
     workspaceGeneration += 1;
     requestGeneration += 1;
     verifiedEvidenceGeneration += 1;

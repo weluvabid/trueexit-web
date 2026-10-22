@@ -5,6 +5,7 @@
   import { invalidateSharedGetCache } from '../lib/client/shared-http-query';
   import { getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../lib/client/settings-api';
   import { buildNotificationChannelConfig } from '../lib/client/settings-channel-config';
+  import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
 
   export let mode: 'workspace' | 'account' = 'workspace';
 
@@ -129,12 +130,10 @@
       }
       const workspaceBody = bootstrap.workspaces.data;
       workspaces = Array.isArray(workspaceBody?.data) ? workspaceBody.data : [];
-      let storedWorkspaceId = '';
-      try { storedWorkspaceId = localStorage.getItem('trueexit.active-workspace-id') ?? ''; } catch { /* Storage may be unavailable. */ }
       if (!selectedWorkspaceId || !workspaces.some((item) => item.id === selectedWorkspaceId)) {
-        selectedWorkspaceId = workspaces.find((item) => item.id === storedWorkspaceId)?.id ?? workspaces[0]?.id ?? '';
+        selectedWorkspaceId = resolveWorkspaceId(workspaces, [readActiveWorkspaceId()]);
       }
-      if (selectedWorkspaceId) { try { localStorage.setItem('trueexit.active-workspace-id', selectedWorkspaceId); } catch { /* Storage may be unavailable. */ } }
+      writeActiveWorkspaceId(selectedWorkspaceId);
       if (!selectedWorkspaceId) {
         members = []; invitations = []; channels = [];
       }
@@ -175,7 +174,7 @@
 
   async function selectWorkspace() {
     workspaceSectionsGeneration += 1;
-    try { localStorage.setItem('trueexit.active-workspace-id', selectedWorkspaceId); } catch { /* Storage may be unavailable. */ }
+    writeActiveWorkspaceId(selectedWorkspaceId);
     error = ''; notice = '';
     workspaceName = selectedWorkspace?.name ?? '';
     await loadWorkspaceSections();

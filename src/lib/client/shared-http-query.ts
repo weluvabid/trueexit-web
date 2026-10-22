@@ -29,7 +29,7 @@ declare global {
   }
 }
 
-function getSharedQueryClient(): QueryClient {
+export function getSharedQueryClient(): QueryClient {
   if (typeof window === 'undefined') {
     // This helper is intended for browser-side requests. A fresh instance avoids
     // sharing user data between server renders.

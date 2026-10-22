@@ -1,4 +1,5 @@
 import { fetchSharedGet } from './shared-http-query';
+import { getApiErrorCode } from './api-response';
 
 export interface CurrentUserContext {
   user_id: string;
@@ -43,9 +44,7 @@ async function readResource(path: string): Promise<SharedHttpResult> {
       cache: 'no-store',
     });
     const body: unknown = await response.json().catch(() => null);
-    const code = typeof body === 'object' && body !== null && 'error' in body &&
-      typeof body.error === 'object' && body.error !== null && 'code' in body.error &&
-      typeof body.error.code === 'string' ? body.error.code : null;
+    const code = getApiErrorCode(body);
     return { ok: response.ok, status: response.status, body, code };
   } catch {
     return { ok: false, status: 0, body: null, code: 'network_error' };
