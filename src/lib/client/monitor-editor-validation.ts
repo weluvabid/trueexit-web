@@ -1,4 +1,6 @@
 import * as v from 'valibot';
+import { parseCronExpression } from 'cron-schedule';
+import cronstrue from 'cronstrue';
 import type { FieldPrimitive, MonitorEditorDraft, MonitorField } from './monitor-editor-state';
 import { formatMonitorCadence } from './monitor-format';
 
@@ -48,6 +50,18 @@ export function resolveMonitorCadence(draft: Pick<MonitorEditorDraft, 'cadenceMo
   const expression = draft.cronExpression.trim();
   const secondsMatch = expression.match(/^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*\s+\*$/);
   const minutesMatch = expression.match(/^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/);
+
+  // Parse with the cron library first, but deliberately keep TrueExit's narrower
+  // fixed-interval contract instead of accepting arbitrary valid cron schedules.
+  try {
+    parseCronExpression(expression);
+  } catch {
+    return {
+      ok: false,
+      error: 'Enter a valid cron expression using the supported fixed-interval format.',
+    };
+  }
+
   let seconds: number | null = null;
   if (secondsMatch) {
     const step = Number(secondsMatch[1]);
@@ -62,10 +76,17 @@ export function resolveMonitorCadence(draft: Pick<MonitorEditorDraft, 'cadenceMo
       error: 'Use a fixed-interval expression such as */30 * * * * * (seconds) or */5 * * * * (minutes). The minimum interval is 15 seconds.',
     };
   }
+
+  let description = `Every ${formatMonitorCadence(seconds)}`;
+  try {
+    description = cronstrue.toString(expression, { throwExceptionOnParseError: true });
+  } catch {
+    // The interval remains valid under the product-specific rules; keep a safe fallback.
+  }
   return {
     ok: true,
     seconds,
-    preview: `Every ${formatMonitorCadence(seconds)} · ${secondsMatch ? 'seconds-level cron' : 'minute-level cron'}`,
+    preview: `${description} · ${secondsMatch ? 'seconds-level cron' : 'minute-level cron'}`,
   };
 }
 

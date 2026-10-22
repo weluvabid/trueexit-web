@@ -32,6 +32,7 @@
   let attentionFilter: AttentionFilter = 'all';
   let monitorCursor: string | null = null;
   let evidenceCursor: string | null = null;
+  let evidenceFrom: string | null = null;
   let detailHasMore = false;
   let detailItems: Array<Record<string, unknown>> = [];
   let requestSequence = 0;
@@ -192,10 +193,10 @@
     detailError = '';
     try {
       const query = new URLSearchParams({ workspace_id: workspaceId, limit: '50', outcome: 'all' });
-      if (targetView === 'signals') {
-        const from = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        query.set('from', from.toISOString());
-      }
+      evidenceFrom = targetView === 'signals'
+        ? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+        : null;
+      if (evidenceFrom) query.set('from', evidenceFrom);
       const response = await fetchSharedGet(`/api/backend/evidence?${query}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
       if (!response.ok) throw new Error(messageForCode(null, response.status));
       const page = await response.json() as Page<Record<string, unknown>>;
@@ -209,6 +210,33 @@
       if (!disposed && sequence === detailSequence) loadingDetail = false;
     }
   }
+  async function loadMoreEvidence() {
+    if (!evidenceCursor || loadingDetail || (view !== 'evidence' && view !== 'signals')) return;
+    const sequence = ++detailSequence;
+    const workspaceId = selectedWorkspaceId;
+    const targetView = view;
+    const cursor = evidenceCursor;
+    loadingDetail = true;
+    detailError = '';
+    try {
+      const query = new URLSearchParams({ workspace_id: workspaceId, limit: '50', outcome: 'all', cursor });
+      if (evidenceFrom) query.set('from', evidenceFrom);
+      const response = await fetchSharedGet(`/api/backend/evidence?${query}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
+      if (!response.ok) throw new Error(messageForCode(null, response.status));
+      const page = await response.json() as Page<Record<string, unknown>>;
+      if (disposed || sequence !== detailSequence || workspaceId !== selectedWorkspaceId || view !== targetView) return;
+      detailItems = [...detailItems, ...(page.data ?? [])];
+      evidenceCursor = page.page?.next_cursor ?? null;
+      detailHasMore = !!evidenceCursor;
+    } catch (error) {
+      if (!disposed && sequence === detailSequence && workspaceId === selectedWorkspaceId && view === targetView) {
+        detailError = error instanceof Error ? error.message : 'Could not load more evidence activity.';
+      }
+    } finally {
+      if (!disposed && sequence === detailSequence) loadingDetail = false;
+    }
+  }
+
   function changeFilter(filter: AttentionFilter) {
     attentionFilter = filter;
     if (view === 'attention') { const url = new URL(window.location.href); if (filter === 'all') url.searchParams.delete('filter'); else url.searchParams.set('filter', filter); window.history.replaceState({}, '', url); detailItems = (dashboard?.attention_items ?? []).filter((x) => filter === 'all' || x.reason === filter).map((x) => x as unknown as Record<string, unknown>); }
@@ -274,7 +302,7 @@
         {#if view === 'attention'}<div class="dashboard-filter-chips dashboard-filter-chips--detail">{#each (['all','submission_rejected','evidence_overdue','health_signal'] as AttentionFilter[]) as filter}<button type="button" class:active={attentionFilter === filter} aria-pressed={attentionFilter === filter} on:click={() => changeFilter(filter)}>{filterLabels[filter]}</button>{/each}</div><div class="dashboard-detail-table-wrap"><table class="dashboard-detail-table"><thead><tr><th>Monitor</th><th>Reason</th><th>Last observed</th><th></th></tr></thead><tbody>{#each (dashboard.attention_items.filter((x) => attentionFilter === 'all' || x.reason === attentionFilter)) as item (`${item.monitor_id}-${item.reason}-${item.occurred_at ?? ''}`)}<tr><td><strong>{item.monitor_name}</strong></td><td>{reasonCopy[item.reason]?.title ?? 'Monitor needs review'}</td><td>{formatDate(item.occurred_at ?? item.last_valid_evidence_at)}</td><td><a href={`/monitors/${encodeURIComponent(item.monitor_id)}`}>Investigate →</a></td></tr>{/each}</tbody></table></div>{#if dashboard.attention_items.length === 0}<p class="dashboard-detail-empty">No attention items are currently reported.</p>{/if}
         {:else if loadingDetail}<div class="dashboard-detail-loading" aria-live="polite"><span class="dashboard-loader" aria-hidden="true"></span>Loading details…</div>{:else if detailError}<div class="dashboard-state dashboard-state--error" role="alert"><p>{detailError}</p><button class="dashboard-retry" type="button" on:click={() => view === 'monitors' ? loadMonitorDetail() : loadEvidenceDetail()}>Try again</button></div>
         {:else if view === 'monitors'}<div class="dashboard-detail-table-wrap"><table class="dashboard-detail-table"><thead><tr><th>Monitor</th><th>Status</th><th>Updated</th><th></th></tr></thead><tbody>{#each detailItems as item (String(item.id))}<tr><td><strong>{String(item.name ?? 'Monitor')}</strong></td><td><span class={`dashboard-status dashboard-status--${String(item.status)}`}>{String(item.status)}</span></td><td>{formatDate(String(item.updated_at ?? ''))}</td><td><a href={`/monitors/${encodeURIComponent(String(item.id))}`}>Open →</a></td></tr>{/each}</tbody></table></div>{#if detailHasMore}<button class="dashboard-view-all" type="button" disabled={loadingDetail} on:click={loadMoreMonitors}>Load more monitors →</button>{/if}
-        {:else}<div class="dashboard-detail-table-wrap"><table class="dashboard-detail-table"><thead><tr><th>Monitor</th><th>Outcome</th><th>Recorded</th><th>Evidence</th></tr></thead><tbody>{#each detailItems as item, i (`${String(item.id ?? item.event_id ?? i)}`)}<tr><td><strong>{String(item.monitor_name ?? item.monitor?.name ?? 'Monitor')}</strong></td><td>{String(item.outcome ?? item.event_type ?? 'Evidence recorded')}</td><td>{formatDate(String(item.created_at ?? item.occurred_at ?? ''))}</td><td>{String(item.id ?? item.evidence_id ?? '—')}</td></tr>{/each}</tbody></table></div>{#if detailItems.length === 0}<p class="dashboard-detail-empty">No evidence records are available in this view.</p>{/if}{#if detailHasMore}<p class="dashboard-detail-empty">More results are available; cursor pagination will be connected to this view with the evidence feed integration.</p>{/if}{/if}
+        {:else}<div class="dashboard-detail-table-wrap"><table class="dashboard-detail-table"><thead><tr><th>Monitor</th><th>Outcome</th><th>Recorded</th><th>Evidence</th></tr></thead><tbody>{#each detailItems as item, i (`${String(item.id ?? item.event_id ?? i)}`)}<tr><td><strong>{String(item.monitor_name ?? item.monitor?.name ?? 'Monitor')}</strong></td><td>{String(item.outcome ?? item.event_type ?? 'Evidence recorded')}</td><td>{formatDate(String(item.created_at ?? item.occurred_at ?? ''))}</td><td>{String(item.id ?? item.evidence_id ?? '—')}</td></tr>{/each}</tbody></table></div>{#if detailItems.length === 0}<p class="dashboard-detail-empty">No evidence records are available in this view.</p>{/if}{#if detailHasMore}<button class="dashboard-view-all" type="button" disabled={loadingDetail} on:click={loadMoreEvidence}>Load more evidence →</button>{/if}{/if}
       </div>
     {/if}
   {/if}

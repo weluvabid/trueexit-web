@@ -252,15 +252,16 @@
 
   async function showDetail(template: Template) {
     const current = ++detailSequence;
+    const targetWorkspaceId = workspaceId;
     detail = null; detailError = ''; detailLoading = true;
     try {
-      const response = await fetchSharedGet(`/api/backend/templates/${encodeURIComponent(template.id)}?workspace_id=${encodeURIComponent(workspaceId)}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
+      const response = await fetchSharedGet(`/api/backend/templates/${encodeURIComponent(template.id)}?workspace_id=${encodeURIComponent(targetWorkspaceId)}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
       const body = await response.json().catch(() => null) as Template | ApiError | null;
-      if (current !== detailSequence) return;
+      if (current !== detailSequence || workspaceId !== targetWorkspaceId) return;
       if (!response.ok) { detailError = templateErrorMessage(response.status, (body as ApiError | null)?.error?.code ?? null); return; }
       detail = body as Template;
     } catch {
-      if (current === detailSequence) detailError = templateErrorMessage(0, 'network_error');
+      if (current === detailSequence && workspaceId === targetWorkspaceId) detailError = templateErrorMessage(0, 'network_error');
     } finally {
       if (current === detailSequence) detailLoading = false;
     }
