@@ -66,10 +66,15 @@ function createUserPersister(userId: string): Persister {
 
 function startBrowserPersistence(queryClient: QueryClient): void {
   if (typeof window === 'undefined' || window.__trueExitQueryPersistenceStarted) return;
-  window.__trueExitQueryPersistenceStarted = true;
 
+  // Do not mark persistence as started until an authenticated identity exists.
+  // getSharedQueryClient() can be called on signed-out routes too; marking it
+  // started there would prevent persistence from starting after sign-in without
+  // a full document reload.
   const userId = getBrowserUserId();
   if (!userId) return;
+
+  window.__trueExitQueryPersistenceStarted = true;
 
   const previousUserId = (() => {
     try { return window.localStorage.getItem(PERSISTENCE_USER_MARKER); }
@@ -125,6 +130,14 @@ export async function clearPersistedQueryCache(): Promise<void> {
 
   try { window.localStorage.removeItem(PERSISTENCE_USER_MARKER); }
   catch { /* The next authenticated session still has a user-scoped key. */ }
+
+  // Allow the next authenticated identity to initialize a fresh persistence
+  // lifecycle in this document. Keep the restore promise settled so subsequent
+  // callers cannot wait on a stale restoration operation.
+  browserRestorePromise = Promise.resolve();
+  if (typeof window !== 'undefined') {
+    window.__trueExitQueryPersistenceStarted = false;
+  }
 }
 
 /**
