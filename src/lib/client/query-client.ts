@@ -1,6 +1,8 @@
 import { QueryClient } from '@tanstack/svelte-query';
+import type { Query } from '@tanstack/query-core';
 import {
-  persistQueryClient,
+  persistQueryClientRestore,
+  persistQueryClientSubscribe,
   type PersistedClient,
   type Persister,
 } from '@tanstack/query-persist-client-core';
@@ -9,6 +11,8 @@ import { del, get, set } from 'idb-keyval';
 const PERSISTENCE_VERSION = 'v1';
 const PERSISTENCE_MAX_AGE = 24 * 60 * 60 * 1_000;
 const PERSISTENCE_USER_MARKER = 'trueexit.query-cache-user';
+
+let browserRestorePromise: Promise<void> = Promise.resolve();
 
 const queryClientOptions = {
   defaultOptions: {
@@ -82,16 +86,24 @@ function startBrowserPersistence(queryClient: QueryClient): void {
   try { window.localStorage.setItem(PERSISTENCE_USER_MARKER, userId); }
   catch { /* Persistence can still work when localStorage is unavailable. */ }
 
-  persistQueryClient({
+  const persistenceOptions = {
     queryClient,
     persister,
     maxAge: PERSISTENCE_MAX_AGE,
     buster: PERSISTENCE_VERSION,
     dehydrateOptions: {
-      shouldDehydrateQuery: (query) =>
+      shouldDehydrateQuery: (query: Query) =>
         query.state.status === 'success' && isPersistableQuery(query.queryKey),
     },
-  });
+  };
+
+  // Restore first, then subscribe to cache changes. Callers can await this
+  // promise before deciding whether a page has any usable data to render.
+  browserRestorePromise = persistQueryClientRestore(persistenceOptions)
+    .catch(() => undefined)
+    .then(() => {
+      persistQueryClientSubscribe(persistenceOptions);
+    });
 }
 
 /** Clear both in-memory and persisted server state when signing out. */
@@ -116,4 +128,10 @@ export function getSharedQueryClient(): QueryClient {
   const client = (window.__trueExitQueryClient ??= new QueryClient(queryClientOptions));
   startBrowserPersistence(client);
   return client;
+}
+
+/** Resolve only after the browser cache has been restored (or restoration failed). */
+export async function waitForQueryCacheRestoration(): Promise<void> {
+  getSharedQueryClient();
+  await browserRestorePromise;
 }

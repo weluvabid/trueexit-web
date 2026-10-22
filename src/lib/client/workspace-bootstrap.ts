@@ -1,4 +1,4 @@
-import { getSharedQueryClient } from './query-client';
+import { getSharedQueryClient, waitForQueryCacheRestoration } from './query-client';
 import { getApiErrorCode } from './api-response';
 
 export interface CurrentUserContext {
@@ -53,23 +53,39 @@ async function readResource(path: string): Promise<SharedHttpResult> {
  * and page consumers deduplicate through query identity rather than a separate
  * document-level promise. The server still receives a fresh client per render.
  */
-export function loadWorkspaceBootstrap(): Promise<{
+export async function loadWorkspaceBootstrap(): Promise<{
   me: BootstrapResource<CurrentUserContext>;
   workspaces: BootstrapResource<WorkspacePage>;
 }> {
+  // Hydrate persisted data before deciding whether bootstrap must block the UI.
+  await waitForQueryCacheRestoration();
+
   const queryClient = getSharedQueryClient();
-  return Promise.all([
-    queryClient.fetchQuery({
-      queryKey: workspaceBootstrapKeys.me,
-      queryFn: () => readResource('/api/backend/me'),
-      staleTime: 30_000,
-    }),
-    queryClient.fetchQuery({
-      queryKey: workspaceBootstrapKeys.workspaces,
-      queryFn: () => readResource('/api/backend/workspaces?limit=50'),
-      staleTime: 30_000,
-    }),
-  ]).then(([me, workspaces]) => normalizeBootstrap(me, workspaces));
+  const meOptions = {
+    queryKey: workspaceBootstrapKeys.me,
+    queryFn: () => readResource('/api/backend/me'),
+    staleTime: 30_000,
+  };
+  const workspacesOptions = {
+    queryKey: workspaceBootstrapKeys.workspaces,
+    queryFn: () => readResource('/api/backend/workspaces?limit=50'),
+    staleTime: 30_000,
+  };
+
+  const cachedMe = queryClient.getQueryData<SharedHttpResult>(workspaceBootstrapKeys.me);
+  const cachedWorkspaces = queryClient.getQueryData<SharedHttpResult>(workspaceBootstrapKeys.workspaces);
+
+  // Use any restored successful response immediately. fetchQuery still performs
+  // stale revalidation, but its promise must not hold up the first render.
+  if (cachedMe) void queryClient.fetchQuery(meOptions).catch(() => undefined);
+  if (cachedWorkspaces) void queryClient.fetchQuery(workspacesOptions).catch(() => undefined);
+
+  const [me, workspaces] = await Promise.all([
+    cachedMe ?? queryClient.fetchQuery(meOptions),
+    cachedWorkspaces ?? queryClient.fetchQuery(workspacesOptions),
+  ]);
+
+  return normalizeBootstrap(me, workspaces);
 }
 
 function normalizeBootstrap(me: SharedHttpResult, workspaces: SharedHttpResult): {
