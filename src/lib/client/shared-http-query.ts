@@ -7,6 +7,21 @@ type CachedHttpResponse = {
   body: string;
 };
 
+class HttpResponseError extends Error {
+  constructor(readonly response: CachedHttpResponse) {
+    super(`GET request failed with status ${response.status}`);
+    this.name = 'HttpResponseError';
+  }
+}
+
+function toResponse(result: CachedHttpResponse): Response {
+  return new Response(result.body, {
+    status: result.status,
+    statusText: result.statusText,
+    headers: result.headers,
+  });
+}
+
 declare global {
   interface Window {
     /** A single browser QueryClient shared by independently hydrated page widgets. */
@@ -53,23 +68,29 @@ export async function fetchSharedGet(input: RequestInfo | URL, init: RequestInit
   const credentials = init.credentials ?? 'same-origin';
   const key = ['shared-http-get', method, url, credentials, [...headers.entries()].sort(([a], [b]) => a.localeCompare(b))] as const;
 
-  const result = await getSharedQueryClient().fetchQuery<CachedHttpResponse>({
-    queryKey: key,
-    staleTime: 1_500,
-    queryFn: async ({ signal }) => {
-      const response = await fetch(input, { ...init, method, headers, credentials, signal: init.signal ?? signal });
-      return {
-        status: response.status,
-        statusText: response.statusText,
-        headers: [...response.headers.entries()].filter(([name]) => !['content-encoding', 'content-length', 'transfer-encoding'].includes(name.toLowerCase())),
-        body: await response.text(),
-      };
-    },
-  });
-
-  return new Response(result.body, {
-    status: result.status,
-    statusText: result.statusText,
-    headers: result.headers,
-  });
+  try {
+    const result = await getSharedQueryClient().fetchQuery<CachedHttpResponse>({
+      queryKey: key,
+      staleTime: 1_500,
+      queryFn: async ({ signal }) => {
+        // The shared query owns the network request's AbortSignal. A component's
+        // signal must not cancel an in-flight request shared with other consumers.
+        const response = await fetch(input, { ...init, method, headers, credentials, signal });
+        const result: CachedHttpResponse = {
+          status: response.status,
+          statusText: response.statusText,
+          headers: [...response.headers.entries()].filter(([name]) => !['content-encoding', 'content-length', 'transfer-encoding'].includes(name.toLowerCase())),
+          body: await response.text(),
+        };
+        // HTTP errors are returned to callers but must not become fresh cached
+        // successes; otherwise a brief 401/5xx can suppress an immediate retry.
+        if (!response.ok) throw new HttpResponseError(result);
+        return result;
+      },
+    });
+    return toResponse(result);
+  } catch (error) {
+    if (error instanceof HttpResponseError) return toResponse(error.response);
+    throw error;
+  }
 }
