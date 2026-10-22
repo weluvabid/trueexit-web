@@ -3,7 +3,7 @@
   import { getSharedQueryClient } from '../lib/client/query-client';
   import { templateQueryKeys } from '../lib/client/template-queries';
   import { fetchTemplatePage, fetchTemplateDetail, TemplateQueryError } from '../lib/client/template-queries';
-  import { getApiErrorCode } from '../lib/client/api-response';
+  import { requestApi } from '../lib/client/api-client';
   import { can } from '../lib/client/permissions';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
@@ -21,7 +21,6 @@
     description: string; fields: FieldDefinition[]; version: number; created_at: string; updated_at: string;
   };
   type Page<T> = { data: T[]; page: { next_cursor: string | null } };
-  type ApiError = { error?: { code?: string }; request_id?: string };
   type DiscoveredField = FieldDefinition & { source_type?: string };
   type Mode = 'create' | 'edit';
 
@@ -74,11 +73,6 @@
   const selectedWorkspace = $derived(workspaces.find((item) => item.id === workspaceId) ?? null);
   const canManage = $derived(can(selectedWorkspace, 'templates.create'));
 
-
-  async function readError(response: Response): Promise<string> {
-    const body = await response.json().catch(() => null) as ApiError | null;
-    return templateErrorMessage(response.status, getApiErrorCode(body));
-  }
 
   function idempotencyHeaders(): HeadersInit {
     return { Accept: 'application/json', 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() };
@@ -176,13 +170,12 @@
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) { discoveryError = 'The sample payload must be a JSON object.'; return; }
     discovering = true;
     try {
-      const response = await fetch('/api/backend/templates/discover-fields', {
-        method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: idempotencyHeaders(),
+      const { response, body, code } = await requestApi('/api/backend/templates/discover-fields', {
+        method: 'POST', headers: idempotencyHeaders(),
         body: JSON.stringify({ workspace_id: targetWorkspaceId, payload }),
       });
-      const body = await response.json().catch(() => null) as { fields?: DiscoveredField[]; warnings?: { code: string }[] } | ApiError | null;
       if (current !== discoverySequence || !formOpen || workspaceId !== targetWorkspaceId || samplePayload !== targetSamplePayload) return;
-      if (!response.ok) { discoveryError = templateErrorMessage(response.status, (body as ApiError | null)?.error?.code ?? null); return; }
+      if (!response.ok) { discoveryError = templateErrorMessage(response.status, code); return; }
       const result = body as { fields?: DiscoveredField[]; warnings?: { code: string }[] };
       discovered = Array.isArray(result.fields) ? result.fields : [];
       discoveryWarnings = (result.warnings ?? []).map((warning) => warning.code);
@@ -233,12 +226,12 @@
     };
     saving = true;
     try {
-      const response = targetMode === 'create'
-        ? await fetch('/api/backend/templates', { method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: idempotencyHeaders(), body: JSON.stringify(payload) })
-        : await fetch(`/api/backend/templates/${encodeURIComponent(targetTemplate!.id)}`, { method: 'PATCH', credentials: 'same-origin', cache: 'no-store', headers: idempotencyHeaders(), body: JSON.stringify({ ...payload, expected_version: targetTemplate!.version }) });
+      const { response, code } = targetMode === 'create'
+        ? await requestApi('/api/backend/templates', { method: 'POST', headers: idempotencyHeaders(), body: JSON.stringify(payload) })
+        : await requestApi(`/api/backend/templates/${encodeURIComponent(targetTemplate!.id)}`, { method: 'PATCH', headers: idempotencyHeaders(), body: JSON.stringify({ ...payload, expected_version: targetTemplate!.version }) });
       if (operation !== mutationSequence) return;
       if (!response.ok) {
-        const message = await readError(response);
+        const message = templateErrorMessage(response.status, code);
         if (operation === mutationSequence) formError = message;
         return;
       }
@@ -292,10 +285,10 @@
     saving = true;
     formError = '';
     try {
-      const response = await fetch(`/api/backend/templates/${encodeURIComponent(target.id)}?workspace_id=${encodeURIComponent(targetWorkspaceId)}`, { method: 'DELETE', credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json', 'Idempotency-Key': crypto.randomUUID() } });
+      const { response, code } = await requestApi(`/api/backend/templates/${encodeURIComponent(target.id)}?workspace_id=${encodeURIComponent(targetWorkspaceId)}`, { method: 'DELETE', headers: { 'Idempotency-Key': crypto.randomUUID() } });
       if (operation !== mutationSequence) return;
       if (!response.ok) {
-        const message = await readError(response);
+        const message = templateErrorMessage(response.status, code);
         if (operation === mutationSequence) formError = message;
         return;
       }

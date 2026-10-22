@@ -1,5 +1,6 @@
 import { getSharedQueryClient } from './query-client';
 import { getApiErrorCode, getApiList } from './api-response';
+import { requestApi } from './api-client';
 
 export const listSettingsData = getApiList;
 
@@ -91,8 +92,7 @@ export async function requestSettingsApi(
         queryKey: settingsReadKey(path),
         staleTime: 30_000,
         queryFn: async ({ signal }): Promise<CachedSettingsResponse> => {
-          const response = await fetch(`/api/backend${path}`, { ...requestInit, signal });
-          const body = response.status === 204 ? null : await response.json().catch(() => null);
+          const { response, body } = await requestApi(`/api/backend${path}`, { ...requestInit, signal });
           const result = { status: response.status, body };
           // HTTP failures must remain failed queries; otherwise TanStack caches
           // an authorization or server error as a successful read.
@@ -109,8 +109,7 @@ export async function requestSettingsApi(
     }
   }
 
-  const response = await fetch(`/api/backend${path}`, requestInit);
-  const body = response.status === 204 ? null : await response.json().catch(() => null);
+  const { response, body } = await requestApi(`/api/backend${path}`, requestInit);
   if (!['GET', 'HEAD'].includes(method) && response.ok) {
     await invalidateSettingsAfterMutation(path);
   }

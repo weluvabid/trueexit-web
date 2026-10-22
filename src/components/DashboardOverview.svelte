@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import { createQuery } from '@tanstack/svelte-query';
   import { getSharedQueryClient } from '../lib/client/query-client';
+  import { requestApi } from '../lib/client/api-client';
   import { dashboardQueryOptions, dashboardQueryErrorMessage, type DashboardResponse } from '../lib/client/dashboard-queries';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
@@ -96,13 +97,7 @@
       queryKey: ['dashboard-page', workspaceId, resource, queryIdentity] as const,
       staleTime: 15_000,
       queryFn: async ({ signal }) => {
-        const response = await fetch(`/api/backend/${resource}?${params.toString()}`, {
-          headers: { Accept: 'application/json' },
-          credentials: 'same-origin',
-          cache: 'no-store',
-          signal,
-        });
-        const body: unknown = await response.json().catch(() => null);
+        const { response, body } = await requestApi(`/api/backend/${resource}?${params.toString()}`, { signal });
         if (!response.ok) throw new Error(messageForCode(null, response.status));
         return body as Page<T>;
       },

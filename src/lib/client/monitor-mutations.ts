@@ -1,4 +1,4 @@
-import { getApiErrorCode } from './api-response';
+import { requestApi } from './api-client';
 import type { QueryClient } from '@tanstack/svelte-query';
 import { monitorQueryKeys, monitorResourceQueryKeys } from './monitor-queries';
 
@@ -25,22 +25,18 @@ async function sendMonitorMutation(
   requestBody: string,
   idempotencyKey: string,
 ): Promise<MonitorMutationResult> {
-  const response = await fetch(url, {
+  const { response, body, code } = await requestApi(url, {
     method,
-    credentials: 'same-origin',
-    cache: 'no-store',
     headers: {
-      Accept: 'application/json',
       'Content-Type': 'application/json',
       'Idempotency-Key': idempotencyKey,
     },
     body: requestBody,
   });
-  const body: unknown = await response.json().catch(() => null);
   return {
     ok: response.ok,
     status: response.status,
-    code: getApiErrorCode(body),
+    code,
     body,
   };
 }
@@ -123,23 +119,17 @@ export function tagMonitorMutationOptions(queryClient: QueryClient) {
 export function lifecycleMonitorMutationOptions(queryClient: QueryClient) {
   return {
     mutationFn: async (variables: LifecycleMonitorVariables): Promise<MonitorMutationResult> => {
-      const response = await fetch(
+      const { response, body, code } = await requestApi(
         `/api/backend/monitors/${encodeURIComponent(variables.monitorId)}/${variables.action}?workspace_id=${encodeURIComponent(variables.workspaceId)}`,
         {
           method: 'POST',
-          credentials: 'same-origin',
-          cache: 'no-store',
-          headers: {
-            Accept: 'application/json',
-            'Idempotency-Key': variables.idempotencyKey,
-          },
+          headers: { 'Idempotency-Key': variables.idempotencyKey },
         },
       );
-      const body: unknown = await response.json().catch(() => null);
       return {
         ok: response.ok,
         status: response.status,
-        code: getApiErrorCode(body),
+        code,
         body,
       };
     },

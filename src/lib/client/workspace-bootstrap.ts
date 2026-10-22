@@ -1,5 +1,5 @@
 import { getSharedQueryClient, waitForQueryCacheRestoration } from './query-client';
-import { getApiErrorCode } from './api-response';
+import { requestApi } from './api-client';
 
 export interface CurrentUserContext {
   user_id: string;
@@ -34,14 +34,7 @@ const workspaceBootstrapKeys = {
 
 async function readResource(path: string): Promise<SharedHttpResult> {
   try {
-    const response = await fetch(path, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      credentials: 'same-origin',
-      cache: 'no-store',
-    });
-    const body: unknown = await response.json().catch(() => null);
-    const code = getApiErrorCode(body);
+    const { response, body, code } = await requestApi(path);
     return { ok: response.ok, status: response.status, body, code };
   } catch {
     return { ok: false, status: 0, body: null, code: 'network_error' };

@@ -1,4 +1,4 @@
-import { getApiErrorCode } from './api-response';
+import { requestApi } from './api-client';
 
 export type DashboardSummary = {
   active_monitors: number;
@@ -52,19 +52,12 @@ export function dashboardQueryOptions(workspaceId: string) {
     enabled: Boolean(workspaceId),
     staleTime: 30_000,
     queryFn: async ({ signal }: { signal: AbortSignal }): Promise<DashboardResponse> => {
-      const response = await fetch(
+      const { response, body, code } = await requestApi(
         `/api/backend/workspaces/${encodeURIComponent(workspaceId)}/dashboard`,
-        {
-          headers: { Accept: 'application/json' },
-          credentials: 'same-origin',
-          cache: 'no-store',
-          signal,
-        },
+        { signal },
       );
-      const body: unknown = await response.json().catch(() => null);
       if (!response.ok) {
         const status = response.status;
-        const code = getApiErrorCode(body);
         throw new DashboardQueryError(dashboardErrorMessage(status, code), status, code);
       }
       return body as DashboardResponse;

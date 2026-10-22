@@ -1,6 +1,6 @@
 import { getSharedQueryClient } from './query-client';
+import { requestApi } from './api-client';
 
-export type ApiFailure = { error?: { code?: string }; request_id?: string };
 export type Resource<T> = { ok: true; data: T } | { ok: false; status: number; code: string | null };
 
 export function getInvestigationErrorMessage(status: number, code: string | null): string {
@@ -24,16 +24,8 @@ export async function readInvestigationResource<T>(path: string): Promise<Resour
       staleTime: 15_000,
       retry: false,
       queryFn: async ({ signal }): Promise<T> => {
-        const response = await fetch(path, {
-          headers: { Accept: 'application/json' },
-          credentials: 'same-origin',
-          cache: 'no-store',
-          signal,
-        });
-        const body: unknown = await response.json().catch(() => null);
+        const { response, body, code } = await requestApi(path, { signal });
         if (!response.ok) {
-          const error = body as ApiFailure | null;
-          const code = error?.error?.code ?? null;
           throw new InvestigationQueryError(
             getInvestigationErrorMessage(response.status, code),
             response.status,
@@ -83,16 +75,8 @@ export function investigationResourceQueryOptions<T>(
     enabled: Boolean(workspaceId && monitorId),
     staleTime: 30_000,
     queryFn: async ({ signal }: { signal: AbortSignal }): Promise<T> => {
-      const response = await fetch(queryPath, {
-        headers: { Accept: 'application/json' },
-        credentials: 'same-origin',
-        cache: 'no-store',
-        signal,
-      });
-      const body: unknown = await response.json().catch(() => null);
+      const { response, body, code } = await requestApi(queryPath, { signal });
       if (!response.ok) {
-        const error = body as ApiFailure | null;
-        const code = error?.error?.code ?? null;
         throw new InvestigationQueryError(
           getInvestigationErrorMessage(response.status, code),
           response.status,

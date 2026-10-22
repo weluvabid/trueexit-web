@@ -1,4 +1,5 @@
-import { getApiErrorCode, getApiList } from './api-response';
+import { getApiList } from './api-response';
+import { isAbortError, requestApi } from './api-client';
 
 export class MonitorQueryError extends Error {
   readonly status: number;
@@ -87,14 +88,7 @@ export async function fetchMonitorPage<TMonitor>(
   if (query.includeArchived || query.status === 'archived') params.set('include_archived', 'true');
   if (query.cursor) params.set('cursor', query.cursor);
 
-  const response = await fetch(`/api/backend/monitors?${params.toString()}`, {
-    headers: { Accept: 'application/json' },
-    credentials: 'same-origin',
-    cache: 'no-store',
-    signal,
-  });
-  const body: unknown = await response.json().catch(() => null);
-  const code = getApiErrorCode(body);
+  const { response, body, code } = await requestApi(`/api/backend/monitors?${params.toString()}`, { signal });
 
   if (!response.ok) {
     return { ok: false, status: response.status, code, page: null };
@@ -134,14 +128,10 @@ export async function fetchMonitorTemplates(
   workspaceId: string,
   signal: AbortSignal,
 ): Promise<MonitorTemplatesResponse> {
-  const response = await fetch(`/api/backend/templates?workspace_id=${encodeURIComponent(workspaceId)}&limit=100`, {
-    headers: { Accept: 'application/json' },
-    credentials: 'same-origin',
-    cache: 'no-store',
-    signal,
-  });
-  const body: unknown = await response.json().catch(() => null);
-  const code = getApiErrorCode(body);
+  const { response, body, code } = await requestApi(
+    `/api/backend/templates?workspace_id=${encodeURIComponent(workspaceId)}&limit=100`,
+    { signal },
+  );
 
   if (!response.ok) return { ok: false, status: response.status, code, data: [] };
 
@@ -185,21 +175,15 @@ export type ApiResource<T> = {
 
 async function fetchApiResource<T>(url: string, signal: AbortSignal, parse: (body: unknown) => T): Promise<ApiResource<T>> {
   try {
-    const response = await fetch(url, {
-      headers: { Accept: 'application/json' },
-      credentials: 'same-origin',
-      cache: 'no-store',
-      signal,
-    });
-    const body: unknown = await response.json().catch(() => null);
+    const { response, body, code } = await requestApi(url, { signal });
     return {
       ok: response.ok,
       status: response.status,
-      code: getApiErrorCode(body),
+      code,
       data: response.ok ? parse(body) : parse(null),
     };
   } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') throw error;
+    if (isAbortError(error)) throw error;
     return { ok: false, status: 0, code: 'network_error', data: parse(null) };
   }
 }

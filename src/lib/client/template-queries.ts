@@ -1,4 +1,4 @@
-import { getApiErrorCode } from './api-response';
+import { isAbortError, requestApi } from './api-client';
 import { getSharedQueryClient } from './query-client';
 
 export type TemplatePage<T> = {
@@ -28,21 +28,17 @@ export const templateQueryKeys = {
 
 async function fetchTemplateResource<T>(url: string, signal: AbortSignal): Promise<T> {
   let response: Response;
+  let body: unknown;
+  let code: string | null;
   try {
-    response = await fetch(url, {
-      headers: { Accept: 'application/json' },
-      credentials: 'same-origin',
-      cache: 'no-store',
-      signal,
-    });
+    ({ response, body, code } = await requestApi(url, { signal }));
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') throw error;
+    if (isAbortError(error)) throw error;
     throw new TemplateQueryError(0, 'network_error');
   }
 
-  const body: unknown = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new TemplateQueryError(response.status, getApiErrorCode(body));
+    throw new TemplateQueryError(response.status, code);
   }
   return body as T;
 }
