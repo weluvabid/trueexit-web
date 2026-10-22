@@ -35,6 +35,9 @@
   let detailHasMore = false;
   let detailItems: Array<Record<string, unknown>> = [];
   let requestSequence = 0;
+  let detailSequence = 0;
+  let bootstrapSequence = 0;
+  let disposed = false;
 
   const reasonCopy: Record<string, { title: string; detail: string }> = {
     submission_rejected: { title: 'A submission was rejected', detail: 'Inspect the evidence to understand why it did not pass validation.' },
@@ -82,13 +85,13 @@
     try {
       const response = await fetchSharedGet(`/api/backend/workspaces/${encodeURIComponent(workspaceId)}/dashboard`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
       const body: unknown = await response.json().catch(() => null);
-      if (sequence !== requestSequence) return;
+      if (disposed || sequence !== requestSequence) return;
       if (!response.ok) { dashboardError = messageForCode(getApiErrorCode(body), response.status); return; }
       dashboard = body as DashboardResponse;
       // The dashboard endpoint is authoritative for enabled/disabled totals. Fetch a first monitor page for inventory and pagination.
       await loadMonitorPage(false, workspaceId, sequence);
-    } catch { if (sequence === requestSequence) dashboardError = messageForCode('network_error', 0); }
-    finally { if (sequence === requestSequence) loadingDashboard = false; }
+    } catch { if (!disposed && sequence === requestSequence) dashboardError = messageForCode('network_error', 0); }
+    finally { if (!disposed && sequence === requestSequence) loadingDashboard = false; }
   }
 
   async function loadMonitorPage(append = false, workspaceId = selectedWorkspaceId, parentSequence = requestSequence) {
@@ -96,23 +99,40 @@
     const query = new URLSearchParams({ workspace_id: workspaceId, limit: '50', sort: 'name', direction: 'asc' });
     if (cursor) query.set('cursor', cursor);
     const response = await fetchSharedGet(`/api/backend/monitors?${query}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
-    if (parentSequence !== requestSequence) return;
+    if (disposed || parentSequence !== requestSequence || workspaceId !== selectedWorkspaceId) return;
     if (!response.ok) return; // Summary remains usable if the optional inventory request fails.
     const page = await response.json() as Page<MonitorItem>;
+    if (disposed || parentSequence !== requestSequence || workspaceId !== selectedWorkspaceId) return;
     monitors = append ? [...monitors, ...(page.data ?? [])] : (page.data ?? []);
     monitorCursor = page.page?.next_cursor ?? null;
   }
   async function bootstrap() {
-    bootstrapping = true; bootstrapError = '';
-    const result = await loadWorkspaceBootstrap();
-    if (!result.workspaces.ok) { bootstrapError = messageForCode(result.workspaces.code, result.workspaces.status); bootstrapping = false; return; }
-    workspaces = result.workspaces.data.data;
-    const personalId = result.me.ok ? result.me.data.personal_workspace_id : null;
-    const initial = workspaces.find((w) => w.id === personalId) ?? workspaces[0];
-    bootstrapping = false;
-    if (initial) await loadDashboard(initial.id);
+    const sequence = ++bootstrapSequence;
+    bootstrapping = true;
+    bootstrapError = '';
+    try {
+      const result = await loadWorkspaceBootstrap();
+      if (disposed || sequence !== bootstrapSequence) return;
+      if (!result.workspaces.ok) {
+        bootstrapError = messageForCode(result.workspaces.code, result.workspaces.status);
+        bootstrapping = false;
+        return;
+      }
+      workspaces = result.workspaces.data.data;
+      const personalId = result.me.ok ? result.me.data.personal_workspace_id : null;
+      const initial = workspaces.find((w) => w.id === personalId) ?? workspaces[0];
+      bootstrapping = false;
+      if (initial) await loadDashboard(initial.id);
+    } catch {
+      if (!disposed && sequence === bootstrapSequence) {
+        bootstrapError = messageForCode('network_error', 0);
+        bootstrapping = false;
+      }
+    }
   }
   function openView(next: View) {
+    detailSequence += 1;
+    loadingDetail = false;
     view = next; detailError = ''; detailItems = []; detailHasMore = false;
     const url = new URL(window.location.href);
     if (next === 'overview') { url.searchParams.delete('overview'); url.searchParams.delete('filter'); window.history.pushState({}, '', url); return; }
@@ -124,39 +144,70 @@
     if (next === 'attention') detailItems = (dashboard?.attention_items ?? []).map((x) => x as unknown as Record<string, unknown>);
   }
   async function loadMonitorDetail() {
-    loadingDetail = true; detailError = '';
+    const sequence = ++detailSequence;
+    const workspaceId = selectedWorkspaceId;
+    loadingDetail = true;
+    detailError = '';
     try {
-      const query = new URLSearchParams({ workspace_id: selectedWorkspaceId, limit: '50', sort: 'name', direction: 'asc' });
+      const query = new URLSearchParams({ workspace_id: workspaceId, limit: '50', sort: 'name', direction: 'asc' });
       const response = await fetchSharedGet(`/api/backend/monitors?${query}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
       if (!response.ok) throw new Error(messageForCode(null, response.status));
       const page = await response.json() as Page<MonitorItem>;
-      detailItems = (page.data ?? []).map((x) => x as unknown as Record<string, unknown>); monitorCursor = page.page?.next_cursor ?? null; detailHasMore = !!monitorCursor;
-    } catch (error) { detailError = error instanceof Error ? error.message : 'Could not load monitors.'; }
-    finally { loadingDetail = false; }
+      if (disposed || sequence !== detailSequence || workspaceId !== selectedWorkspaceId || view !== 'monitors') return;
+      detailItems = (page.data ?? []).map((x) => x as unknown as Record<string, unknown>);
+      monitorCursor = page.page?.next_cursor ?? null;
+      detailHasMore = !!monitorCursor;
+    } catch (error) {
+      if (!disposed && sequence === detailSequence && workspaceId === selectedWorkspaceId) detailError = error instanceof Error ? error.message : 'Could not load monitors.';
+    } finally {
+      if (!disposed && sequence === detailSequence) loadingDetail = false;
+    }
   }
   async function loadMoreMonitors() {
     if (!monitorCursor || loadingDetail) return;
+    const sequence = ++detailSequence;
+    const workspaceId = selectedWorkspaceId;
+    const cursor = monitorCursor;
     loadingDetail = true;
     try {
-      const query = new URLSearchParams({ workspace_id: selectedWorkspaceId, limit: '50', sort: 'name', direction: 'asc', cursor: monitorCursor });
+      const query = new URLSearchParams({ workspace_id: workspaceId, limit: '50', sort: 'name', direction: 'asc', cursor });
       const response = await fetchSharedGet(`/api/backend/monitors?${query}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
       if (!response.ok) throw new Error('Could not load the next page.');
       const page = await response.json() as Page<MonitorItem>;
-      detailItems = [...detailItems, ...(page.data ?? []).map((x) => x as unknown as Record<string, unknown>)]; monitorCursor = page.page?.next_cursor ?? null; detailHasMore = !!monitorCursor;
-    } catch (error) { detailError = error instanceof Error ? error.message : 'Could not load more monitors.'; }
-    finally { loadingDetail = false; }
+      if (disposed || sequence !== detailSequence || workspaceId !== selectedWorkspaceId || view !== 'monitors') return;
+      detailItems = [...detailItems, ...(page.data ?? []).map((x) => x as unknown as Record<string, unknown>)];
+      monitorCursor = page.page?.next_cursor ?? null;
+      detailHasMore = !!monitorCursor;
+    } catch (error) {
+      if (!disposed && sequence === detailSequence && workspaceId === selectedWorkspaceId) detailError = error instanceof Error ? error.message : 'Could not load more monitors.';
+    } finally {
+      if (!disposed && sequence === detailSequence) loadingDetail = false;
+    }
   }
   async function loadEvidenceDetail() {
-    loadingDetail = true; detailError = '';
+    const sequence = ++detailSequence;
+    const workspaceId = selectedWorkspaceId;
+    const targetView = view;
+    loadingDetail = true;
+    detailError = '';
     try {
-      const query = new URLSearchParams({ workspace_id: selectedWorkspaceId, limit: '50', outcome: 'all' });
-      if (view === 'signals') { const from = new Date(Date.now() - 24 * 60 * 60 * 1000); query.set('from', from.toISOString()); }
+      const query = new URLSearchParams({ workspace_id: workspaceId, limit: '50', outcome: 'all' });
+      if (targetView === 'signals') {
+        const from = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        query.set('from', from.toISOString());
+      }
       const response = await fetchSharedGet(`/api/backend/evidence?${query}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
       if (!response.ok) throw new Error(messageForCode(null, response.status));
       const page = await response.json() as Page<Record<string, unknown>>;
-      detailItems = page.data ?? []; evidenceCursor = page.page?.next_cursor ?? null; detailHasMore = !!evidenceCursor;
-    } catch (error) { detailError = error instanceof Error ? error.message : 'Could not load evidence activity.'; }
-    finally { loadingDetail = false; }
+      if (disposed || sequence !== detailSequence || workspaceId !== selectedWorkspaceId || view !== targetView) return;
+      detailItems = page.data ?? [];
+      evidenceCursor = page.page?.next_cursor ?? null;
+      detailHasMore = !!evidenceCursor;
+    } catch (error) {
+      if (!disposed && sequence === detailSequence && workspaceId === selectedWorkspaceId) detailError = error instanceof Error ? error.message : 'Could not load evidence activity.';
+    } finally {
+      if (!disposed && sequence === detailSequence) loadingDetail = false;
+    }
   }
   function changeFilter(filter: AttentionFilter) {
     attentionFilter = filter;
@@ -168,8 +219,8 @@
     const filter = url.searchParams.get('filter') as AttentionFilter | null;
     if (filter && filter in filterLabels) attentionFilter = filter;
     void bootstrap();
-    const pop = () => { const u = new URL(window.location.href); const requestedView = u.searchParams.get('overview') as View | null; view = requestedView && ['attention','signals','monitors','evidence'].includes(requestedView) ? requestedView : 'overview'; if (view === 'monitors') void loadMonitorDetail(); if (view === 'signals' || view === 'evidence') void loadEvidenceDetail(); };
-    window.addEventListener('popstate', pop); return () => window.removeEventListener('popstate', pop);
+    const pop = () => { detailSequence += 1; loadingDetail = false; const u = new URL(window.location.href); const requestedView = u.searchParams.get('overview') as View | null; view = requestedView && ['attention','signals','monitors','evidence'].includes(requestedView) ? requestedView : 'overview'; if (view === 'monitors') void loadMonitorDetail(); if (view === 'signals' || view === 'evidence') void loadEvidenceDetail(); };
+    window.addEventListener('popstate', pop); return () => { disposed = true; requestSequence += 1; detailSequence += 1; bootstrapSequence += 1; window.removeEventListener('popstate', pop); };
   });
 </script>
 
