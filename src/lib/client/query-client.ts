@@ -1,13 +1,23 @@
 import { QueryClient } from '@tanstack/svelte-query';
+import {
+  persistQueryClient,
+  type PersistedClient,
+  type Persister,
+} from '@tanstack/query-persist-client-core';
+import { del, get, set } from 'idb-keyval';
+
+const PERSISTENCE_VERSION = 'v1';
+const PERSISTENCE_MAX_AGE = 24 * 60 * 60 * 1_000;
+const PERSISTENCE_USER_MARKER = 'trueexit.query-cache-user';
 
 const queryClientOptions = {
   defaultOptions: {
     queries: {
-      // Preserve TrueExit's existing no-automatic-retry behavior while query
-      // functions and resource-specific freshness policies are migrated.
+      // Preserve TrueExit's existing no-automatic-retry behavior.
       retry: false,
       staleTime: 1_500,
-      gcTime: 60_000,
+      // TanStack requires gcTime to be at least as long as persisted maxAge.
+      gcTime: PERSISTENCE_MAX_AGE,
       refetchOnWindowFocus: false,
     },
   },
@@ -17,20 +27,93 @@ declare global {
   interface Window {
     /** Shared only by independently hydrated browser islands in this document. */
     __trueExitQueryClient?: QueryClient;
+    __trueExitQueryPersistenceStarted?: boolean;
   }
+}
+
+function isPersistableQuery(queryKey: readonly unknown[]): boolean {
+  const [family, resource] = queryKey;
+
+  // Persist only compact, read-only resources that improve return visits.
+  // Exclude settings/member data, search results, investigation details,
+  // mutation state, and any query family not explicitly listed here.
+  if (family === 'dashboard') return resource === 'overview';
+  if (family === 'monitors') return resource === 'list';
+  if (family === 'templates') return resource === 'list' || resource === 'detail';
+  if (family === 'workspace-bootstrap') return resource === 'me' || resource === 'workspaces';
+  return false;
+}
+
+function getBrowserUserId(): string | null {
+  if (typeof document === 'undefined') return null;
+  const userId = document.querySelector('[data-query-cache-user]')?.getAttribute('data-query-cache-user');
+  return userId?.trim() || null;
+}
+
+function createUserPersister(userId: string): Persister {
+  const storageKey = `trueexit.query-cache.${PERSISTENCE_VERSION}.${encodeURIComponent(userId)}`;
+  return {
+    persistClient: async (client: PersistedClient) => set(storageKey, client),
+    restoreClient: async () => (await get<PersistedClient | undefined>(storageKey)) ?? undefined,
+    removeClient: async () => del(storageKey),
+  };
+}
+
+function startBrowserPersistence(queryClient: QueryClient): void {
+  if (typeof window === 'undefined' || window.__trueExitQueryPersistenceStarted) return;
+  window.__trueExitQueryPersistenceStarted = true;
+
+  const userId = getBrowserUserId();
+  if (!userId) return;
+
+  const previousUserId = (() => {
+    try { return window.localStorage.getItem(PERSISTENCE_USER_MARKER); }
+    catch { return null; }
+  })();
+
+  const persister = createUserPersister(userId);
+
+  // A browser session that changes identity must not retain the previous
+  // account's in-memory cache. Its IndexedDB record is removed as well.
+  if (previousUserId && previousUserId !== userId) {
+    queryClient.clear();
+    void createUserPersister(previousUserId).removeClient().catch(() => undefined);
+  }
+  try { window.localStorage.setItem(PERSISTENCE_USER_MARKER, userId); }
+  catch { /* Persistence can still work when localStorage is unavailable. */ }
+
+  persistQueryClient({
+    queryClient,
+    persister,
+    maxAge: PERSISTENCE_MAX_AGE,
+    buster: PERSISTENCE_VERSION,
+    dehydrateOptions: {
+      shouldDehydrateQuery: (query) =>
+        query.state.status === 'success' && isPersistableQuery(query.queryKey),
+    },
+  });
+}
+
+/** Clear both in-memory and persisted server state when signing out. */
+export async function clearPersistedQueryCache(): Promise<void> {
+  const queryClient = getSharedQueryClient();
+  queryClient.clear();
+
+  const userId = getBrowserUserId();
+  if (userId) await createUserPersister(userId).removeClient().catch(() => undefined);
+
+  try { window.localStorage.removeItem(PERSISTENCE_USER_MARKER); }
+  catch { /* The next authenticated session still has a user-scoped key. */ }
 }
 
 /**
  * Return the document-wide browser client, or a fresh client during SSR.
  * Server renders must never share user-specific query data between requests.
- *
- * QueryClient ownership lives here independently of the temporary shared HTTP
- * cache so resource queries can migrate without depending on that cache module.
  */
 export function getSharedQueryClient(): QueryClient {
-  if (typeof window === 'undefined') {
-    return new QueryClient(queryClientOptions);
-  }
+  if (typeof window === 'undefined') return new QueryClient(queryClientOptions);
 
-  return (window.__trueExitQueryClient ??= new QueryClient(queryClientOptions));
+  const client = (window.__trueExitQueryClient ??= new QueryClient(queryClientOptions));
+  startBrowserPersistence(client);
+  return client;
 }

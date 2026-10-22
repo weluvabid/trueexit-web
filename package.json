@@ -26,7 +26,9 @@
     "cronstrue": "^3.37.0",
     "svelte": "^5.57.2",
     "tailwindcss": "^4.3.3",
-    "valibot": "^1.5.0"
+    "valibot": "^1.5.0",
+    "@tanstack/query-persist-client-core": "^5.104.5",
+    "idb-keyval": "^6.2.1"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",

@@ -37,7 +37,7 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
     </script>
     <title>{title} · TrueExit</title>
   </head>
-  <body>
+  <body data-query-cache-user={auth.user?.id ?? ''}>
     <a class="skip-link" href="#main-content">Skip to content</a>
     <div class="app-frame">
       <header class="app-header" data-app-header>
@@ -126,7 +126,7 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
 
     <script>
       import { loadWorkspaceBootstrap } from '../lib/client/workspace-bootstrap';
-      import { getSharedQueryClient } from '../lib/client/query-client';
+      import { clearPersistedQueryCache, getSharedQueryClient } from '../lib/client/query-client';
       import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
 
       (() => {
@@ -138,6 +138,14 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
         const workspaceMessage = document.querySelector('[data-workspace-message]');
         const accountTrigger = document.querySelector('[data-account-trigger]');
         const accountPanel = document.querySelector('[data-account-panel]');
+        const signOutLink = document.querySelector('.account-menu__item--signout');
+        signOutLink?.addEventListener('click', (event) => {
+          event.preventDefault();
+          const href = signOutLink.getAttribute('href');
+          void clearPersistedQueryCache().finally(() => {
+            if (href) window.location.assign(href);
+          });
+        });
         const searchDialog = document.querySelector('[data-search-dialog]');
         const searchInput = document.querySelector('[data-search-input]');
         const searchOpen = document.querySelector('[data-search-open]');
