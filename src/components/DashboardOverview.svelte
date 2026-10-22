@@ -1,46 +1,36 @@
+<svelte:options runes={true} />
 <script lang="ts">
-  import { fetchSharedGet } from '../lib/client/shared-http-query';
-  import { getApiErrorCode } from '../lib/client/api-response';
   import { onMount } from 'svelte';
+  import { createQuery } from '@tanstack/svelte-query';
+  import { getSharedQueryClient } from '../lib/client/query-client';
+  import { dashboardQueryOptions, dashboardQueryErrorMessage, type DashboardResponse } from '../lib/client/dashboard-queries';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
   import { formatDateTime } from '../lib/client/date-format';
 
-  type DashboardSummary = {
-    active_monitors: number; disabled_monitors: number; evidence_received_recently: number;
-    needs_attention: number; awaiting_first_evidence: number;
-    evidence_outcomes_24h: { accepted: number; rejected: number; total: number };
-    attention_conditions: { submission_rejected: number; evidence_overdue: number; health_signal: number };
-  };
-  type AttentionItem = { monitor_id: string; monitor_name: string; reason: string; severity: string; occurred_at: string | null; last_valid_evidence_at: string | null; action: { kind: string } };
-  type ActivityItem = { event_id: string; monitor_id: string; monitor_name: string; event_type: string; occurred_at: string };
-  type DashboardResponse = { generated_at: string; summary: DashboardSummary; attention_items: AttentionItem[]; recent_evidence_activity: ActivityItem[] };
   type MonitorItem = { id: string; name: string; status: 'enabled' | 'disabled' | 'archived'; cadence_seconds?: number; updated_at?: string };
   type Page<T> = { data: T[]; page?: { next_cursor: string | null } };
   type View = 'overview' | 'attention' | 'signals' | 'monitors' | 'evidence';
   type AttentionFilter = 'all' | 'submission_rejected' | 'evidence_overdue' | 'health_signal';
 
-  let workspaces: WorkspaceContext[] = [];
-  let selectedWorkspaceId = '';
-  let dashboard: DashboardResponse | null = null;
-  let monitors: MonitorItem[] = [];
-  let bootstrapping = true;
-  let loadingDashboard = false;
-  let loadingDetail = false;
-  let bootstrapError = '';
-  let dashboardError = '';
-  let detailError = '';
-  let view: View = 'overview';
-  let attentionFilter: AttentionFilter = 'all';
-  let monitorCursor: string | null = null;
-  let evidenceCursor: string | null = null;
-  let evidenceFrom: string | null = null;
-  let detailHasMore = false;
-  let detailItems: Array<Record<string, unknown>> = [];
-  let requestSequence = 0;
-  let detailSequence = 0;
-  let bootstrapSequence = 0;
-  let disposed = false;
+  let workspaces = $state<WorkspaceContext[]>([]);
+  let selectedWorkspaceId = $state('');
+  let monitors = $state<MonitorItem[]>([]);
+  let bootstrapping = $state(true);
+  let loadingDetail = $state(false);
+  let bootstrapError = $state('');
+  let detailError = $state('');
+  let view = $state<View>('overview');
+  let attentionFilter = $state<AttentionFilter>('all');
+  let monitorCursor = $state<string | null>(null);
+  let evidenceCursor = $state<string | null>(null);
+  let evidenceFrom = $state<string | null>(null);
+  let detailHasMore = $state(false);
+  let detailItems = $state<Array<Record<string, unknown>>>([]);
+  let requestSequence = $state(0);
+  let detailSequence = $state(0);
+  let bootstrapSequence = $state(0);
+  let disposed = $state(false);
 
   const reasonCopy: Record<string, { title: string; detail: string }> = {
     submission_rejected: { title: 'A submission was rejected', detail: 'Inspect the evidence to understand why it did not pass validation.' },
@@ -72,27 +62,31 @@
     const hours = Math.round(minutes / 60);
     return minutes < 1440 ? `In ${hours}h` : formatDate(value);
   }
-  $: filteredAttention = (dashboard?.attention_items ?? []).filter((item) => attentionFilter === 'all' || item.reason === attentionFilter).slice(0, 5);
-  $: monitorTotal = (dashboard?.summary.active_monitors ?? 0) + (dashboard?.summary.disabled_monitors ?? 0);
-  $: monitorCategoryTotal = (dashboard?.summary.active_monitors ?? 0) + (dashboard?.summary.disabled_monitors ?? 0) + (dashboard?.summary.needs_attention ?? 0);
-  $: emptyWorkspace = !!dashboard && monitorTotal === 0;
+  const queryClient = getSharedQueryClient();
+  const dashboardQuery = createQuery(() => dashboardQueryOptions(selectedWorkspaceId), () => queryClient);
+  const dashboard = $derived(dashboardQuery.data ?? null);
+  const loadingDashboard = $derived(Boolean(selectedWorkspaceId) && dashboardQuery.isPending);
+  const dashboardError = $derived(dashboardQuery.error && !dashboardQuery.data ? dashboardQueryErrorMessage(dashboardQuery.error) : '');
+  const filteredAttention = $derived((dashboard?.attention_items ?? []).filter((item) => attentionFilter === 'all' || item.reason === attentionFilter).slice(0, 5));
+  const monitorTotal = $derived((dashboard?.summary.active_monitors ?? 0) + (dashboard?.summary.disabled_monitors ?? 0));
+  const monitorCategoryTotal = $derived((dashboard?.summary.active_monitors ?? 0) + (dashboard?.summary.disabled_monitors ?? 0) + (dashboard?.summary.needs_attention ?? 0));
+  const emptyWorkspace = $derived(!!dashboard && monitorTotal === 0);
 
   async function loadDashboard(workspaceId: string) {
-    const sequence = ++requestSequence;
-    selectedWorkspaceId = workspaceId; writeActiveWorkspaceId(workspaceId); dashboard = null; monitors = []; dashboardError = ''; detailError = '';
-    view = 'overview'; detailItems = []; monitorCursor = null; evidenceCursor = null;
+    const changedWorkspace = selectedWorkspaceId !== workspaceId;
+    requestSequence += 1;
+    selectedWorkspaceId = workspaceId;
+    writeActiveWorkspaceId(workspaceId);
+    monitors = [];
+    detailError = '';
+    view = 'overview';
+    detailItems = [];
+    monitorCursor = null;
+    evidenceCursor = null;
     if (!workspaceId) return;
-    loadingDashboard = true;
-    try {
-      const response = await fetchSharedGet(`/api/backend/workspaces/${encodeURIComponent(workspaceId)}/dashboard`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
-      const body: unknown = await response.json().catch(() => null);
-      if (disposed || sequence !== requestSequence) return;
-      if (!response.ok) { dashboardError = messageForCode(getApiErrorCode(body), response.status); return; }
-      dashboard = body as DashboardResponse;
-      // The dashboard endpoint is authoritative for enabled/disabled totals. Fetch a first monitor page for inventory and pagination.
-      await loadMonitorPage(false, workspaceId, sequence);
-    } catch { if (!disposed && sequence === requestSequence) dashboardError = messageForCode('network_error', 0); }
-    finally { if (!disposed && sequence === requestSequence) loadingDashboard = false; }
+    if (!changedWorkspace) void dashboardQuery.refetch();
+    // Inventory is optional; the dashboard summary remains usable if it fails.
+    await loadMonitorPage(false, workspaceId, requestSequence);
   }
 
   async function loadMonitorPage(append = false, workspaceId = selectedWorkspaceId, parentSequence = requestSequence) {

@@ -34,3 +34,54 @@ export async function readInvestigationResource<T>(path: string): Promise<Resour
     return { ok: false, status: 0, code: 'network_error' };
   }
 }
+
+
+export class InvestigationQueryError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code: string | null,
+  ) {
+    super(message);
+    this.name = 'InvestigationQueryError';
+  }
+}
+
+export function investigationQueryErrorMessage(error: unknown): string {
+  if (error instanceof InvestigationQueryError) return error.message;
+  return getInvestigationErrorMessage(0, 'network_error');
+}
+
+export function investigationResourceQueryOptions<T>(
+  workspaceId: string,
+  monitorId: string,
+  resource: string,
+  path: string,
+  extra: Record<string, string> = {},
+) {
+  const queryPath = buildInvestigationApiPath(workspaceId, path, extra);
+  return {
+    queryKey: ['investigation', workspaceId, monitorId, resource, extra] as const,
+    enabled: Boolean(workspaceId && monitorId),
+    staleTime: 30_000,
+    queryFn: async ({ signal }: { signal: AbortSignal }): Promise<T> => {
+      const response = await fetch(queryPath, {
+        headers: { Accept: 'application/json' },
+        credentials: 'same-origin',
+        cache: 'no-store',
+        signal,
+      });
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        const error = body as ApiFailure | null;
+        const code = error?.error?.code ?? null;
+        throw new InvestigationQueryError(
+          getInvestigationErrorMessage(response.status, code),
+          response.status,
+          code,
+        );
+      }
+      return body as T;
+    },
+  };
+}

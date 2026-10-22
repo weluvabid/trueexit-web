@@ -1,9 +1,12 @@
+<svelte:options runes={true} />
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { createQuery } from '@tanstack/svelte-query';
+  import { getSharedQueryClient } from '../lib/client/query-client';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import '../styles/investigation.css';
   import { formatInvestigationDate, formatInvestigationValue, formatInvestigationLabel, getHealthCounts } from '../lib/client/investigation-format';
-  import { buildInvestigationApiPath, getInvestigationErrorMessage, readInvestigationResource, type Resource } from '../lib/client/investigation-api';
+  import { buildInvestigationApiPath, getInvestigationErrorMessage, readInvestigationResource, investigationResourceQueryOptions, investigationQueryErrorMessage, type Resource } from '../lib/client/investigation-api';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
 
   type Page<T> = { data: T[]; page?: { next_cursor: string | null } };
@@ -16,61 +19,51 @@
   type Evidence = { id: string; request_id: string; config_version: number; observed_at?: string | null; created_at?: string; fields?: Record<string, unknown>; reason?: { code: string; params?: unknown } };
   type Delivery = { request_id: string; monitor_id?: string; monitor_name?: string; mode?: string; evidence_outcome?: string; created_at?: string; updated_at?: string; status?: string; summary?: Record<string, unknown> };
 
-  export let monitorId: string;
+  let { monitorId }: { monitorId: string } = $props();
 
-  let workspaces: WorkspaceContext[] = [];
-  let workspaceId = '';
-  let monitor: Monitor | null = null;
-  let health: Record<string, any> | null = null;
-  let healthHistory: Page<Record<string, any>> | null = null;
-  let evidence: Page<Evidence> | null = null;
-  let badEvidence: Page<Evidence> | null = null;
-  let deliveries: Page<Delivery> | null = null;
-  let selectedEvidence: { kind: 'verified' | 'rejected'; id: string; detail: Record<string, any> } | null = null;
-  let selectedTrace: Record<string, any> | null = null;
-  let selectedDelivery: Record<string, any> | null = null;
-  let selectedHealthVersion: Record<string, any> | null = null;
-  let activeSection: 'evidence' | 'rejected' | 'deliveries' = 'evidence';
-  let bootLoading = true;
-  let monitorLoading = false;
-  let evidenceLoading = false;
-  let rejectedLoading = false;
-  let deliveriesLoading = false;
-  let healthLoading = false;
-  let healthHistoryLoading = false;
-  let detailLoading = false;
-  let traceLoading = false;
-  let healthVersionLoading = false;
-  let bootError = '';
-  let monitorError = '';
-  let healthError = '';
-  let healthHistoryError = '';
-  let evidenceError = '';
-  let rejectedError = '';
-  let deliveriesError = '';
-  let detailError = '';
-  let traceError = '';
-  let deliveryDetailError = '';
-  let healthVersionError = '';
-  let evidenceCursor: string | null = null;
-  let rejectedCursor: string | null = null;
-  let deliveryCursor: string | null = null;
-  let evidenceCursorStack: Array<string | null> = [null];
-  let rejectedCursorStack: Array<string | null> = [null];
-  let deliveryCursorStack: Array<string | null> = [null];
-  let evidencePageIndex = 0;
-  let rejectedPageIndex = 0;
-  let deliveryPageIndex = 0;
-  let disposed = false;
-  let requestGeneration = 0;
-  let workspaceGeneration = 0;
-  let verifiedEvidenceGeneration = 0;
-  let rejectedEvidenceGeneration = 0;
-  let deliveryListGeneration = 0;
-  let detailGeneration = 0;
-  let traceGeneration = 0;
-  let deliveryDetailGeneration = 0;
-  let healthVersionGeneration = 0;
+  let workspaces = $state<WorkspaceContext[]>([]);
+  let workspaceId = $state('');
+  let evidence = $state<Page<Evidence> | null>(null);
+  let badEvidence = $state<Page<Evidence> | null>(null);
+  let deliveries = $state<Page<Delivery> | null>(null);
+  let selectedEvidence = $state<{ kind: 'verified' | 'rejected'; id: string; detail: Record<string, any> } | null>(null);
+  let selectedTrace = $state<Record<string, any> | null>(null);
+  let selectedDelivery = $state<Record<string, any> | null>(null);
+  let selectedHealthVersion = $state<Record<string, any> | null>(null);
+  let activeSection = $state<'evidence' | 'rejected' | 'deliveries'>('evidence');
+  let bootLoading = $state(true);
+  let evidenceLoading = $state(false);
+  let rejectedLoading = $state(false);
+  let deliveriesLoading = $state(false);
+  let detailLoading = $state(false);
+  let traceLoading = $state(false);
+  let healthVersionLoading = $state(false);
+  let bootError = $state('');
+  let evidenceError = $state('');
+  let rejectedError = $state('');
+  let deliveriesError = $state('');
+  let detailError = $state('');
+  let traceError = $state('');
+  let deliveryDetailError = $state('');
+  let healthVersionError = $state('');
+  let evidenceCursor = $state<string | null>(null);
+  let rejectedCursor = $state<string | null>(null);
+  let deliveryCursor = $state<string | null>(null);
+  let evidenceCursorStack = $state<Array<string | null>>([null]);
+  let rejectedCursorStack = $state<Array<string | null>>([null]);
+  let deliveryCursorStack = $state<Array<string | null>>([null]);
+  let evidencePageIndex = $state(0);
+  let rejectedPageIndex = $state(0);
+  let deliveryPageIndex = $state(0);
+  let disposed = $state(false);
+  let workspaceGeneration = $state(0);
+  let verifiedEvidenceGeneration = $state(0);
+  let rejectedEvidenceGeneration = $state(0);
+  let deliveryListGeneration = $state(0);
+  let detailGeneration = $state(0);
+  let traceGeneration = $state(0);
+  let deliveryDetailGeneration = $state(0);
+  let healthVersionGeneration = $state(0);
 
   function apiPath(path: string, extra: Record<string, string> = {}): string {
     return buildInvestigationApiPath(workspaceId, path, extra);
@@ -83,33 +76,29 @@
   const formatValue = formatInvestigationValue;
   const label = formatInvestigationLabel;
   const healthCounts = getHealthCounts;
+  const queryClient = getSharedQueryClient();
+  const monitorQuery = createQuery(
+    () => investigationResourceQueryOptions<Monitor>(workspaceId, monitorId, 'monitor', `monitors/${encodeURIComponent(monitorId)}`),
+    () => queryClient,
+  );
+  const healthQuery = createQuery(
+    () => investigationResourceQueryOptions<Record<string, any>>(workspaceId, monitorId, 'health', `monitors/${encodeURIComponent(monitorId)}/health`),
+    () => queryClient,
+  );
+  const healthHistoryQuery = createQuery(
+    () => investigationResourceQueryOptions<Page<Record<string, any>>>(workspaceId, monitorId, 'health-history', `monitors/${encodeURIComponent(monitorId)}/health/history`, { limit: '20' }),
+    () => queryClient,
+  );
+  const monitor = $derived(monitorQuery.data ?? null);
+  const health = $derived(healthQuery.data ?? null);
+  const healthHistory = $derived(healthHistoryQuery.data ?? null);
+  const monitorLoading = $derived(Boolean(workspaceId) && monitorQuery.isPending);
+  const healthLoading = $derived(Boolean(workspaceId) && healthQuery.isPending);
+  const healthHistoryLoading = $derived(Boolean(workspaceId) && healthHistoryQuery.isPending);
+  const monitorError = $derived(monitorQuery.error && !monitorQuery.data ? investigationQueryErrorMessage(monitorQuery.error) : '');
+  const healthError = $derived(healthQuery.error && !healthQuery.data ? investigationQueryErrorMessage(healthQuery.error) : '');
+  const healthHistoryError = $derived(healthHistoryQuery.error && !healthHistoryQuery.data ? investigationQueryErrorMessage(healthHistoryQuery.error) : '');
 
-  async function loadMonitorContext() {
-    if (!workspaceId) return;
-    const generation = ++requestGeneration;
-    monitorLoading = true;
-    monitorError = '';
-    healthLoading = true;
-    healthError = '';
-    healthHistoryError = '';
-    healthHistoryLoading = true;
-    const id = encodeURIComponent(monitorId);
-    const [monitorResult, healthResult, historyResult] = await Promise.all([
-      readResource<Monitor>(apiPath(`monitors/${id}`)),
-      readResource<Record<string, any>>(apiPath(`monitors/${id}/health`)),
-      readResource<Page<Record<string, any>>>(apiPath(`monitors/${id}/health/history`, { limit: '20' })),
-    ]);
-    if (generation !== requestGeneration) return;
-    if (monitorResult.ok) monitor = monitorResult.data;
-    else { monitor = null; monitorError = messageFor(monitorResult.status, monitorResult.code); }
-    if (healthResult.ok) health = healthResult.data;
-    else { health = null; healthError = messageFor(healthResult.status, healthResult.code); }
-    if (historyResult.ok) healthHistory = historyResult.data;
-    else { healthHistory = null; healthHistoryError = messageFor(historyResult.status, historyResult.code); }
-    monitorLoading = false;
-    healthLoading = false;
-    healthHistoryLoading = false;
-  }
 
   async function loadEvidencePage(kind: 'verified' | 'rejected', cursor: string | null = null, pageIndex = 0) {
     if (!workspaceId) return;
@@ -266,7 +255,7 @@
       workspaceGeneration += 1;
       bootLoading = false;
       if (!workspaceId) { bootError = 'No workspace is available to inspect this monitor.'; return; }
-      await Promise.all([loadMonitorContext(), loadEvidencePage('verified'), loadEvidencePage('rejected'), loadDeliveryPage()]);
+      await Promise.all([loadEvidencePage('verified'), loadEvidencePage('rejected'), loadDeliveryPage()]);
     } catch {
       if (!disposed) {
         bootError = messageFor(0, 'network_error');
@@ -278,16 +267,15 @@
   async function changeWorkspace() {
     writeActiveWorkspaceId(workspaceId);
     workspaceGeneration += 1;
-    requestGeneration += 1;
     verifiedEvidenceGeneration += 1;
     rejectedEvidenceGeneration += 1;
     deliveryListGeneration += 1;
     clearSelectedRecords();
-    monitor = null; health = null; healthHistory = null; evidence = null; badEvidence = null; deliveries = null;
+    evidence = null; badEvidence = null; deliveries = null;
     evidenceCursor = null; rejectedCursor = null; deliveryCursor = null;
     evidenceCursorStack = [null]; rejectedCursorStack = [null]; deliveryCursorStack = [null];
     evidencePageIndex = 0; rejectedPageIndex = 0; deliveryPageIndex = 0;
-    await Promise.all([loadMonitorContext(), loadEvidencePage('verified'), loadEvidencePage('rejected'), loadDeliveryPage()]);
+    await Promise.all([loadEvidencePage('verified'), loadEvidencePage('rejected'), loadDeliveryPage()]);
   }
 
   function nextEvidence(kind: 'verified' | 'rejected') {
@@ -322,7 +310,6 @@
 
   onDestroy(() => {
     disposed = true;
-    requestGeneration += 1;
     workspaceGeneration += 1;
     verifiedEvidenceGeneration += 1;
     rejectedEvidenceGeneration += 1;
