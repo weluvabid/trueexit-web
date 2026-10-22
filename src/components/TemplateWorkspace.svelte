@@ -45,6 +45,7 @@
   let detailSequence = 0;
   let editSequence = 0;
   let discoverySequence = 0;
+  let mutationSequence = 0;
   let formOpen = false;
   let mode: Mode = 'create';
   let formTab: 'json' | 'fields' = 'json';
@@ -109,6 +110,7 @@
   }
 
   function openCreate() {
+    if (saving) return;
     editSequence += 1;
     discoverySequence += 1;
     discovering = false;
@@ -118,7 +120,7 @@
   }
 
   async function openEdit(template: Template) {
-    if (template.kind === 'built_in') return;
+    if (saving || template.kind === 'built_in') return;
     const current = ++editSequence;
     discoverySequence += 1;
     discovering = false;
@@ -191,21 +193,50 @@
 
 
   async function saveTemplate(event: SubmitEvent) {
-    event.preventDefault(); formError = ''; notice = '';
-    const validation = validateTemplateDraft({ name, description, fields }); if (validation) { formError = validation; return; }
+    event.preventDefault();
+    if (saving) return;
+    formError = ''; notice = '';
+    const validation = validateTemplateDraft({ name, description, fields });
+    if (validation) { formError = validation; return; }
     if (!canManage) { formError = 'You can view templates here, but only workspace managers can save them.'; return; }
+
+    // Snapshot the operation inputs. UI state must not change the target of an in-flight write.
+    const operation = ++mutationSequence;
+    const targetMode = mode;
+    const targetWorkspaceId = workspaceId;
+    const targetTemplate = editing ? { ...editing } : null;
+    if (targetMode === 'edit' && !targetTemplate) {
+      formError = 'The template being edited is no longer available. Close the editor and try again.';
+      return;
+    }
+    const payload = {
+      workspace_id: targetWorkspaceId,
+      name: name.trim(),
+      description: description.trim(),
+      fields: fields.filter((field) => field.name.trim() && field.path.trim()).map((field) => ({ ...field, name: field.name.trim(), path: field.path.trim() })),
+    };
     saving = true;
-    const payload = { workspace_id: workspaceId, name: name.trim(), description: description.trim(), fields: fields.filter((field) => field.name.trim() && field.path.trim()).map((field) => ({ ...field, name: field.name.trim(), path: field.path.trim() })) };
     try {
-      const response = mode === 'create'
+      const response = targetMode === 'create'
         ? await fetch('/api/backend/templates', { method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: idempotencyHeaders(), body: JSON.stringify(payload) })
-        : await fetch(`/api/backend/templates/${encodeURIComponent(editing!.id)}`, { method: 'PATCH', credentials: 'same-origin', cache: 'no-store', headers: idempotencyHeaders(), body: JSON.stringify({ ...payload, expected_version: editing!.version }) });
-      if (!response.ok) { formError = await readError(response); return; }
-      void invalidateSharedGetCache();
-      formOpen = false; notice = mode === 'create' ? 'Template created.' : 'Template updated.';
-      cursorStack = [null]; pageIndex = 0; await loadTemplates(null);
-    } catch { formError = templateErrorMessage(0, 'network_error'); }
-    finally { saving = false; }
+        : await fetch(`/api/backend/templates/${encodeURIComponent(targetTemplate!.id)}`, { method: 'PATCH', credentials: 'same-origin', cache: 'no-store', headers: idempotencyHeaders(), body: JSON.stringify({ ...payload, expected_version: targetTemplate!.version }) });
+      if (operation !== mutationSequence) return;
+      if (!response.ok) {
+        const message = await readError(response);
+        if (operation === mutationSequence) formError = message;
+        return;
+      }
+      await invalidateSharedGetCache();
+      if (operation !== mutationSequence) return;
+      formOpen = false;
+      notice = targetMode === 'create' ? 'Template created.' : 'Template updated.';
+      cursorStack = [null]; pageIndex = 0;
+      await loadTemplates(null);
+    } catch {
+      if (operation === mutationSequence) formError = templateErrorMessage(0, 'network_error');
+    } finally {
+      if (operation === mutationSequence) saving = false;
+    }
   }
 
   async function showDetail(template: Template) {
@@ -232,16 +263,32 @@
   }
 
   async function deleteTemplate() {
-    if (!pendingDelete || !canManage) return;
-    const target = pendingDelete; saving = true; formError = '';
+    if (saving || !pendingDelete || !canManage) return;
+    const operation = ++mutationSequence;
+    const target = { ...pendingDelete };
+    const targetWorkspaceId = workspaceId;
+    saving = true;
+    formError = '';
     try {
-      const response = await fetch(`/api/backend/templates/${encodeURIComponent(target.id)}?workspace_id=${encodeURIComponent(workspaceId)}`, { method: 'DELETE', credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json', 'Idempotency-Key': crypto.randomUUID() } });
-      if (!response.ok) { formError = await readError(response); return; }
-      void invalidateSharedGetCache();
-      pendingDelete = null; detail = null; notice = 'Template deleted. Existing monitors are unchanged.';
-      cursorStack = [null]; pageIndex = 0; await loadTemplates(null);
-    } catch { formError = templateErrorMessage(0, 'network_error'); }
-    finally { saving = false; }
+      const response = await fetch(`/api/backend/templates/${encodeURIComponent(target.id)}?workspace_id=${encodeURIComponent(targetWorkspaceId)}`, { method: 'DELETE', credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json', 'Idempotency-Key': crypto.randomUUID() } });
+      if (operation !== mutationSequence) return;
+      if (!response.ok) {
+        const message = await readError(response);
+        if (operation === mutationSequence) formError = message;
+        return;
+      }
+      await invalidateSharedGetCache();
+      if (operation !== mutationSequence) return;
+      pendingDelete = null;
+      detail = null;
+      notice = 'Template deleted. Existing monitors are unchanged.';
+      cursorStack = [null]; pageIndex = 0;
+      await loadTemplates(null);
+    } catch {
+      if (operation === mutationSequence) formError = templateErrorMessage(0, 'network_error');
+    } finally {
+      if (operation === mutationSequence) saving = false;
+    }
   }
 
   function runSearch() { cursorStack = [null]; pageIndex = 0; void loadTemplates(null); }
@@ -256,13 +303,23 @@
     formOpen = false;
   }
 
-  onMount(() => { void bootstrap(); return () => { if (searchTimer) clearTimeout(searchTimer); }; });
+  onMount(() => {
+    void bootstrap();
+    return () => {
+      if (searchTimer) clearTimeout(searchTimer);
+      sequence += 1;
+      detailSequence += 1;
+      editSequence += 1;
+      discoverySequence += 1;
+      mutationSequence += 1;
+    };
+  });
 </script>
 
 <section class="template-page" aria-labelledby="template-heading">
   <header class="template-page__header">
     <div><p class="template-eyebrow">REUSABLE FIELD DEFINITIONS</p><h1 id="template-heading">Templates</h1><p class="template-muted">Start monitors with reusable fields. Templates never remain linked to monitors after creation.</p></div>
-    {#if canManage}<button class="template-button template-button--primary" type="button" on:click={openCreate}>New template <span aria-hidden="true">＋</span></button>{/if}
+    {#if canManage}<button class="template-button template-button--primary" type="button" on:click={openCreate} disabled={saving}>New template <span aria-hidden="true">＋</span></button>{/if}
   </header>
 
   {#if bootError}<div class="template-alert" role="alert">{bootError} <button type="button" on:click={() => void bootstrap()}>Try again</button></div>{/if}
@@ -279,7 +336,7 @@
       <article class="template-card">
         <div class="template-card__main"><div class="template-card__title"><h2>{template.name}</h2><span class={`template-kind ${template.kind === 'built_in' ? 'template-kind--built-in' : ''}`}>{template.kind === 'built_in' ? 'Built-in' : 'Custom'}</span></div>
           <p>{template.description || 'No description.'}</p><div class="template-card__meta"><span>{template.fields.length} field{template.fields.length === 1 ? '' : 's'}</span><span>Version {template.version}</span><span>{template.fields.slice(0, 3).map((field) => field.name).join(' · ')}{template.fields.length > 3 ? ' …' : ''}</span></div>
-        </div><div class="template-card__actions"><button class="template-button" type="button" on:click={() => void showDetail(template)}>Inspect fields</button>{#if template.kind === 'custom' && canManage}<button class="template-button" type="button" on:click={() => void openEdit(template)}>Edit</button><button class="template-button template-button--danger" type="button" on:click={() => pendingDelete = template}>Delete</button>{/if}</div>
+        </div><div class="template-card__actions"><button class="template-button" type="button" on:click={() => void showDetail(template)} disabled={saving}>Inspect fields</button>{#if template.kind === 'custom' && canManage}<button class="template-button" type="button" on:click={() => void openEdit(template)} disabled={saving}>Edit</button><button class="template-button template-button--danger" type="button" on:click={() => { if (!saving) pendingDelete = template; }} disabled={saving}>Delete</button>{/if}</div>
       </article>
     {/each}</div>
     <nav class="template-pagination" aria-label="Template list pages"><button class="template-button" type="button" on:click={previousPage} disabled={pageIndex === 0 || loading}>← Previous</button><span>Page {pageIndex + 1}</span><button class="template-button" type="button" on:click={nextPage} disabled={!nextCursor || loading}>Next →</button></nav>
