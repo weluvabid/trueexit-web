@@ -1,5 +1,6 @@
 <script lang="ts">
   import { fetchSharedGet, invalidateSharedGetCache } from '../lib/client/shared-http-query';
+  import { fetchTemplatePage, fetchTemplateDetail, TemplateQueryError } from '../lib/client/template-queries';
   import { getApiErrorCode } from '../lib/client/api-response';
   import { can } from '../lib/client/permissions';
   import { onMount } from 'svelte';
@@ -83,20 +84,20 @@
     const current = ++sequence;
     if (!workspaceId) { templates = []; loading = false; return; }
     loading = true; listError = '';
-    const params = new URLSearchParams({ workspace_id: workspaceId, limit: '25' });
-    if (query.trim()) params.set('q', query.trim());
-    if (next) params.set('cursor', next);
+    const targetWorkspaceId = workspaceId;
     try {
-      const response = await fetchSharedGet(`/api/backend/templates?${params}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
-      const body = await response.json().catch(() => null) as Page<Template> | ApiError | null;
-      if (current !== sequence) return;
-      if (!response.ok) { const e = body as ApiError | null; listError = templateErrorMessage(response.status, e?.error?.code ?? null); return; }
-      const page = body as Page<Template>;
+      const page = await fetchTemplatePage<Template>(targetWorkspaceId, query, next);
+      if (current !== sequence || workspaceId !== targetWorkspaceId) return;
       templates = Array.isArray(page.data) ? page.data : [];
       nextCursor = page.page?.next_cursor ?? null;
       cursor = next;
-    } catch { if (current === sequence) listError = templateErrorMessage(0, 'network_error'); }
-    finally { if (current === sequence) loading = false; }
+    } catch (error) {
+      if (current === sequence && workspaceId === targetWorkspaceId) {
+        listError = error instanceof TemplateQueryError
+          ? templateErrorMessage(error.status, error.code)
+          : templateErrorMessage(0, 'network_error');
+      }
+    } finally { if (current === sequence) loading = false; }
   }
 
   async function bootstrap() {
@@ -142,15 +143,15 @@
     discoveryError = ''; discoveryWarnings = []; discovered = []; selectedDiscovered = [];
     // Load the latest version before editing to avoid silently overwriting a concurrent update.
     try {
-      const response = await fetchSharedGet(`/api/backend/templates/${encodeURIComponent(template.id)}?workspace_id=${encodeURIComponent(targetWorkspaceId)}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
-      const body = await response.json().catch(() => null) as Template | ApiError | null;
+      const latest = await fetchTemplateDetail<Template>(targetWorkspaceId, template.id);
       if (current !== editSequence || !formOpen || mode !== 'edit' || editing?.id !== template.id || workspaceId !== targetWorkspaceId) return;
-      if (!response.ok) { formError = templateErrorMessage(response.status, (body as ApiError | null)?.error?.code ?? null); return; }
-      const latest = body as Template;
       editing = latest; name = latest.name; description = latest.description ?? ''; fields = latest.fields.map((field) => ({ ...field }));
-    } catch {
+    } catch (error) {
       if (current === editSequence && formOpen && mode === 'edit' && editing?.id === template.id && workspaceId === targetWorkspaceId) {
-        formError = templateErrorMessage(0, 'network_error');
+        // Query failures retain the API status and domain error code.
+        formError = error instanceof TemplateQueryError
+          ? templateErrorMessage(error.status, error.code)
+          : templateErrorMessage(0, 'network_error');
       }
     }
   }
@@ -255,13 +256,15 @@
     const targetWorkspaceId = workspaceId;
     detail = null; detailError = ''; detailLoading = true;
     try {
-      const response = await fetchSharedGet(`/api/backend/templates/${encodeURIComponent(template.id)}?workspace_id=${encodeURIComponent(targetWorkspaceId)}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
-      const body = await response.json().catch(() => null) as Template | ApiError | null;
+      const result = await fetchTemplateDetail<Template>(targetWorkspaceId, template.id);
       if (current !== detailSequence || workspaceId !== targetWorkspaceId) return;
-      if (!response.ok) { detailError = templateErrorMessage(response.status, (body as ApiError | null)?.error?.code ?? null); return; }
-      detail = body as Template;
-    } catch {
-      if (current === detailSequence && workspaceId === targetWorkspaceId) detailError = templateErrorMessage(0, 'network_error');
+      detail = result;
+    } catch (error) {
+      if (current === detailSequence && workspaceId === targetWorkspaceId) {
+        detailError = error instanceof TemplateQueryError
+          ? templateErrorMessage(error.status, error.code)
+          : templateErrorMessage(0, 'network_error');
+      }
     } finally {
       if (current === detailSequence) detailLoading = false;
     }
