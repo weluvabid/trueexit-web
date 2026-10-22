@@ -2,7 +2,7 @@
   import { can } from '../lib/client/permissions';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
-  import { getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../lib/client/settings-api';
+  import { getCachedSettingsResponse, getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../lib/client/settings-api';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
   import { formatDateTime } from '../lib/client/date-format';
   import SettingsSectionNavigation from './settings/SettingsSectionNavigation.svelte';
@@ -67,7 +67,12 @@
 
   async function loadAll(keepNotice = false) {
     const generation = ++loadGeneration;
-    loading = true;
+    // Seed the page from the query cache before deciding whether a blocking
+    // loading state is needed. requestSettingsApi will revalidate stale data.
+    const cachedAccounts = getCachedSettingsResponse('/accounts');
+    const hasCachedAccounts = !!cachedAccounts?.response.ok;
+    if (hasCachedAccounts) accounts = listSettingsData<Account>(cachedAccounts.body);
+    loading = !hasCachedAccounts;
     if (!keepNotice) { error = ''; notice = ''; }
     try {
       const bootstrap = await loadWorkspaceBootstrap();
@@ -83,6 +88,7 @@
         selectedWorkspaceId = resolveWorkspaceId(workspaces, [readActiveWorkspaceId()]);
       }
       writeActiveWorkspaceId(selectedWorkspaceId);
+      if (hasCachedAccounts && generation === loadGeneration) loading = false;
       const accountsResult = await request('/accounts');
       if (generation !== loadGeneration) return;
       if (accountsResult.response.ok) accounts = listSettingsData<Account>(accountsResult.body);

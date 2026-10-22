@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../../lib/client/settings-api';
+  import { getCachedSettingsResponse, getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../../lib/client/settings-api';
   import { formatDateTime } from '../../lib/client/date-format';
 
   export let workspaceId = '';
@@ -49,14 +49,16 @@
     const currentGeneration = ++generation;
     mutationGeneration += 1;
     busyKey = '';
-    members = [];
-    invitations = [];
     error = '';
     notice = '';
     inviteEmail = '';
-    if (!id) { loading = false; return; }
-    loading = true;
+    if (!id) { members = []; invitations = []; loading = false; return; }
     const encodedId = encodeURIComponent(id);
+    const cachedMembers = getCachedSettingsResponse(`/workspaces/${encodedId}/members`);
+    const cachedInvitations = getCachedSettingsResponse(`/workspaces/${encodedId}/invitations`);
+    members = cachedMembers?.response.ok ? listSettingsData<Member>(cachedMembers.body) : [];
+    invitations = cachedInvitations?.response.ok ? listSettingsData<Invitation>(cachedInvitations.body) : [];
+    loading = !cachedMembers || !cachedInvitations;
     try {
       const [membersResult, invitationsResult] = await Promise.all([
         request(`/workspaces/${encodedId}/members`),

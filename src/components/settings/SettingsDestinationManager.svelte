@@ -1,6 +1,6 @@
 <script lang="ts">
   import './SettingsDestinationManager.css';
-  import { getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../../lib/client/settings-api';
+  import { getCachedSettingsResponse, getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../../lib/client/settings-api';
   import { buildNotificationChannelConfig, type NotificationChannelKind } from '../../lib/client/settings-channel-config';
 
   export let workspaceId = '';
@@ -61,13 +61,15 @@
 
   async function loadChannels(id: string) {
     const requestGeneration = ++generation;
-    channels = [];
     error = '';
     notice = '';
-    if (!id) { loading = false; return; }
-    loading = true;
+    if (!id) { channels = []; loading = false; return; }
+    const path = `/workspaces/${encodeURIComponent(id)}/channels`;
+    const cached = getCachedSettingsResponse(path);
+    channels = cached?.response.ok ? listSettingsData<Channel>(cached.body) : [];
+    loading = !cached;
     try {
-      const { response, body } = await request(`/workspaces/${encodeURIComponent(id)}/channels`);
+      const { response, body } = await request(path);
       if (requestGeneration !== generation || id !== workspaceId) return;
       if (response.ok) channels = listSettingsData<Channel>(body);
       else if (response.status !== 403 && response.status !== 404) error = settingsErrorMessage(response.status, getSettingsErrorCode(body));

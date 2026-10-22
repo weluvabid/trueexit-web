@@ -42,6 +42,13 @@ function settingsReadKey(path: string) {
   return ['settings-api', path] as const;
 }
 
+/** Read a cached settings response without waiting for stale-data revalidation. */
+export function getCachedSettingsResponse(path: string): { response: Response; body: unknown } | null {
+  const cached = getSharedQueryClient().getQueryData<CachedSettingsResponse>(settingsReadKey(path));
+  if (!cached) return null;
+  return { response: responseFromResult(cached), body: cached.body };
+}
+
 async function invalidateSettingsAfterMutation(path: string): Promise<void> {
   const client = getSharedQueryClient();
   const segments = path.split('?')[0].split('/').filter(Boolean).map((segment) => decodeURIComponent(segment));
