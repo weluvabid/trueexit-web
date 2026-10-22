@@ -58,11 +58,25 @@ export function invalidateSharedGetCache(): Promise<void> {
  * response representation is cached; callers receive a fresh Response object
  * and can consume its body independently.
  */
+
+function canonicalizeGetUrl(input: string): string {
+  const base = typeof window === 'undefined' ? 'http://trueexit.invalid' : window.location.href;
+  const url = new URL(input, base);
+  url.searchParams.sort();
+  // Fragments are not sent in HTTP requests and must not split cache identity.
+  url.hash = '';
+  return url.toString();
+}
+
 export async function fetchSharedGet(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
   const method = (init.method ?? 'GET').toUpperCase();
   if (method !== 'GET') return fetch(input, init);
 
-  const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+  const requestUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+  // Query parameter order does not change the resource represented by these
+  // API GETs. Canonicalize it so callers that construct equivalent URLs in
+  // different orders share the same in-flight request and cached response.
+  const url = canonicalizeGetUrl(requestUrl);
   const headers = new Headers(init.headers);
   headers.set('Accept', headers.get('Accept') ?? 'application/json');
   const credentials = init.credentials ?? 'same-origin';
