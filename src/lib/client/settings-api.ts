@@ -1,4 +1,4 @@
-import { fetchSharedGet, invalidateSharedGetCache } from './shared-http-query';
+import { getSharedQueryClient } from './query-client';
 import { getApiErrorCode, getApiList } from './api-response';
 
 export const listSettingsData = getApiList;
@@ -34,13 +34,33 @@ export async function requestSettingsApi(
     headers.set('Idempotency-Key', crypto.randomUUID());
   }
   const requestInit: RequestInit = { ...init, headers, credentials: 'same-origin', cache: 'no-store' };
-  const response = method === 'GET'
-    ? await fetchSharedGet(`/api/backend${path}`, requestInit)
-    : await fetch(`/api/backend${path}`, requestInit);
+  const client = getSharedQueryClient();
+
+  if (method === 'GET') {
+    // Cache parsed settings resources under their request path. Query identity
+    // includes the workspace/resource path, while the signal remains owned by
+    // TanStack Query rather than the legacy shared HTTP cache.
+    const result = await client.fetchQuery({
+      queryKey: ['settings-api', path],
+      staleTime: 30_000,
+      queryFn: async ({ signal }) => {
+        const response = await fetch(`/api/backend${path}`, { ...requestInit, signal });
+        const body = response.status === 204 ? null : await response.json().catch(() => null);
+        return { status: response.status, body };
+      },
+    });
+    const response = new Response(result.body === null ? null : JSON.stringify(result.body), {
+      status: result.status,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    return { response, body: result.body };
+  }
+
+  const response = await fetch(`/api/backend${path}`, requestInit);
   const body = response.status === 204 ? null : await response.json().catch(() => null);
   if (!['GET', 'HEAD'].includes(method) && response.ok) {
-    // Invalidate before returning so callers cannot immediately refresh from stale shared data.
-    await invalidateSharedGetCache();
+    // Settings resources now live under their own TanStack Query key family.
+    await client.invalidateQueries({ queryKey: ['settings-api'] });
   }
   return { response, body };
 }
