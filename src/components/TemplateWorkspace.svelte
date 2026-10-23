@@ -4,7 +4,7 @@
   import { templateQueryKeys } from '../lib/client/template-queries';
   import { monitorTemplateQueryKeys } from '../lib/client/monitor-queries';
   import { fetchTemplatePage, fetchTemplateDetail, TemplateQueryError } from '../lib/client/template-queries';
-  import { ApiClientError, assertApiSuccess, requestApi } from '../lib/client/api-client';
+  import { ApiClientError, assertApiSuccess, requestApi, type ApiResponse } from '../lib/client/api-client';
   import { can } from '../lib/client/permissions';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
@@ -219,7 +219,7 @@
     const operation = ++mutationSequence;
     const targetMode = mode;
     const targetWorkspaceId = workspaceId;
-    const targetTemplate = editing ? { ...editing } : null;
+    const targetTemplate = targetMode === 'edit' && editing ? { ...editing } : null;
     if (targetMode === 'edit' && !targetTemplate) {
       formError = 'The template being edited is no longer available. Close the editor and try again.';
       return;
@@ -227,9 +227,24 @@
     const payload = buildTemplatePayload(targetWorkspaceId, { name, description, fields });
     saving = true;
     try {
-      const result = targetMode === 'create'
-        ? await requestApi('/api/backend/templates', { method: 'POST', headers: idempotencyHeaders(), body: JSON.stringify(payload) })
-        : await requestApi(`/api/backend/templates/${encodeURIComponent(targetTemplate!.id)}`, { method: 'PATCH', headers: idempotencyHeaders(), body: JSON.stringify({ ...payload, expected_version: targetTemplate!.version }) });
+      let result: ApiResponse;
+      if (targetMode === 'create') {
+        result = await requestApi('/api/backend/templates', {
+          method: 'POST',
+          headers: idempotencyHeaders(),
+          body: JSON.stringify(payload),
+        });
+      } else {
+        if (!targetTemplate) {
+          formError = 'The template being edited is no longer available. Close the editor and try again.';
+          return;
+        }
+        result = await requestApi(`/api/backend/templates/${encodeURIComponent(targetTemplate.id)}`, {
+          method: 'PATCH',
+          headers: idempotencyHeaders(),
+          body: JSON.stringify({ ...payload, expected_version: targetTemplate.version }),
+        });
+      }
       if (operation !== mutationSequence) return;
       assertApiSuccess(result);
       await Promise.all([

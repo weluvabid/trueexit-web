@@ -1,7 +1,7 @@
 import type { AttentionItem, DashboardSummary } from './dashboard-queries';
 import { formatDateTime } from './date-format';
 
-export type AttentionFilter = 'all' | 'submission_rejected' | 'evidence_overdue' | 'health_signal';
+export type AttentionFilter = 'all' | AttentionItem['reason'];
 
 export type DashboardSummaryMetrics = {
   monitorTotal: number;

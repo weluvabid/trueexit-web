@@ -8,17 +8,14 @@
   import { formatInvestigationDate, formatInvestigationValue, formatInvestigationLabel, getHealthCounts } from '../lib/client/investigation-format';
   import { buildInvestigationApiPath, getInvestigationErrorMessage, readInvestigationResource, investigationResourceQueryOptions, investigationQueryErrorMessage, type Resource } from '../lib/client/investigation-api';
   import { investigationDeliveryPageSchema, investigationDeliverySchema, investigationEvidencePageSchema, investigationEvidenceSchema, investigationHealthSchema, investigationHealthVersionSchema, investigationMonitorSchema, investigationRecordPageSchema, investigationRecordSchema } from '../lib/client/api-schemas';
+  import type { InvestigationDeliveryContract, InvestigationEvidenceContract, InvestigationHealthVersionContract, InvestigationMonitorContract } from '../lib/client/api-schemas';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
 
   type Page<T> = { data: T[]; page?: { next_cursor: string | null } };
-  type Monitor = {
-    id: string; workspace_id?: string; name: string; description?: string;
-    status: 'enabled' | 'disabled' | 'archived'; cadence_seconds?: number;
-    current_config_version?: number; created_at?: string; updated_at?: string;
-    config_versions?: Array<{ version: number; cadence_seconds: number | null; config: { fields?: Array<{ name: string; path: string; primitive: number }> } }>;
-  };
-  type Evidence = { id: string; request_id: string; config_version: number; observed_at?: string | null; created_at?: string; fields?: Record<string, unknown>; reason?: { code: string; params?: unknown } };
-  type Delivery = { request_id: string; monitor_id?: string; monitor_name?: string; mode?: string; evidence_outcome?: string; created_at?: string; updated_at?: string; status?: string; summary?: Record<string, unknown> };
+  type Monitor = InvestigationMonitorContract;
+  type Evidence = InvestigationEvidenceContract;
+  type Delivery = InvestigationDeliveryContract;
+  type JsonObject = Record<string, unknown>;
 
   let { monitorId }: { monitorId: string } = $props();
 
@@ -27,10 +24,10 @@
   let evidence = $state<Page<Evidence> | null>(null);
   let badEvidence = $state<Page<Evidence> | null>(null);
   let deliveries = $state<Page<Delivery> | null>(null);
-  let selectedEvidence = $state<{ kind: 'verified' | 'rejected'; id: string; detail: Record<string, any> } | null>(null);
-  let selectedTrace = $state<Record<string, any> | null>(null);
-  let selectedDelivery = $state<Record<string, any> | null>(null);
-  let selectedHealthVersion = $state<Record<string, any> | null>(null);
+  let selectedEvidence = $state<{ kind: 'verified' | 'rejected'; id: string; detail: Evidence & { trace_available?: boolean } } | null>(null);
+  let selectedTrace = $state<JsonObject | null>(null);
+  let selectedDelivery = $state<Delivery | null>(null);
+  let selectedHealthVersion = $state<InvestigationHealthVersionContract | null>(null);
   let activeSection = $state<'evidence' | 'rejected' | 'deliveries'>('evidence');
   let bootLoading = $state(true);
   let evidenceLoading = $state(false);

@@ -1,46 +1,18 @@
 import { ApiClientError, requestApi } from './api-client';
 import { dashboardResponseSchema, parseApiBody } from './api-schemas';
 
-export type DashboardSummary = {
-  active_monitors: number;
-  disabled_monitors: number;
-  evidence_received_recently: number;
-  needs_attention: number;
-  awaiting_first_evidence: number;
-  evidence_outcomes_24h: { accepted: number; rejected: number; total: number };
-  attention_conditions: { submission_rejected: number; evidence_overdue: number; health_signal: number };
-};
+import type { DashboardResponseContract } from './api-schemas';
 
-export type AttentionItem = {
-  monitor_id: string;
-  monitor_name: string;
-  reason: string;
-  severity: string;
-  occurred_at: string | null;
-  last_valid_evidence_at: string | null;
-  action: { kind: string };
-};
-
-export type ActivityItem = {
-  event_id: string;
-  monitor_id: string;
-  monitor_name: string;
-  event_type: string;
-  occurred_at: string;
-};
+export type DashboardSummary = DashboardResponseContract['summary'];
+export type AttentionItem = DashboardResponseContract['attention_items'][number];
+export type ActivityItem = DashboardResponseContract['recent_evidence_activity'][number];
+export type DashboardResponse = DashboardResponseContract;
 
 export const dashboardQueryKeys = {
   overview: (workspaceId: string) => ['dashboard', 'overview', workspaceId] as const,
   pages: (workspaceId: string, resource: 'monitors' | 'evidence') => ['dashboard-page', workspaceId, resource] as const,
   page: (workspaceId: string, resource: 'monitors' | 'evidence', queryIdentity: string) =>
     ['dashboard-page', workspaceId, resource, queryIdentity] as const,
-};
-
-export type DashboardResponse = {
-  generated_at: string;
-  summary: DashboardSummary;
-  attention_items: AttentionItem[];
-  recent_evidence_activity: ActivityItem[];
 };
 
 export class DashboardQueryError extends ApiClientError {

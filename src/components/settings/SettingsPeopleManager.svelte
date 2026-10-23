@@ -3,28 +3,15 @@
   import * as v from 'valibot';
   import { ApiClientError } from '../../lib/client/api-client';
   import { settingsAcknowledgementSchema, settingsInvitationSchema, settingsMemberSchema } from '../../lib/client/api-schemas';
+  import type { SettingsInvitationContract, SettingsMemberContract } from '../../lib/client/api-schemas';
   import { parseApiBody } from '../../lib/client/api-schemas';
   import { getCachedSettingsResponse, getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../../lib/client/settings-api';
   import { formatDateTime } from '../../lib/client/date-format';
 
   let { workspaceId = '', canManageWorkspace = false, refreshKey = 0 }: { workspaceId?: string; canManageWorkspace?: boolean; refreshKey?: number } = $props();
 
-  type Member = {
-    user_id: string;
-    email: string;
-    display_name: string | null;
-    role: 'admin' | 'member' | null;
-    account_owner: boolean;
-  };
-  type Invitation = {
-    id: string;
-    email: string;
-    role: string;
-    invited_by_user_id: string;
-    expires_at: string;
-    created_at?: string;
-    email_delivery?: string;
-  };
+  type Member = SettingsMemberContract;
+  type Invitation = SettingsInvitationContract;
 
   let members = $state<Member[]>([]);
   let invitations = $state<Invitation[]>([]);

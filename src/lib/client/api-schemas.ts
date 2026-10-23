@@ -4,7 +4,7 @@ import { ApiClientError } from './api-client';
 const nonNegativeInteger = v.pipe(v.number(), v.integer(), v.minValue(0));
 const nullableTimestamp = v.nullable(v.string());
 const monitorStatusSchema = v.picklist(['enabled', 'disabled', 'archived']);
-const primitiveSchema = v.picklist([0, 1, 2, 3, 4, 5, 6, 7]);
+export const primitiveSchema = v.picklist([0, 1, 2, 3, 4, 5, 6, 7]);
 
 export const dashboardResponseSchema = v.object({
   generated_at: v.string(),
@@ -182,7 +182,7 @@ export const monitorDetailSchema = v.intersect([
         fields: v.array(v.object({
           name: v.string(),
           path: v.string(),
-          primitive: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(7)),
+          primitive: primitiveSchema,
           meta: v.optional(v.record(v.string(), v.unknown())),
         })),
       }),
@@ -201,15 +201,15 @@ export const investigationMonitorSchema = v.object({
   name: v.string(),
   description: v.optional(v.string()),
   status: monitorStatusSchema,
-  cadence_seconds: v.optional(v.number()),
-  current_config_version: v.optional(v.number()),
+  cadence_seconds: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+  current_config_version: v.optional(nonNegativeInteger),
   created_at: v.optional(v.string()),
   updated_at: v.optional(v.string()),
   config_versions: v.optional(v.array(v.object({
-    version: v.number(),
-    cadence_seconds: v.nullable(v.number()),
+    version: v.pipe(v.number(), v.integer(), v.minValue(1)),
+    cadence_seconds: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1))),
     config: v.object({
-      fields: v.optional(v.array(v.object({ name: v.string(), path: v.string(), primitive: v.number() }))),
+      fields: v.optional(v.array(v.object({ name: v.string(), path: v.string(), primitive: primitiveSchema }))),
     }),
   }))),
 });
@@ -217,11 +217,12 @@ export const investigationMonitorSchema = v.object({
 export const investigationEvidenceSchema = v.looseObject({
   id: v.string(),
   request_id: v.string(),
-  config_version: v.number(),
+  config_version: v.pipe(v.number(), v.integer(), v.minValue(1)),
   observed_at: v.optional(v.nullable(v.string())),
   created_at: v.optional(v.string()),
   fields: v.optional(v.record(v.string(), v.unknown())),
   reason: v.optional(v.object({ code: v.string(), params: v.optional(v.unknown()) })),
+  trace_available: v.optional(v.boolean()),
 });
 
 export const investigationDeliverySchema = v.looseObject({
@@ -247,7 +248,7 @@ export const investigationDeliveryPageSchema = v.object({
 });
 export const investigationRecordPageSchema = v.object({
   data: v.array(v.looseObject({
-    config_version: v.number(),
+    config_version: v.pipe(v.number(), v.integer(), v.minValue(1)),
     is_current: v.boolean(),
     health_summary: v.optional(v.record(v.string(), v.unknown())),
   })),
@@ -265,9 +266,9 @@ export const investigationHealthSchema = v.looseObject({
   })),
 });
 export const investigationHealthVersionSchema = v.looseObject({
-  config_version: v.number(),
+  config_version: v.pipe(v.number(), v.integer(), v.minValue(1)),
   is_current: v.boolean(),
-  configuration: v.optional(v.looseObject({ cadence_seconds: v.optional(v.nullable(v.number())) })),
+  configuration: v.optional(v.looseObject({ cadence_seconds: v.optional(v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1)))) })),
   health: v.optional(v.unknown()),
 });
 
@@ -298,7 +299,7 @@ export const settingsMemberSchema = v.object({
 export const settingsInvitationSchema = v.object({
   id: v.string(),
   email: v.string(),
-  role: v.string(),
+  role: v.picklist(['admin', 'member']),
   invited_by_user_id: v.string(),
   expires_at: v.string(),
   created_at: v.optional(v.string()),
@@ -334,7 +335,41 @@ export const dashboardMonitorItemSchema = v.object({
   id: v.string(),
   name: v.string(),
   status: monitorStatusSchema,
-  cadence_seconds: v.optional(v.number()),
+  cadence_seconds: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
   updated_at: v.optional(v.string()),
 });
-export const dashboardEvidenceItemSchema = v.record(v.string(), v.unknown());
+export const dashboardEvidenceItemSchema = v.looseObject({
+  id: v.optional(v.string()),
+  event_id: v.optional(v.string()),
+  evidence_id: v.optional(v.string()),
+  monitor_id: v.optional(v.string()),
+  monitor_name: v.optional(v.string()),
+  monitor: v.optional(v.looseObject({ name: v.optional(v.string()) })),
+  outcome: v.optional(v.string()),
+  event_type: v.optional(v.string()),
+  created_at: v.optional(v.string()),
+  occurred_at: v.optional(v.string()),
+});
+
+// Public types are inferred from the same schemas that validate API boundaries.
+export type PrimitiveValue = v.InferOutput<typeof primitiveSchema>;
+export type DashboardResponseContract = v.InferOutput<typeof dashboardResponseSchema>;
+export type DashboardMonitorItem = v.InferOutput<typeof dashboardMonitorItemSchema>;
+export type DashboardEvidenceItem = v.InferOutput<typeof dashboardEvidenceItemSchema>;
+export type CurrentUserContextContract = v.InferOutput<typeof currentUserContextSchema>;
+export type WorkspaceContextContract = v.InferOutput<typeof workspaceContextSchema>;
+export type WorkspacePageContract = v.InferOutput<typeof workspacePageSchema>;
+export type MonitorContract = v.InferOutput<typeof monitorSchema>;
+export type MonitorDetailContract = v.InferOutput<typeof monitorDetailSchema>;
+export type MonitorTemplateContract = v.InferOutput<typeof monitorTemplateSchema>;
+export type WorkspaceTagContract = v.InferOutput<typeof workspaceTagSchema>;
+export type MonitorChannelContract = v.InferOutput<typeof monitorChannelSchema>;
+export type TemplateContract = v.InferOutput<typeof templateSchema>;
+export type InvestigationMonitorContract = v.InferOutput<typeof investigationMonitorSchema>;
+export type InvestigationEvidenceContract = v.InferOutput<typeof investigationEvidenceSchema>;
+export type InvestigationDeliveryContract = v.InferOutput<typeof investigationDeliverySchema>;
+export type InvestigationHealthVersionContract = v.InferOutput<typeof investigationHealthVersionSchema>;
+export type SettingsAccountContract = v.InferOutput<typeof settingsAccountSchema>;
+export type SettingsMemberContract = v.InferOutput<typeof settingsMemberSchema>;
+export type SettingsInvitationContract = v.InferOutput<typeof settingsInvitationSchema>;
+export type SettingsChannelContract = v.InferOutput<typeof settingsChannelSchema>;

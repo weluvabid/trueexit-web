@@ -6,13 +6,15 @@
   import * as v from 'valibot';
   import { assertApiSuccess, requestApi } from '../lib/client/api-client';
   import { dashboardEvidenceItemSchema, dashboardMonitorItemSchema, parseApiBody } from '../lib/client/api-schemas';
+  import type { DashboardEvidenceItem, DashboardMonitorItem } from '../lib/client/api-schemas';
   import { dashboardQueryErrorMessage, dashboardQueryKeys, dashboardQueryOptions, type DashboardResponse } from '../lib/client/dashboard-queries';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
   import { formatDateTime } from '../lib/client/date-format';
   import { filterAttentionItems, formatRelativeDate, getDashboardSummaryMetrics, type AttentionFilter } from '../lib/client/dashboard-model';
+  import type { AttentionItem } from '../lib/client/dashboard-queries';
 
-  type MonitorItem = { id: string; name: string; status: 'enabled' | 'disabled' | 'archived'; cadence_seconds?: number; updated_at?: string };
+  type MonitorItem = DashboardMonitorItem;
   type Page<T> = { data: T[]; page?: { next_cursor: string | null } };
   type View = 'overview' | 'attention' | 'signals' | 'monitors' | 'evidence';
 
@@ -40,13 +42,14 @@
   let evidenceCursor = $state<string | null>(null);
   let evidenceFrom = $state<string | null>(null);
   let detailHasMore = $state(false);
-  let detailItems = $state<Array<Record<string, unknown>>>([]);
+  let detailMonitors = $state<MonitorItem[]>([]);
+  let detailEvidence = $state<DashboardEvidenceItem[]>([]);
   let requestSequence = 0;
   let detailSequence = 0;
   let bootstrapSequence = 0;
   let disposed = false;
 
-  const reasonCopy: Record<string, { title: string; detail: string }> = {
+  const reasonCopy: Record<AttentionItem['reason'], { title: string; detail: string }> = {
     submission_rejected: { title: 'A submission was rejected', detail: 'Inspect the evidence to understand why it did not pass validation.' },
     evidence_overdue: { title: 'Evidence is overdue', detail: 'This monitor has not received valid evidence within its expected window.' },
     health_signal: { title: 'A field health signal needs review', detail: 'Review configured field states; this is not independent proof of an outage.' },
@@ -84,7 +87,8 @@
     monitors = [];
     detailError = '';
     view = 'overview';
-    detailItems = [];
+    detailMonitors = [];
+    detailEvidence = [];
     monitorCursor = null;
     evidenceCursor = null;
     if (!workspaceId) return;
@@ -156,7 +160,7 @@
   function openView(next: View) {
     detailSequence += 1;
     loadingDetail = false;
-    view = next; detailError = ''; detailItems = []; detailHasMore = false;
+    view = next; detailError = ''; detailMonitors = []; detailEvidence = []; detailHasMore = false;
     const url = new URL(window.location.href);
     if (next === 'overview') { url.searchParams.delete('overview'); url.searchParams.delete('filter'); window.history.pushState({}, '', url); return; }
     url.searchParams.set('overview', next);
@@ -164,7 +168,6 @@
     window.history.pushState({}, '', url);
     if (next === 'monitors') void loadMonitorDetail();
     if (next === 'evidence' || next === 'signals') void loadEvidenceDetail();
-    if (next === 'attention') detailItems = (dashboard?.attention_items ?? []).map((x) => ({ ...x }));
   }
   async function loadMonitorDetail() {
     const sequence = ++detailSequence;
@@ -175,7 +178,7 @@
       const query = new URLSearchParams({ workspace_id: workspaceId, limit: '50', sort: 'name', direction: 'asc' });
       const page = await fetchDashboardPage('monitors', query, dashboardMonitorItemSchema);
       if (disposed || sequence !== detailSequence || workspaceId !== selectedWorkspaceId || view !== 'monitors') return;
-      detailItems = (page.data ?? []).map((x) => ({ ...x }));
+      detailMonitors = page.data;
       monitorCursor = page.page?.next_cursor ?? null;
       detailHasMore = !!monitorCursor;
     } catch (error) {
@@ -194,7 +197,7 @@
       const query = new URLSearchParams({ workspace_id: workspaceId, limit: '50', sort: 'name', direction: 'asc', cursor });
       const page = await fetchDashboardPage('monitors', query, dashboardMonitorItemSchema);
       if (disposed || sequence !== detailSequence || workspaceId !== selectedWorkspaceId || view !== 'monitors') return;
-      detailItems = [...detailItems, ...(page.data ?? []).map((x) => ({ ...x }))];
+      detailMonitors = [...detailMonitors, ...page.data];
       monitorCursor = page.page?.next_cursor ?? null;
       detailHasMore = !!monitorCursor;
     } catch (error) {
@@ -217,7 +220,7 @@
       if (evidenceFrom) query.set('from', evidenceFrom);
       const page = await fetchDashboardPage('evidence', query, dashboardEvidenceItemSchema);
       if (disposed || sequence !== detailSequence || workspaceId !== selectedWorkspaceId || view !== targetView) return;
-      detailItems = page.data ?? [];
+      detailEvidence = page.data;
       evidenceCursor = page.page?.next_cursor ?? null;
       detailHasMore = !!evidenceCursor;
     } catch (error) {
@@ -239,7 +242,7 @@
       if (evidenceFrom) query.set('from', evidenceFrom);
       const page = await fetchDashboardPage('evidence', query, dashboardEvidenceItemSchema);
       if (disposed || sequence !== detailSequence || workspaceId !== selectedWorkspaceId || view !== targetView) return;
-      detailItems = [...detailItems, ...(page.data ?? [])];
+      detailEvidence = [...detailEvidence, ...page.data];
       evidenceCursor = page.page?.next_cursor ?? null;
       detailHasMore = !!evidenceCursor;
     } catch (error) {
@@ -253,7 +256,7 @@
 
   function changeFilter(filter: AttentionFilter) {
     attentionFilter = filter;
-    if (view === 'attention') { const url = new URL(window.location.href); if (filter === 'all') url.searchParams.delete('filter'); else url.searchParams.set('filter', filter); window.history.replaceState({}, '', url); detailItems = (dashboard?.attention_items ?? []).filter((x) => filter === 'all' || x.reason === filter).map((x) => ({ ...x })); }
+    if (view === 'attention') { const url = new URL(window.location.href); if (filter === 'all') url.searchParams.delete('filter'); else url.searchParams.set('filter', filter); window.history.replaceState({}, '', url); }
   }
   onMount(() => {
     const url = new URL(window.location.href);
@@ -270,7 +273,6 @@
       attentionFilter = parseAttentionFilter(currentUrl.searchParams.get('filter')) ?? 'all';
       if (view === 'monitors') void loadMonitorDetail();
       if (view === 'signals' || view === 'evidence') void loadEvidenceDetail();
-      if (view === 'attention') detailItems = (dashboard?.attention_items ?? []).map((item) => ({ ...item }));
     };
     window.addEventListener('popstate', pop); return () => { disposed = true; requestSequence += 1; detailSequence += 1; bootstrapSequence += 1; window.removeEventListener('popstate', pop); };
   });
@@ -314,7 +316,7 @@
         </article>
 <section class="dashboard-bento-card dashboard-evidence-card" aria-labelledby="evidence-title"><div class="dashboard-bento-heading"><div><p class="eyebrow">LAST 24 HOURS</p><h2 id="evidence-title">Evidence</h2></div><button class="dashboard-card-link" type="button" onclick={() => openView('evidence')}>View all <span aria-hidden="true">↗</span></button></div><div class="dashboard-evidence-summary"><div class="dashboard-total"><strong>{dashboard.summary.evidence_outcomes_24h.total}</strong><span>records received</span></div><div class="dashboard-evidence-breakdown"><button type="button" onclick={() => openView('evidence')}><span class="dashboard-evidence-key dashboard-evidence-key--accepted"></span><span>Accepted</span><strong>{dashboard.summary.evidence_outcomes_24h.accepted}</strong></button><button type="button" onclick={() => openView('evidence')}><span class="dashboard-evidence-key dashboard-evidence-key--rejected"></span><span>Rejected</span><strong>{dashboard.summary.evidence_outcomes_24h.rejected}</strong></button></div></div>{#if dashboard.summary.evidence_outcomes_24h.total > 0}<div class="dashboard-evidence-bar" role="img" aria-label={`${dashboard.summary.evidence_outcomes_24h.accepted} accepted and ${dashboard.summary.evidence_outcomes_24h.rejected} rejected evidence records`}><span class="dashboard-evidence-bar__accepted" style={`--segment:${dashboard.summary.evidence_outcomes_24h.accepted / dashboard.summary.evidence_outcomes_24h.total * 100}%`}></span><span class="dashboard-evidence-bar__rejected" style={`--segment:${dashboard.summary.evidence_outcomes_24h.rejected / dashboard.summary.evidence_outcomes_24h.total * 100}%`}></span></div>{/if}</section>
         <section class="dashboard-bento-card dashboard-pings-card" aria-labelledby="pings-title"><div class="dashboard-bento-heading"><div><p class="eyebrow">WHAT'S NEXT</p><h2 id="pings-title">Upcoming pings</h2></div><span class="dashboard-future-mark" aria-hidden="true">↗</span></div><div class="dashboard-pings-empty"><span class="dashboard-pings-orbit" aria-hidden="true"></span><div><strong>Expected activity, at a glance.</strong><p>Upcoming ping schedules will appear here when the workspace scheduling feed is connected.</p></div></div></section>
-                        <section class="dashboard-bento-card dashboard-attention-card" aria-labelledby="attention-title"><div class="dashboard-bento-heading"><div><p class="eyebrow">WHAT MAY NEED YOU</p><h2 id="attention-title">Attention queue</h2></div><span class="dashboard-count">{dashboard.summary.needs_attention}</span></div><div class="dashboard-filter-chips" aria-label="Filter attention preview">{#each (['all','submission_rejected','evidence_overdue','health_signal'] as AttentionFilter[]) as filter}<button type="button" class:active={attentionFilter === filter} aria-pressed={attentionFilter === filter} onclick={() => changeFilter(filter)}>{filterLabels[filter]}</button>{/each}</div>
+                        <section class="dashboard-bento-card dashboard-attention-card" aria-labelledby="attention-title"><div class="dashboard-bento-heading"><div><p class="eyebrow">WHAT MAY NEED YOU</p><h2 id="attention-title">Attention queue</h2></div><span class="dashboard-count">{dashboard.summary.needs_attention}</span></div><div class="dashboard-filter-chips" aria-label="Filter attention preview">{#each attentionFilters as filter}<button type="button" class:active={attentionFilter === filter} aria-pressed={attentionFilter === filter} onclick={() => changeFilter(filter)}>{filterLabels[filter]}</button>{/each}</div>
           {#if filteredAttention.length}<ul class="dashboard-list">{#each filteredAttention as item (`${item.monitor_id}-${item.reason}-${item.occurred_at ?? ''}`)}<li class="dashboard-attention-item"><span class="dashboard-attention-mark" aria-hidden="true"></span><div class="dashboard-list__body"><strong>{item.monitor_name}</strong><span class="dashboard-list__title">{reasonCopy[item.reason]?.title ?? 'Monitor needs review'}</span><p>{reasonCopy[item.reason]?.detail ?? 'Review this monitor for more context.'}</p><span class="dashboard-list__meta">{formatRelativeDate(item.occurred_at ?? item.last_valid_evidence_at, Date.now(), formatDate)}</span></div><a class="dashboard-row-link" href={`/monitors/${encodeURIComponent(item.monitor_id)}`} aria-label={`Investigate ${item.monitor_name}`}>↗</a></li>{/each}</ul>{:else}<div class="dashboard-inline-empty"><span aria-hidden="true">✳</span><p>{attentionFilter === 'all' ? 'Nothing needs your attention right now.' : `No ${filterLabels[attentionFilter].toLowerCase()} items are currently reported.`}</p></div>{/if}
           <button class="dashboard-view-all" type="button" onclick={() => openView('attention')}>View all attention <span aria-hidden="true">→</span></button>
         </section>
@@ -323,10 +325,10 @@
       <p class="dashboard-footnote">Summary generated {formatDate(dashboard.generated_at)}. Health counts are field-level signals, not a single monitor-wide health verdict.</p>
     {:else}
       <div class="dashboard-detail-view"><div class="dashboard-detail-breadcrumbs"><button type="button" onclick={() => openView('overview')}>Overview</button><span aria-hidden="true">/</span><span>{view === 'attention' ? 'Attention queue' : view === 'signals' ? 'Recent signals' : view === 'monitors' ? 'Monitors' : 'Evidence · 24 hours'}</span></div><div class="dashboard-detail-heading"><div><p class="eyebrow">WORKSPACE DETAIL</p><h2>{view === 'attention' ? 'Attention queue' : view === 'signals' ? 'Recent signals' : view === 'monitors' ? 'Monitors' : 'Evidence · last 24 hours'}</h2></div>{#if view === 'attention'}<span class="dashboard-count">{dashboard.summary.needs_attention}</span>{/if}</div>
-        {#if view === 'attention'}<div class="dashboard-filter-chips dashboard-filter-chips--detail">{#each (['all','submission_rejected','evidence_overdue','health_signal'] as AttentionFilter[]) as filter}<button type="button" class:active={attentionFilter === filter} aria-pressed={attentionFilter === filter} onclick={() => changeFilter(filter)}>{filterLabels[filter]}</button>{/each}</div><div class="dashboard-detail-table-wrap"><table class="dashboard-detail-table"><thead><tr><th>Monitor</th><th>Reason</th><th>Last observed</th><th></th></tr></thead><tbody>{#each (dashboard.attention_items.filter((x) => attentionFilter === 'all' || x.reason === attentionFilter)) as item (`${item.monitor_id}-${item.reason}-${item.occurred_at ?? ''}`)}<tr><td><strong>{item.monitor_name}</strong></td><td>{reasonCopy[item.reason]?.title ?? 'Monitor needs review'}</td><td>{formatDate(item.occurred_at ?? item.last_valid_evidence_at)}</td><td><a href={`/monitors/${encodeURIComponent(item.monitor_id)}`}>Investigate →</a></td></tr>{/each}</tbody></table></div>{#if dashboard.attention_items.length === 0}<p class="dashboard-detail-empty">No attention items are currently reported.</p>{/if}
+        {#if view === 'attention'}<div class="dashboard-filter-chips dashboard-filter-chips--detail">{#each attentionFilters as filter}<button type="button" class:active={attentionFilter === filter} aria-pressed={attentionFilter === filter} onclick={() => changeFilter(filter)}>{filterLabels[filter]}</button>{/each}</div><div class="dashboard-detail-table-wrap"><table class="dashboard-detail-table"><thead><tr><th>Monitor</th><th>Reason</th><th>Last observed</th><th></th></tr></thead><tbody>{#each (dashboard.attention_items.filter((x) => attentionFilter === 'all' || x.reason === attentionFilter)) as item (`${item.monitor_id}-${item.reason}-${item.occurred_at ?? ''}`)}<tr><td><strong>{item.monitor_name}</strong></td><td>{reasonCopy[item.reason]?.title ?? 'Monitor needs review'}</td><td>{formatDate(item.occurred_at ?? item.last_valid_evidence_at)}</td><td><a href={`/monitors/${encodeURIComponent(item.monitor_id)}`}>Investigate →</a></td></tr>{/each}</tbody></table></div>{#if dashboard.attention_items.length === 0}<p class="dashboard-detail-empty">No attention items are currently reported.</p>{/if}
         {:else if loadingDetail}<div class="dashboard-detail-loading" aria-live="polite"><span class="dashboard-loader" aria-hidden="true"></span>Loading details…</div>{:else if detailError}<div class="dashboard-state dashboard-state--error" role="alert"><p>{detailError}</p><button class="dashboard-retry" type="button" onclick={() => view === 'monitors' ? loadMonitorDetail() : loadEvidenceDetail()}>Try again</button></div>
-        {:else if view === 'monitors'}<div class="dashboard-detail-table-wrap"><table class="dashboard-detail-table"><thead><tr><th>Monitor</th><th>Status</th><th>Updated</th><th></th></tr></thead><tbody>{#each detailItems as item (String(item.id))}<tr><td><strong>{String(item.name ?? 'Monitor')}</strong></td><td><span class={`dashboard-status dashboard-status--${String(item.status)}`}>{String(item.status)}</span></td><td>{formatDate(String(item.updated_at ?? ''))}</td><td><a href={`/monitors/${encodeURIComponent(String(item.id))}`}>Open →</a></td></tr>{/each}</tbody></table></div>{#if detailHasMore}<button class="dashboard-view-all" type="button" disabled={loadingDetail} onclick={loadMoreMonitors}>Load more monitors →</button>{/if}
-        {:else}<div class="dashboard-detail-table-wrap"><table class="dashboard-detail-table"><thead><tr><th>Monitor</th><th>Outcome</th><th>Recorded</th><th>Evidence</th></tr></thead><tbody>{#each detailItems as item, i (`${String(item.id ?? item.event_id ?? i)}`)}<tr><td><strong>{String(item.monitor_name ?? item.monitor?.name ?? 'Monitor')}</strong></td><td>{String(item.outcome ?? item.event_type ?? 'Evidence recorded')}</td><td>{formatDate(String(item.created_at ?? item.occurred_at ?? ''))}</td><td>{String(item.id ?? item.evidence_id ?? '—')}</td></tr>{/each}</tbody></table></div>{#if detailItems.length === 0}<p class="dashboard-detail-empty">No evidence records are available in this view.</p>{/if}{#if detailHasMore}<button class="dashboard-view-all" type="button" disabled={loadingDetail} onclick={loadMoreEvidence}>Load more evidence →</button>{/if}{/if}
+        {:else if view === 'monitors'}<div class="dashboard-detail-table-wrap"><table class="dashboard-detail-table"><thead><tr><th>Monitor</th><th>Status</th><th>Updated</th><th></th></tr></thead><tbody>{#each detailMonitors as item (item.id)}<tr><td><strong>{item.name}</strong></td><td><span class={`dashboard-status dashboard-status--${item.status}`}>{item.status}</span></td><td>{formatDate(item.updated_at ?? '')}</td><td><a href={`/monitors/${encodeURIComponent(item.id)}`}>Open →</a></td></tr>{/each}</tbody></table></div>{#if detailHasMore}<button class="dashboard-view-all" type="button" disabled={loadingDetail} onclick={loadMoreMonitors}>Load more monitors →</button>{/if}
+        {:else}<div class="dashboard-detail-table-wrap"><table class="dashboard-detail-table"><thead><tr><th>Monitor</th><th>Outcome</th><th>Recorded</th><th>Evidence</th></tr></thead><tbody>{#each detailEvidence as item, i (`${item.id ?? item.event_id ?? item.evidence_id ?? i}`)}<tr><td><strong>{item.monitor_name ?? item.monitor?.name ?? 'Monitor'}</strong></td><td>{item.outcome ?? item.event_type ?? 'Evidence recorded'}</td><td>{formatDate(item.created_at ?? item.occurred_at ?? '')}</td><td>{item.id ?? item.evidence_id ?? '—'}</td></tr>{/each}</tbody></table></div>{#if detailEvidence.length === 0}<p class="dashboard-detail-empty">No evidence records are available in this view.</p>{/if}{#if detailHasMore}<button class="dashboard-view-all" type="button" disabled={loadingDetail} onclick={loadMoreEvidence}>Load more evidence →</button>{/if}{/if}
       </div>
     {/if}
   {/if}

@@ -1,4 +1,4 @@
-import ky, { type Options } from 'ky';
+import ky from 'ky';
 import { getApiErrorCode, getApiRequestId } from './api-response';
 
 /**
@@ -73,7 +73,7 @@ export function assertApiSuccess(result: ApiResponse): ApiResponse {
 export async function requestApi(path: string, init: RequestInit = {}): Promise<ApiResponse> {
   let response: Response;
   try {
-    response = await apiClient(path, init as Options);
+    response = await apiClient(path, { ...init, signal: init.signal ?? undefined });
   } catch (error) {
     throw normalizeApiError(error);
   }

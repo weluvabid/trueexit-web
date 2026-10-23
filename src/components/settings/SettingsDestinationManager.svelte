@@ -5,22 +5,14 @@
   import './SettingsDestinationManager.css';
   import { getCachedSettingsResponse, getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../../lib/client/settings-api';
   import { settingsAcknowledgementSchema, settingsChannelSchema, settingsChannelValidationSchema } from '../../lib/client/api-schemas';
+  import type { SettingsChannelContract } from '../../lib/client/api-schemas';
   import { parseApiBody } from '../../lib/client/api-schemas';
   import { buildNotificationChannelConfig, type NotificationChannelKind } from '../../lib/client/settings-channel-config';
 
   let { workspaceId = '', canManageWorkspace = false }: { workspaceId?: string; canManageWorkspace?: boolean } = $props();
 
   type ChannelKind = NotificationChannelKind;
-  type Channel = {
-    id: string;
-    label: string;
-    type: ChannelKind;
-    priority: number;
-    enabled: boolean;
-    configured: boolean;
-    total_attempts?: number;
-    successful_attempts?: number;
-  };
+  type Channel = SettingsChannelContract;
   type CreateForm = { label: string; type: ChannelKind; priority: number; enabled: boolean; address: string; headers: string };
   type EditForm = { id: string; label: string; priority: number; enabled: boolean; type: ChannelKind; address: string; headers: string; configTouched: boolean };
 

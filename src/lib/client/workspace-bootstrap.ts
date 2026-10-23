@@ -2,25 +2,11 @@ import { getSharedQueryClient, waitForQueryCacheRestoration } from './query-clie
 import { ApiClientError, isAbortError, requestApi } from './api-client';
 import { currentUserContextSchema, parseApiBody, workspacePageSchema } from './api-schemas';
 
-export interface CurrentUserContext {
-  user_id: string;
-  owned_account_ids: string[];
-  personal_workspace_id: string | null;
-}
+import type { CurrentUserContextContract, WorkspaceContextContract, WorkspacePageContract } from './api-schemas';
 
-export interface WorkspaceContext {
-  id: string;
-  account_id: string;
-  name: string;
-  personal: boolean;
-  account_owner: boolean;
-  role: 'admin' | 'member' | null;
-}
-
-export interface WorkspacePage {
-  data: WorkspaceContext[];
-  page: { next_cursor: string | null };
-}
+export type CurrentUserContext = CurrentUserContextContract;
+export type WorkspaceContext = WorkspaceContextContract;
+export type WorkspacePage = WorkspacePageContract;
 
 export type BootstrapResource<T> =
   | { ok: true; data: T }

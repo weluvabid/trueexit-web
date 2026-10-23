@@ -1,4 +1,5 @@
 import { monitorChannelIdsSchema, monitorChannelSchema, monitorDetailSchema, monitorPageSchema, monitorTemplateSchema, parseApiBody, parseApiList, workspaceTagSchema } from './api-schemas';
+import type { MonitorChannelContract, MonitorTemplateContract, WorkspaceTagContract } from './api-schemas';
 import type { Monitor, MonitorDetail } from './monitor-types';
 import { ApiClientError, isAbortError, requestApi } from './api-client';
 
@@ -9,8 +10,15 @@ export class MonitorQueryError extends ApiClientError {
   }
 }
 
-export function requireMonitorQueryResult<T extends { ok: boolean; status: number; code: string | null; requestId?: string | null }>(result: T): T {
-  if (!result.ok) throw new MonitorQueryError(result.status, result.code, result.requestId ?? null);
+type MonitorQueryResult =
+  | { ok: true; status: number; code: string | null; requestId: string | null }
+  | { ok: false; status: number; code: string | null; requestId: string | null };
+
+/** Turn a Result-like API response into data or a typed query error. */
+export function requireMonitorQueryResult<T extends MonitorQueryResult>(
+  result: T,
+): T & { ok: true } {
+  if (!result.ok) throw new MonitorQueryError(result.status, result.code, result.requestId);
   return result;
 }
 
@@ -20,10 +28,12 @@ export function monitorQueryErrorMessage(error: unknown, fallback: (status: numb
     : fallback(0, 'network_error');
 }
 
+export type MonitorSort = 'updated_at' | 'created_at' | 'name' | 'id';
+
 export type MonitorListQuery = {
   workspaceId: string;
   limit: number;
-  sort: string;
+  sort: MonitorSort;
   direction: 'asc' | 'desc';
   search: string;
   status: 'all' | 'enabled' | 'disabled' | 'archived';
@@ -37,13 +47,9 @@ export type MonitorPage<TMonitor> = {
   page: { next_cursor: string | null };
 };
 
-export type MonitorListResponse<TMonitor> = {
-  ok: boolean;
-  status: number;
-  code: string | null;
-  requestId: string | null;
-  page: MonitorPage<TMonitor> | null;
-};
+export type MonitorListResponse<TMonitor> =
+  | { ok: true; status: number; code: null; requestId: null; page: MonitorPage<TMonitor> }
+  | { ok: false; status: number; code: string | null; requestId: string | null; page: null };
 
 export const monitorQueryKeys = {
   workspaceLists: (workspaceId: string) => ['monitors', 'list', workspaceId] as const,
@@ -104,20 +110,11 @@ export async function fetchMonitorPage(
   };
 }
 
-export type MonitorTemplate = {
-  id: string;
-  name: string;
-  description?: string;
-  fields: Array<{ name: string; path: string; primitive: number }>;
-};
+export type MonitorTemplate = MonitorTemplateContract;
 
-export type MonitorTemplatesResponse = {
-  ok: boolean;
-  status: number;
-  code: string | null;
-  requestId: string | null;
-  data: MonitorTemplate[];
-};
+export type MonitorTemplatesResponse =
+  | { ok: true; status: number; code: null; requestId: null; data: MonitorTemplate[] }
+  | { ok: false; status: number; code: string | null; requestId: string | null };
 
 export const monitorTemplateQueryKeys = {
   all: ['monitor-templates'] as const,
@@ -133,7 +130,7 @@ export async function fetchMonitorTemplates(
     { signal },
   );
 
-  if (!response.ok) return { ok: false, status: response.status, code, requestId, data: [] };
+  if (!response.ok) return { ok: false, status: response.status, code, requestId };
 
   const data = parseApiList(monitorTemplateSchema, body, { status: response.status, requestId });
   return {
@@ -145,44 +142,21 @@ export async function fetchMonitorTemplates(
   };
 }
 
-export type WorkspaceTag = {
-  id: string;
-  workspace_id: string;
-  name: string;
-  monitor_count: number;
-  created_at: string;
-  updated_at: string;
-};
+export type WorkspaceTag = WorkspaceTagContract;
+export type MonitorChannel = MonitorChannelContract;
 
-export type MonitorChannel = {
-  id: string;
-  label: string;
-  type: 'email' | 'webhook' | 'slack' | 'discord';
-  enabled: boolean;
-  configured: boolean;
-};
-
-export type ApiResource<T> = {
-  ok: boolean;
-  status: number;
-  code: string | null;
-  requestId: string | null;
-  data: T;
-};
+export type ApiResource<T> =
+  | { ok: true; status: number; code: string | null; requestId: string | null; data: T }
+  | { ok: false; status: number; code: string | null; requestId: string | null };
 
 async function fetchApiResource<T>(url: string, signal: AbortSignal, parse: (body: unknown) => T): Promise<ApiResource<T>> {
   try {
     const { response, body, code, requestId } = await requestApi(url, { signal });
-    return {
-      ok: response.ok,
-      status: response.status,
-      code,
-      requestId,
-      data: response.ok ? parse(body) : parse(null),
-    };
+    if (!response.ok) return { ok: false, status: response.status, code, requestId };
+    return { ok: true, status: response.status, code, requestId, data: parse(body) };
   } catch (error) {
     if (isAbortError(error)) throw error;
-    return { ok: false, status: error instanceof ApiClientError ? error.status : 0, code: error instanceof ApiClientError ? error.code : 'network_error', requestId: error instanceof ApiClientError ? error.requestId : null, data: parse(null) };
+    return { ok: false, status: error instanceof ApiClientError ? error.status : 0, code: error instanceof ApiClientError ? error.code : 'network_error', requestId: error instanceof ApiClientError ? error.requestId : null };
   }
 }
 

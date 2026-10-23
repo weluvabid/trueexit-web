@@ -3,6 +3,7 @@
   import * as v from 'valibot';
   import { ApiClientError } from '../lib/client/api-client';
   import { parseApiBody, settingsAccountCreateSchema, settingsAccountLifecycleSchema, settingsAcknowledgementSchema, settingsAccountSchema, workspaceContextSchema } from '../lib/client/api-schemas';
+  import type { SettingsAccountContract } from '../lib/client/api-schemas';
   import { can } from '../lib/client/permissions';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
@@ -15,12 +16,7 @@
 
   let { mode = 'workspace' }: { mode?: 'workspace' | 'account' } = $props();
 
-  type Account = {
-    account_id: string;
-    lifecycle_status: string;
-    scheduled_deletion_at: string | null;
-    billing_cancellation_status: string | null;
-  };
+  type Account = SettingsAccountContract;
   let workspaces = $state<WorkspaceContext[]>([]);
   let selectedWorkspaceId = $state('');
 

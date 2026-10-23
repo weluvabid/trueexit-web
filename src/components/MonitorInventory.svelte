@@ -2,6 +2,7 @@
 <script lang="ts">
   import StyledSelect from './ui/StyledSelect.svelte';
   import type { Monitor, MonitorStatus } from '../lib/client/monitor-types';
+  import type { MonitorSort } from '../lib/client/monitor-queries';
   import { formatMonitorCadence, formatMonitorDate } from '../lib/client/monitor-format';
 
   let {
@@ -17,7 +18,7 @@
     search = $bindable(''),
     statusFilter = $bindable<'all' | MonitorStatus>('all'),
     tagFilter = $bindable(''),
-    sort = $bindable('updated_at'),
+    sort = $bindable<MonitorSort>('updated_at'),
     direction = $bindable<'asc' | 'desc'>('desc'),
     includeArchived = $bindable(false),
     workspaceTags = [],
@@ -50,7 +51,7 @@
     search?: string;
     statusFilter?: 'all' | MonitorStatus;
     tagFilter?: string;
-    sort?: string;
+    sort?: MonitorSort;
     direction?: 'asc' | 'desc';
     includeArchived?: boolean;
     workspaceTags?: Array<{ id: string; name: string }>;
@@ -71,6 +72,11 @@
     onPreviousPage: () => void;
     onNextPage: () => void;
   } = $props();
+
+  const monitorSortOptions: readonly MonitorSort[] = ['updated_at', 'created_at', 'name', 'id'];
+  function isMonitorSort(value: string): value is MonitorSort {
+    return monitorSortOptions.some((option) => option === value);
+  }
 </script>
 
 <div class="monitor-page-heading">
@@ -98,7 +104,7 @@
     </label>
     <div class="monitor-filter"><span>Status</span><StyledSelect label="Status" value={statusFilter} options={[{ value: 'all', label: 'All active' }, { value: 'enabled', label: 'Enabled' }, { value: 'disabled', label: 'Disabled' }, { value: 'archived', label: 'Archived' }]} onChange={(value) => { statusFilter = value; onApplyFilters(); }} /></div>
     <div class="monitor-filter"><span>Tag</span><StyledSelect label="Tag" value={tagFilter} options={[{ value: '', label: 'All tags' }, ...workspaceTags.map((tag) => ({ value: tag.id, label: tag.name }))]} onChange={(value) => { tagFilter = value; onApplyFilters(); }} /></div>
-    <div class="monitor-filter"><span>Sort by</span><StyledSelect label="Sort by" value={sort} options={[{ value: 'updated_at', label: 'Recently updated' }, { value: 'created_at', label: 'Recently created' }, { value: 'name', label: 'Name' }, { value: 'id', label: 'Default order' }]} onChange={(value) => { sort = value; onApplyFilters(); }} /></div>
+    <div class="monitor-filter"><span>Sort by</span><StyledSelect label="Sort by" value={sort} options={[{ value: 'updated_at', label: 'Recently updated' }, { value: 'created_at', label: 'Recently created' }, { value: 'name', label: 'Name' }, { value: 'id', label: 'Default order' }]} onChange={(value) => { if (isMonitorSort(value)) { sort = value; onApplyFilters(); } }} /></div>
     <button class="monitor-sort-direction" type="button" onclick={() => { direction = direction === 'desc' ? 'asc' : 'desc'; onApplyFilters(); }} aria-label={`Sort ${direction === 'desc' ? 'ascending' : 'descending'}`} title={`Currently ${direction === 'desc' ? 'descending' : 'ascending'}`}>
       {direction === 'desc' ? '↓' : '↑'} <span>{direction === 'desc' ? 'Desc' : 'Asc'}</span>
     </button>

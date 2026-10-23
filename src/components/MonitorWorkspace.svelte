@@ -13,7 +13,7 @@
   import { prepareMonitorSubmission } from '../lib/client/monitor-editor-validation';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import { createMutation, createQuery } from '@tanstack/svelte-query';
-  import { fetchWorkspaceTags, fetchMonitorTags, fetchWorkspaceChannels, fetchMonitorDetail, fetchMonitorChannelIds, monitorResourceQueryKeys, monitorListQueryOptions, type MonitorListQuery, type MonitorListResponse, type WorkspaceTag, type MonitorChannel, requireMonitorQueryResult, monitorQueryErrorMessage } from '../lib/client/monitor-queries';
+  import { fetchWorkspaceTags, fetchMonitorTags, fetchWorkspaceChannels, fetchMonitorDetail, fetchMonitorChannelIds, monitorResourceQueryKeys, monitorListQueryOptions, type MonitorListQuery, type MonitorListResponse, type MonitorSort, type WorkspaceTag, type MonitorChannel, requireMonitorQueryResult, monitorQueryErrorMessage } from '../lib/client/monitor-queries';
   import { createEmptyMonitorDraft, createMonitorDraft, fieldPrimitiveFromValue, serializeMonitorChannelSelection } from '../lib/client/monitor-editor-state';
   import { createMonitorMutationOptions, editMonitorMutationOptions, lifecycleMonitorMutationOptions, tagMonitorMutationOptions } from '../lib/client/monitor-mutations';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
@@ -47,7 +47,7 @@
   let search = $state('');
   let statusFilter: 'all' | MonitorStatus = $state('all');
   let includeArchived = $state(false);
-  let sort = $state('updated_at');
+  let sort: MonitorSort = $state('updated_at');
   let direction: 'asc' | 'desc' = $state('desc');
   let cursorStack: (string | null)[] = $state([null]);
   let pageIndex = $state(0);
