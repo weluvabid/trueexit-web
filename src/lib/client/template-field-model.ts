@@ -14,9 +14,25 @@ export function updateTemplateField(
   key: keyof FieldDefinition,
   value: string | number,
 ): FieldDefinition[] {
-  return fields.map((field, fieldIndex) =>
-    fieldIndex === index ? { ...field, [key]: value } as FieldDefinition : field,
-  );
+  return fields.map((field, fieldIndex) => {
+    if (fieldIndex !== index) return field;
+
+    switch (key) {
+      case 'name':
+        return { ...field, name: String(value) };
+      case 'path':
+        return { ...field, path: String(value) };
+      case 'primitive':
+        if (!isPrimitive(value)) return field;
+        return { ...field, primitive: value };
+      case 'meta':
+        return field;
+    }
+  });
+}
+
+function isPrimitive(value: string | number): value is FieldDefinition['primitive'] {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 7;
 }
 
 export function discoveredFieldKey(field: Pick<FieldDefinition, 'name' | 'path'>): string {

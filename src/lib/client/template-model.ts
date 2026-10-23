@@ -51,9 +51,13 @@ export function parseSamplePayload(input: string): SamplePayloadParseResult {
     return { ok: false, reason: 'invalid_json' };
   }
 
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+  if (!isRecord(value)) {
     return { ok: false, reason: 'not_object' };
   }
 
-  return { ok: true, value: value as Record<string, unknown> };
+  return { ok: true, value };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

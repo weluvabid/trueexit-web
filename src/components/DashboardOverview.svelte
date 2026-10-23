@@ -16,6 +16,17 @@
   type Page<T> = { data: T[]; page?: { next_cursor: string | null } };
   type View = 'overview' | 'attention' | 'signals' | 'monitors' | 'evidence';
 
+  const views: readonly View[] = ['overview', 'attention', 'signals', 'monitors', 'evidence'];
+  const attentionFilters: readonly AttentionFilter[] = ['all', 'submission_rejected', 'evidence_overdue', 'health_signal'];
+
+  function parseView(value: string | null): View | null {
+    return value !== null ? views.find((candidate) => candidate === value) ?? null : null;
+  }
+
+  function parseAttentionFilter(value: string | null): AttentionFilter | null {
+    return value !== null ? attentionFilters.find((candidate) => candidate === value) ?? null : null;
+  }
+
   let workspaces = $state<WorkspaceContext[]>([]);
   let selectedWorkspaceId = $state('');
   let monitors = $state<MonitorItem[]>([]);
@@ -113,7 +124,6 @@
       return; // Summary remains usable if the optional inventory request fails.
     }
     if (disposed || parentSequence !== requestSequence || workspaceId !== selectedWorkspaceId) return;
-    if (disposed || parentSequence !== requestSequence || workspaceId !== selectedWorkspaceId) return;
     monitors = append ? [...monitors, ...(page.data ?? [])] : (page.data ?? []);
     monitorCursor = page.page?.next_cursor ?? null;
   }
@@ -154,7 +164,7 @@
     window.history.pushState({}, '', url);
     if (next === 'monitors') void loadMonitorDetail();
     if (next === 'evidence' || next === 'signals') void loadEvidenceDetail();
-    if (next === 'attention') detailItems = (dashboard?.attention_items ?? []).map((x) => x as unknown as Record<string, unknown>);
+    if (next === 'attention') detailItems = (dashboard?.attention_items ?? []).map((x) => ({ ...x }));
   }
   async function loadMonitorDetail() {
     const sequence = ++detailSequence;
@@ -165,7 +175,7 @@
       const query = new URLSearchParams({ workspace_id: workspaceId, limit: '50', sort: 'name', direction: 'asc' });
       const page = await fetchDashboardPage('monitors', query, dashboardMonitorItemSchema);
       if (disposed || sequence !== detailSequence || workspaceId !== selectedWorkspaceId || view !== 'monitors') return;
-      detailItems = (page.data ?? []).map((x) => x as unknown as Record<string, unknown>);
+      detailItems = (page.data ?? []).map((x) => ({ ...x }));
       monitorCursor = page.page?.next_cursor ?? null;
       detailHasMore = !!monitorCursor;
     } catch (error) {
@@ -184,7 +194,7 @@
       const query = new URLSearchParams({ workspace_id: workspaceId, limit: '50', sort: 'name', direction: 'asc', cursor });
       const page = await fetchDashboardPage('monitors', query, dashboardMonitorItemSchema);
       if (disposed || sequence !== detailSequence || workspaceId !== selectedWorkspaceId || view !== 'monitors') return;
-      detailItems = [...detailItems, ...(page.data ?? []).map((x) => x as unknown as Record<string, unknown>)];
+      detailItems = [...detailItems, ...(page.data ?? []).map((x) => ({ ...x }))];
       monitorCursor = page.page?.next_cursor ?? null;
       detailHasMore = !!monitorCursor;
     } catch (error) {
@@ -243,15 +253,25 @@
 
   function changeFilter(filter: AttentionFilter) {
     attentionFilter = filter;
-    if (view === 'attention') { const url = new URL(window.location.href); if (filter === 'all') url.searchParams.delete('filter'); else url.searchParams.set('filter', filter); window.history.replaceState({}, '', url); detailItems = (dashboard?.attention_items ?? []).filter((x) => filter === 'all' || x.reason === filter).map((x) => x as unknown as Record<string, unknown>); }
+    if (view === 'attention') { const url = new URL(window.location.href); if (filter === 'all') url.searchParams.delete('filter'); else url.searchParams.set('filter', filter); window.history.replaceState({}, '', url); detailItems = (dashboard?.attention_items ?? []).filter((x) => filter === 'all' || x.reason === filter).map((x) => ({ ...x })); }
   }
   onMount(() => {
-    const url = new URL(window.location.href); const requested = url.searchParams.get('overview') as View | null;
-    if (requested && ['attention', 'signals', 'monitors', 'evidence'].includes(requested)) view = requested;
-    const filter = url.searchParams.get('filter') as AttentionFilter | null;
-    if (filter && filter in filterLabels) attentionFilter = filter;
+    const url = new URL(window.location.href);
+    const requested = parseView(url.searchParams.get('overview'));
+    if (requested && requested !== 'overview') view = requested;
+    const filter = parseAttentionFilter(url.searchParams.get('filter'));
+    if (filter) attentionFilter = filter;
     void bootstrap();
-    const pop = () => { detailSequence += 1; loadingDetail = false; const u = new URL(window.location.href); const requestedView = u.searchParams.get('overview') as View | null; view = requestedView && ['attention','signals','monitors','evidence'].includes(requestedView) ? requestedView : 'overview'; if (view === 'monitors') void loadMonitorDetail(); if (view === 'signals' || view === 'evidence') void loadEvidenceDetail(); };
+    const pop = () => {
+      detailSequence += 1;
+      loadingDetail = false;
+      const currentUrl = new URL(window.location.href);
+      view = parseView(currentUrl.searchParams.get('overview')) ?? 'overview';
+      attentionFilter = parseAttentionFilter(currentUrl.searchParams.get('filter')) ?? 'all';
+      if (view === 'monitors') void loadMonitorDetail();
+      if (view === 'signals' || view === 'evidence') void loadEvidenceDetail();
+      if (view === 'attention') detailItems = (dashboard?.attention_items ?? []).map((item) => ({ ...item }));
+    };
     window.addEventListener('popstate', pop); return () => { disposed = true; requestSequence += 1; detailSequence += 1; bootstrapSequence += 1; window.removeEventListener('popstate', pop); };
   });
 </script>
