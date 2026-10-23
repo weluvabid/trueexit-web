@@ -79,9 +79,9 @@ export function templateDetailQueryOptions(workspaceId: string, templateId: stri
 }
 
 export function fetchTemplatePage(workspaceId: string, search: string, cursor: string | null) {
-  return getSharedQueryClient().fetchQuery(templateListQueryOptions(workspaceId, search, cursor));
+  return getSharedQueryClient().query(templateListQueryOptions(workspaceId, search, cursor));
 }
 
 export function fetchTemplateDetail(workspaceId: string, templateId: string) {
-  return getSharedQueryClient().fetchQuery(templateDetailQueryOptions(workspaceId, templateId));
+  return getSharedQueryClient().query(templateDetailQueryOptions(workspaceId, templateId));
 }

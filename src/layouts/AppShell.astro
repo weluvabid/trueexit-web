@@ -366,7 +366,7 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
           }
           try {
             const params = new URLSearchParams({ workspace_id: workspaceId, q: query, scope: 'all', limit: '5' });
-            const body = await getSharedQueryClient().fetchQuery({
+            const body = await getSharedQueryClient().query({
               queryKey: ['workspace-search', workspaceId, query, 'all', 5],
               staleTime: 10_000,
               queryFn: async ({ signal }) => {

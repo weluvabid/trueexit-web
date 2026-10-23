@@ -146,7 +146,7 @@ export async function requestSettingsApi(
 
   if (method === 'GET') {
     try {
-      const result = await client.fetchQuery({
+      const result = await client.query({
         queryKey: settingsQueryKeys.read(path),
         staleTime: 30_000,
         queryFn: async ({ signal }): Promise<CachedSettingsResponse> => {

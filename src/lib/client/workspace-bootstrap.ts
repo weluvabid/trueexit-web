@@ -74,12 +74,12 @@ export async function loadWorkspaceBootstrap(): Promise<{
 
   // Use restored successful responses immediately. Stale revalidation must not
   // hold up first render, while cached failures are retried on the next bootstrap.
-  if (usableCachedMe) void queryClient.fetchQuery(meOptions).catch(() => undefined);
-  if (usableCachedWorkspaces) void queryClient.fetchQuery(workspacesOptions).catch(() => undefined);
+  if (usableCachedMe) void queryClient.query(meOptions).catch(() => undefined);
+  if (usableCachedWorkspaces) void queryClient.query(workspacesOptions).catch(() => undefined);
 
   const [me, workspaces] = await Promise.all([
-    usableCachedMe ?? queryClient.fetchQuery(meOptions),
-    usableCachedWorkspaces ?? queryClient.fetchQuery(workspacesOptions),
+    usableCachedMe ?? queryClient.query(meOptions),
+    usableCachedWorkspaces ?? queryClient.query(workspacesOptions),
   ]);
 
   return normalizeBootstrap(me, workspaces);

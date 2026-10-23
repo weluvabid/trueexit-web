@@ -156,7 +156,7 @@
       return false;
     }
     try {
-      const result = await monitorQueryClient.fetchQuery({
+      const result = await monitorQueryClient.query({
         queryKey: monitorResourceQueryKeys.workspaceTags(workspaceId),
         queryFn: async ({ signal }) => requireMonitorQueryResult(await fetchWorkspaceTags(workspaceId, signal)),
         staleTime: 30_000,
@@ -196,7 +196,7 @@
         tagError = 'Workspace tags could not be loaded. Close this panel and try again; no changes have been made.';
         return;
       }
-      const result = await monitorQueryClient.fetchQuery({
+      const result = await monitorQueryClient.query({
         queryKey: monitorResourceQueryKeys.monitorTags(workspaceId, monitor.id),
         queryFn: async ({ signal }) => requireMonitorQueryResult(await fetchMonitorTags(workspaceId, monitor.id, signal)),
         staleTime: 0,
@@ -304,7 +304,7 @@
     const sequence = editorLoadSequence;
     channelsLoading = true;
     try {
-      const result = await monitorQueryClient.fetchQuery({
+      const result = await monitorQueryClient.query({
         queryKey: monitorResourceQueryKeys.workspaceChannels(workspaceId),
         queryFn: async ({ signal }) => requireMonitorQueryResult(await fetchWorkspaceChannels(workspaceId, signal)),
         staleTime: 30_000,
@@ -350,19 +350,19 @@
     creating = true;
     try {
       const [detailResult, channelIdsResult, destinationsResult] = await Promise.all([
-        monitorQueryClient.fetchQuery({
+        monitorQueryClient.query({
           queryKey: monitorResourceQueryKeys.monitorDetail(workspaceId, monitor.id),
           queryFn: async ({ signal }) => requireMonitorQueryResult(await fetchMonitorDetail(workspaceId, monitor.id, signal)),
           staleTime: 0,
           retry: false,
         }),
-        monitorQueryClient.fetchQuery({
+        monitorQueryClient.query({
           queryKey: monitorResourceQueryKeys.monitorChannels(workspaceId, monitor.id),
           queryFn: async ({ signal }) => requireMonitorQueryResult(await fetchMonitorChannelIds(workspaceId, monitor.id, signal)),
           staleTime: 0,
           retry: false,
         }),
-        monitorQueryClient.fetchQuery({
+        monitorQueryClient.query({
           queryKey: monitorResourceQueryKeys.workspaceChannels(workspaceId),
           queryFn: async ({ signal }) => requireMonitorQueryResult(await fetchWorkspaceChannels(workspaceId, signal)),
           staleTime: 30_000,
@@ -567,11 +567,11 @@
     };
     activeListQuery = query;
 
-    // fetchQuery shares the same key and query function as the reactive observer.
+    // query shares the same key and query function as the reactive observer.
     // It lets existing mutation/navigation handlers await the refresh without
     // maintaining a second copy of query data or query lifecycle state.
     try {
-      await monitorQueryClient.fetchQuery(monitorListQueryOptions(query));
+      await monitorQueryClient.query(monitorListQueryOptions(query));
     } catch {
       // The reactive query owns error state; the component derives listError from it.
     }

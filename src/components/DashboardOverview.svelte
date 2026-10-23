@@ -92,7 +92,7 @@
     resource: 'monitors' | 'evidence', params: URLSearchParams, itemSchema: TSchema,
   ): Promise<Page<v.InferOutput<TSchema>>> {
     const workspaceId = params.get('workspace_id') ?? '';
-    return queryClient.fetchQuery(dashboardPageQueryOptions(workspaceId, resource, params, itemSchema));
+    return queryClient.query(dashboardPageQueryOptions(workspaceId, resource, params, itemSchema));
   }
 
   async function loadMonitorPage(append = false, workspaceId = selectedWorkspaceId, parentSequence = requestSequence) {

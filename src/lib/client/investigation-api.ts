@@ -83,7 +83,7 @@ export async function readInvestigationResource<
   schema: TSchema,
 ): Promise<Resource<v.InferOutput<TSchema>>> {
   try {
-    const data = await getSharedQueryClient().fetchQuery(
+    const data = await getSharedQueryClient().query(
       investigationResourceQueryOptionsForPath(path, schema, 15_000),
     );
     return { ok: true, data };
