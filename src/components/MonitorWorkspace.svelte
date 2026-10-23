@@ -19,6 +19,7 @@
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
   import { getSharedQueryClient } from '../lib/client/query-client';
   import { ApiClientError } from '../lib/client/api-client';
+  import { monitorSchema, parseApiBody } from '../lib/client/api-schemas';
 
   // Query cache lifetime belongs to the application, not this component instance.
   const monitorQueryClient = getSharedQueryClient();
@@ -462,7 +463,7 @@
         idempotencyKey: createRequestKey,
       });
       if (!isCurrentWorkspace(workspaceId)) return;
-      const created = result.body as Monitor;
+      const created = parseApiBody(monitorSchema, result.body, { status: result.status, requestId: result.requestId });
       resetEditorDraft();
       if (initialMode !== 'inventory') { window.location.href = `/monitors?workspace_id=${encodeURIComponent(workspaceId)}`; return; }
       createOpen = false;

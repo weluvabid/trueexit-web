@@ -1,7 +1,11 @@
 <svelte:options runes={true} />
 <script lang="ts">
+  import * as v from 'valibot';
+  import { ApiClientError } from '../../lib/client/api-client';
   import './SettingsDestinationManager.css';
   import { getCachedSettingsResponse, getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../../lib/client/settings-api';
+  import { settingsAcknowledgementSchema, settingsChannelSchema, settingsChannelValidationSchema } from '../../lib/client/api-schemas';
+  import { parseApiBody } from '../../lib/client/api-schemas';
   import { buildNotificationChannelConfig, type NotificationChannelKind } from '../../lib/client/settings-channel-config';
 
   let { workspaceId = '', canManageWorkspace = false }: { workspaceId?: string; canManageWorkspace?: boolean } = $props();
@@ -39,7 +43,9 @@
     return requestSettingsApi(path, init);
   }
 
-  async function perform<T = unknown>(key: string, path: string, init: RequestInit = {}): Promise<T | null> {
+  async function perform<TSchema extends v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>>(
+    key: string, path: string, schema: TSchema, init: RequestInit = {},
+  ): Promise<v.InferOutput<TSchema> | null> {
     busyKey = key;
     error = '';
     notice = '';
@@ -49,9 +55,11 @@
         error = settingsErrorMessage(response.status, getSettingsErrorCode(body));
         return null;
       }
-      return body as T;
-    } catch {
-      error = settingsErrorMessage(0, 'network_error');
+      return parseApiBody(schema, body, { status: response.status });
+    } catch (caught) {
+      error = caught instanceof ApiClientError
+        ? settingsErrorMessage(caught.status, caught.code)
+        : settingsErrorMessage(0, 'network_error');
       return null;
     } finally {
       busyKey = '';
@@ -65,15 +73,21 @@
     if (!id) { channels = []; loading = false; return; }
     const path = `/workspaces/${encodeURIComponent(id)}/channels`;
     const cached = getCachedSettingsResponse(path);
-    channels = cached?.response.ok ? listSettingsData<Channel>(cached.body) : [];
+    channels = [];
+    if (cached?.response.ok) {
+      try { channels = listSettingsData(settingsChannelSchema, cached.body); }
+      catch { channels = []; } // Cached data is untrusted until validated.
+    }
     loading = !cached;
     try {
       const { response, body } = await request(path);
       if (requestGeneration !== generation || id !== workspaceId) return;
-      if (response.ok) channels = listSettingsData<Channel>(body);
+      if (response.ok) channels = listSettingsData(settingsChannelSchema, body);
       else if (response.status !== 403 && response.status !== 404) error = settingsErrorMessage(response.status, getSettingsErrorCode(body));
-    } catch {
-      if (requestGeneration === generation) error = settingsErrorMessage(0, 'network_error');
+    } catch (caught) {
+      if (requestGeneration === generation) error = caught instanceof ApiClientError
+        ? settingsErrorMessage(caught.status, caught.code)
+        : settingsErrorMessage(0, 'network_error');
     } finally {
       if (requestGeneration === generation) loading = false;
     }
@@ -87,8 +101,8 @@
 
   async function validateChannel(id: string, type: ChannelKind, config: Record<string, unknown>): Promise<boolean> {
     if (!id || id !== workspaceId) return false;
-    const result = await perform<{ valid?: boolean; duplicate?: boolean; existing_channel?: { id: string; label: string } | null }>(
-      'validate-channel', `/workspaces/${encodeURIComponent(id)}/channels/validate`,
+    const result = await perform(
+      'validate-channel', `/workspaces/${encodeURIComponent(id)}/channels/validate`, settingsChannelValidationSchema,
       { method: 'POST', body: JSON.stringify({ type, config }) },
     );
     if (!result) return false;
@@ -110,7 +124,7 @@
     error = '';
     const config = channelConfig(createForm.type, createForm.address, createForm.headers);
     if (!config || !(await validateChannel(id, createForm.type, config)) || id !== workspaceId) return;
-    const result = await perform<Channel>('create-channel', `/workspaces/${encodeURIComponent(id)}/channels`, {
+    const result = await perform('create-channel', `/workspaces/${encodeURIComponent(id)}/channels`, settingsChannelSchema, {
       method: 'POST', body: JSON.stringify({ type: createForm.type, label, priority: createForm.priority, enabled: createForm.enabled, config }),
     });
     if (result && id === workspaceId) {
@@ -140,7 +154,7 @@
       if (!config || !(await validateChannel(id, editForm.type, config)) || id !== workspaceId) return;
       payload.config = config;
     }
-    const result = await perform<Channel>('edit-channel', `/workspaces/${encodeURIComponent(id)}/channels/${encodeURIComponent(channelId)}`, {
+    const result = await perform('edit-channel', `/workspaces/${encodeURIComponent(id)}/channels/${encodeURIComponent(channelId)}`, settingsChannelSchema, {
       method: 'PATCH', body: JSON.stringify(payload),
     });
     if (result && id === workspaceId) {
@@ -154,7 +168,7 @@
     if (!workspaceId || !canManageWorkspace) return;
     const id = workspaceId;
     if (!confirm(`Delete destination “${channel.label}”? It must first be unassigned from all monitors.`)) return;
-    const result = await perform('delete-channel', `/workspaces/${encodeURIComponent(id)}/channels/${encodeURIComponent(channel.id)}`, { method: 'DELETE' });
+    const result = await perform('delete-channel', `/workspaces/${encodeURIComponent(id)}/channels/${encodeURIComponent(channel.id)}`, settingsAcknowledgementSchema, { method: 'DELETE' });
     if (id === workspaceId && (result !== null || !error)) {
       channels = channels.filter((item) => item.id !== channel.id);
       notice = `Destination “${channel.label}” deleted.`;

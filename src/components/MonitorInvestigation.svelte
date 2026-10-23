@@ -7,6 +7,7 @@
   import '../styles/investigation.css';
   import { formatInvestigationDate, formatInvestigationValue, formatInvestigationLabel, getHealthCounts } from '../lib/client/investigation-format';
   import { buildInvestigationApiPath, getInvestigationErrorMessage, readInvestigationResource, investigationResourceQueryOptions, investigationQueryErrorMessage, type Resource } from '../lib/client/investigation-api';
+  import { investigationDeliveryPageSchema, investigationDeliverySchema, investigationEvidencePageSchema, investigationEvidenceSchema, investigationHealthSchema, investigationHealthVersionSchema, investigationMonitorSchema, investigationRecordPageSchema, investigationRecordSchema } from '../lib/client/api-schemas';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
 
   type Page<T> = { data: T[]; page?: { next_cursor: string | null } };
@@ -78,15 +79,15 @@
   const healthCounts = getHealthCounts;
   const queryClient = getSharedQueryClient();
   const monitorQuery = createQuery(
-    () => investigationResourceQueryOptions<Monitor>(workspaceId, monitorId, 'monitor', `monitors/${encodeURIComponent(monitorId)}`),
+    () => investigationResourceQueryOptions(workspaceId, monitorId, 'monitor', `monitors/${encodeURIComponent(monitorId)}`, investigationMonitorSchema),
     () => queryClient,
   );
   const healthQuery = createQuery(
-    () => investigationResourceQueryOptions<Record<string, any>>(workspaceId, monitorId, 'health', `monitors/${encodeURIComponent(monitorId)}/health`),
+    () => investigationResourceQueryOptions(workspaceId, monitorId, 'health', `monitors/${encodeURIComponent(monitorId)}/health`, investigationHealthSchema),
     () => queryClient,
   );
   const healthHistoryQuery = createQuery(
-    () => investigationResourceQueryOptions<Page<Record<string, any>>>(workspaceId, monitorId, 'health-history', `monitors/${encodeURIComponent(monitorId)}/health/history`, { limit: '20' }),
+    () => investigationResourceQueryOptions(workspaceId, monitorId, 'health-history', `monitors/${encodeURIComponent(monitorId)}/health/history`, investigationRecordPageSchema, { limit: '20' }),
     () => queryClient,
   );
   const monitor = $derived(monitorQuery.data ?? null);
@@ -110,7 +111,7 @@
     const route = rejected ? `monitors/${encodeURIComponent(monitorId)}/bad-evidence` : `monitors/${encodeURIComponent(monitorId)}/evidence`;
     const extra: Record<string, string> = { limit: '20' };
     if (cursor) extra.cursor = cursor;
-    const result = await readResource<Page<Evidence>>(apiPath(route, extra));
+    const result = await readResource(apiPath(route, extra), investigationEvidencePageSchema);
     const latestRequestId = rejected ? rejectedEvidenceGeneration : verifiedEvidenceGeneration;
     if (generation !== workspaceGeneration || requestId !== latestRequestId) return;
     if (result.ok) {
@@ -129,7 +130,7 @@
     deliveriesError = '';
     const extra: Record<string, string> = { limit: '20', monitor_id: monitorId };
     if (cursor) extra.cursor = cursor;
-    const result = await readResource<Page<Delivery>>(apiPath(`workspaces/${encodeURIComponent(workspaceId)}/deliveries`, extra));
+    const result = await readResource(apiPath(`workspaces/${encodeURIComponent(workspaceId)}/deliveries`, extra), investigationDeliveryPageSchema);
     if (generation !== workspaceGeneration || requestId !== deliveryListGeneration) return;
     if (result.ok) { deliveries = result.data; deliveryCursor = result.data.page?.next_cursor ?? null; deliveryPageIndex = pageIndex; }
     else deliveriesError = messageFor(result.status, result.code);
@@ -148,7 +149,7 @@
     healthVersionError = '';
     detailError = ''; traceError = ''; deliveryDetailError = ''; detailLoading = true;
     const prefix = kind === 'rejected' ? 'bad-evidence' : 'evidence';
-    const result = await readResource<Record<string, any>>(apiPath(`monitors/${encodeURIComponent(monitorId)}/${prefix}/${encodeURIComponent(item.id)}`));
+    const result = await readResource(apiPath(`monitors/${encodeURIComponent(monitorId)}/${prefix}/${encodeURIComponent(item.id)}`), investigationEvidenceSchema);
     if (generation !== workspaceGeneration || requestId !== detailGeneration) return;
     if (result.ok) selectedEvidence = { kind, id: item.id, detail: result.data };
     else detailError = messageFor(result.status, result.code);
@@ -186,7 +187,7 @@
     const evidenceKind = selectedEvidence.kind;
     traceLoading = true; traceError = ''; selectedTrace = null;
     const prefix = evidenceKind === 'rejected' ? 'bad-evidence' : 'evidence';
-    const result = await readResource<Record<string, any>>(apiPath(`monitors/${encodeURIComponent(monitorId)}/${prefix}/${encodeURIComponent(evidenceId)}/trace`));
+    const result = await readResource(apiPath(`monitors/${encodeURIComponent(monitorId)}/${prefix}/${encodeURIComponent(evidenceId)}/trace`), investigationRecordSchema);
     if (generation !== workspaceGeneration || requestId !== traceGeneration || selectedEvidence?.id !== evidenceId || selectedEvidence?.kind !== evidenceKind) return;
     if (result.ok) selectedTrace = result.data;
     else traceError = messageFor(result.status, result.code);
@@ -205,7 +206,7 @@
     selectedDelivery = null;
     healthVersionError = '';
     detailError = ''; traceError = ''; deliveryDetailError = ''; detailLoading = true;
-    const result = await readResource<Record<string, any>>(apiPath(`workspaces/${encodeURIComponent(workspaceId)}/deliveries/${encodeURIComponent(item.request_id)}`));
+    const result = await readResource(apiPath(`workspaces/${encodeURIComponent(workspaceId)}/deliveries/${encodeURIComponent(item.request_id)}`), investigationRecordSchema);
     if (generation !== workspaceGeneration || requestId !== deliveryDetailGeneration) return;
     if (result.ok) selectedDelivery = result.data;
     else deliveryDetailError = messageFor(result.status, result.code);
@@ -223,7 +224,7 @@
     const generation = workspaceGeneration;
     const requestId = ++healthVersionGeneration;
     selectedHealthVersion = null; healthVersionError = ''; healthVersionLoading = true;
-    const result = await readResource<Record<string, any>>(apiPath(`monitors/${encodeURIComponent(monitorId)}/health/history/${version}`));
+    const result = await readResource(apiPath(`monitors/${encodeURIComponent(monitorId)}/health/history/${version}`), investigationHealthVersionSchema);
     if (generation !== workspaceGeneration || requestId !== healthVersionGeneration) return;
     if (result.ok) selectedHealthVersion = result.data;
     else healthVersionError = messageFor(result.status, result.code);
@@ -360,7 +361,7 @@
         {:else if healthError}<p class="investigation-error" role="alert">{healthError}</p>
         {:else if health && Object.keys(health.health?.fields ?? {}).length}
           <div class="health-grid">
-            {#each Object.entries(health.health.fields) as [fieldName, fieldState] (fieldName)}
+            {#each Object.entries(health.health?.fields ?? {}) as [fieldName, fieldState] (fieldName)}
               <article class="health-field"><div><h3>{fieldName}</h3><span class={`health-state health-state--${String(fieldState.state ?? 'unknown')}`}>{label(fieldState.state)}</span></div><dl><div><dt>Consecutive anomalies</dt><dd>{formatValue(fieldState.consecutive_anomalies)}</dd></div><div><dt>Consecutive healthy</dt><dd>{formatValue(fieldState.consecutive_healthy)}</dd></div></dl></article>
             {/each}
           </div>

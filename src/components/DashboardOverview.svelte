@@ -3,7 +3,9 @@
   import { onMount } from 'svelte';
   import { createQuery } from '@tanstack/svelte-query';
   import { getSharedQueryClient } from '../lib/client/query-client';
+  import * as v from 'valibot';
   import { assertApiSuccess, requestApi } from '../lib/client/api-client';
+  import { dashboardEvidenceItemSchema, dashboardMonitorItemSchema, parseApiBody } from '../lib/client/api-schemas';
   import { dashboardQueryErrorMessage, dashboardQueryKeys, dashboardQueryOptions, type DashboardResponse } from '../lib/client/dashboard-queries';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
@@ -80,16 +82,22 @@
     await loadMonitorPage(false, workspaceId, requestSequence);
   }
 
-  async function fetchDashboardPage<T>(resource: 'monitors' | 'evidence', params: URLSearchParams): Promise<Page<T>> {
+  async function fetchDashboardPage<TSchema extends v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>>(
+    resource: 'monitors' | 'evidence', params: URLSearchParams, itemSchema: TSchema,
+  ): Promise<Page<v.InferOutput<TSchema>>> {
     const workspaceId = params.get('workspace_id') ?? '';
     const queryIdentity = params.toString();
     return queryClient.fetchQuery({
       queryKey: dashboardQueryKeys.page(workspaceId, resource, queryIdentity),
       staleTime: 15_000,
       queryFn: async ({ signal }) => {
-        const { response, body, code, requestId } = await requestApi(`/api/backend/${resource}?${params.toString()}`, { signal });
-        assertApiSuccess({ response, body, code, requestId });
-        return body as Page<T>;
+        const result = await requestApi(`/api/backend/${resource}?${params.toString()}`, { signal });
+        assertApiSuccess(result);
+        const pageSchema = v.object({
+          data: v.array(itemSchema),
+          page: v.optional(v.object({ next_cursor: v.nullable(v.string()) })),
+        });
+        return parseApiBody(pageSchema, result.body, { status: result.response.status, requestId: result.requestId });
       },
     });
   }
@@ -100,7 +108,7 @@
     if (cursor) query.set('cursor', cursor);
     let page: Page<MonitorItem>;
     try {
-      page = await fetchDashboardPage<MonitorItem>('monitors', query);
+      page = await fetchDashboardPage('monitors', query, dashboardMonitorItemSchema);
     } catch {
       return; // Summary remains usable if the optional inventory request fails.
     }
@@ -155,7 +163,7 @@
     detailError = '';
     try {
       const query = new URLSearchParams({ workspace_id: workspaceId, limit: '50', sort: 'name', direction: 'asc' });
-      const page = await fetchDashboardPage<MonitorItem>('monitors', query);
+      const page = await fetchDashboardPage('monitors', query, dashboardMonitorItemSchema);
       if (disposed || sequence !== detailSequence || workspaceId !== selectedWorkspaceId || view !== 'monitors') return;
       detailItems = (page.data ?? []).map((x) => x as unknown as Record<string, unknown>);
       monitorCursor = page.page?.next_cursor ?? null;
@@ -174,7 +182,7 @@
     loadingDetail = true;
     try {
       const query = new URLSearchParams({ workspace_id: workspaceId, limit: '50', sort: 'name', direction: 'asc', cursor });
-      const page = await fetchDashboardPage<MonitorItem>('monitors', query);
+      const page = await fetchDashboardPage('monitors', query, dashboardMonitorItemSchema);
       if (disposed || sequence !== detailSequence || workspaceId !== selectedWorkspaceId || view !== 'monitors') return;
       detailItems = [...detailItems, ...(page.data ?? []).map((x) => x as unknown as Record<string, unknown>)];
       monitorCursor = page.page?.next_cursor ?? null;
@@ -197,7 +205,7 @@
         ? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
         : null;
       if (evidenceFrom) query.set('from', evidenceFrom);
-      const page = await fetchDashboardPage<Record<string, unknown>>('evidence', query);
+      const page = await fetchDashboardPage('evidence', query, dashboardEvidenceItemSchema);
       if (disposed || sequence !== detailSequence || workspaceId !== selectedWorkspaceId || view !== targetView) return;
       detailItems = page.data ?? [];
       evidenceCursor = page.page?.next_cursor ?? null;
@@ -219,7 +227,7 @@
     try {
       const query = new URLSearchParams({ workspace_id: workspaceId, limit: '50', outcome: 'all', cursor });
       if (evidenceFrom) query.set('from', evidenceFrom);
-      const page = await fetchDashboardPage<Record<string, unknown>>('evidence', query);
+      const page = await fetchDashboardPage('evidence', query, dashboardEvidenceItemSchema);
       if (disposed || sequence !== detailSequence || workspaceId !== selectedWorkspaceId || view !== targetView) return;
       detailItems = [...detailItems, ...(page.data ?? [])];
       evidenceCursor = page.page?.next_cursor ?? null;

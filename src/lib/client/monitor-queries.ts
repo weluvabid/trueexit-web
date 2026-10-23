@@ -135,8 +135,7 @@ export async function fetchMonitorTemplates(
 
   if (!response.ok) return { ok: false, status: response.status, code, requestId, data: [] };
 
-  const rows = getApiList<unknown>(body);
-  const data = rows.map((row) => parseApiBody(monitorTemplateSchema, row, { status: response.status, requestId }));
+  const data = parseApiList(monitorTemplateSchema, body, { status: response.status, requestId });
   return {
     ok: true,
     status: response.status,

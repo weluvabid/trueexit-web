@@ -1,5 +1,8 @@
 <svelte:options runes={true} />
 <script lang="ts">
+  import * as v from 'valibot';
+  import { ApiClientError } from '../lib/client/api-client';
+  import { parseApiBody, settingsAccountCreateSchema, settingsAccountLifecycleSchema, settingsAcknowledgementSchema, settingsAccountSchema, workspaceContextSchema } from '../lib/client/api-schemas';
   import { can } from '../lib/client/permissions';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
@@ -46,7 +49,9 @@
     return requestSettingsApi(path, init);
   }
 
-  async function perform<T = unknown>(key: string, path: string, init: RequestInit = {}): Promise<T | null> {
+  async function perform<TSchema extends v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>>(
+    key: string, path: string, schema: TSchema, init: RequestInit = {},
+  ): Promise<v.InferOutput<TSchema> | null> {
     busyKey = key;
     error = '';
     notice = '';
@@ -56,9 +61,11 @@
         error = settingsErrorMessage(response.status, getSettingsErrorCode(body));
         return null;
       }
-      return body as T;
-    } catch {
-      error = settingsErrorMessage(0, 'network_error');
+      return parseApiBody(schema, body, { status: response.status });
+    } catch (caught) {
+      error = caught instanceof ApiClientError
+        ? settingsErrorMessage(caught.status, caught.code)
+        : settingsErrorMessage(0, 'network_error');
       return null;
     } finally {
       busyKey = '';
@@ -71,7 +78,10 @@
     // loading state is needed. requestSettingsApi will revalidate stale data.
     const cachedAccounts = getCachedSettingsResponse('/accounts');
     const hasCachedAccounts = !!cachedAccounts?.response.ok;
-    if (hasCachedAccounts) accounts = listSettingsData<Account>(cachedAccounts.body);
+    if (hasCachedAccounts) {
+      try { accounts = listSettingsData(settingsAccountSchema, cachedAccounts.body); }
+      catch { accounts = []; } // Reject stale/malformed cached data; the request below revalidates it.
+    }
     loading = !hasCachedAccounts;
     if (!keepNotice) { error = ''; notice = ''; }
     try {
@@ -97,11 +107,15 @@
 
       const accountsResult = await request('/accounts');
       if (generation !== loadGeneration) return;
-      if (accountsResult.response.ok) accounts = listSettingsData<Account>(accountsResult.body);
-      else if (accountsResult.response.status !== 404) error = settingsErrorMessage(accountsResult.response.status, getSettingsErrorCode(accountsResult.body));
+      if (accountsResult.response.ok) {
+        try { accounts = listSettingsData(settingsAccountSchema, accountsResult.body); }
+        catch (caught) { error = caught instanceof ApiClientError ? settingsErrorMessage(caught.status, caught.code) : settingsErrorMessage(200, 'invalid_response'); }
+      } else if (accountsResult.response.status !== 404) error = settingsErrorMessage(accountsResult.response.status, getSettingsErrorCode(accountsResult.body));
       peopleRefreshKey += 1;
-    } catch {
-      if (generation === loadGeneration) error = settingsErrorMessage(0, 'network_error');
+    } catch (caught) {
+      if (generation === loadGeneration) error = caught instanceof ApiClientError
+        ? settingsErrorMessage(caught.status, caught.code)
+        : settingsErrorMessage(0, 'network_error');
     } finally {
       if (generation === loadGeneration) loading = false;
     }
@@ -111,7 +125,7 @@
     event.preventDefault();
     const name = workspaceForm.name.trim();
     if (!selectedWorkspace || !name || name.length > 120 || !canManageWorkspace) return;
-    const result = await perform<WorkspaceContext>('rename', `/workspaces/${encodeURIComponent(selectedWorkspace.id)}`, {
+    const result = await perform('rename', `/workspaces/${encodeURIComponent(selectedWorkspace.id)}`, workspaceContextSchema, {
       method: 'PATCH', body: JSON.stringify({ name }),
     });
     if (result) {
@@ -127,7 +141,7 @@
     if (!name || name.length > 120) return;
     const payload: Record<string, string> = { name };
     if (workspaceForm.accountId) payload.account_id = workspaceForm.accountId;
-    const result = await perform<WorkspaceContext>('create-workspace', '/workspaces', {
+    const result = await perform('create-workspace', '/workspaces', workspaceContextSchema, {
       method: 'POST', body: JSON.stringify(payload),
     });
     if (result) {
@@ -146,7 +160,7 @@
     event.preventDefault();
     const name = accountForm.createAccountName.trim();
     if (!name || name.length > 120) { error = 'Enter an account workspace name up to 120 characters.'; return; }
-    const result = await perform<{ account_id: string; workspace: WorkspaceContext }>('create-account', '/accounts', {
+    const result = await perform('create-account', '/accounts', settingsAccountCreateSchema, {
       method: 'POST', body: JSON.stringify({ workspace_name: name }),
     });
     if (result) {
@@ -167,7 +181,7 @@
     const userId = accountForm.newOwnerUserId.trim();
     if (!userId) { error = 'Enter the eligible new owner user ID.'; return; }
     if (!confirm('Transfer account ownership? You may lose owner privileges after the transfer.')) return;
-    const result = await perform('transfer-account', `/accounts/${encodeURIComponent(selectedAccount.account_id)}/transfer`, {
+    const result = await perform('transfer-account', `/accounts/${encodeURIComponent(selectedAccount.account_id)}/transfer`, settingsAcknowledgementSchema, {
       method: 'POST', body: JSON.stringify({ new_owner_user_id: userId }),
     });
     if (result) {
@@ -180,8 +194,8 @@
   async function requestClosure() {
     if (!selectedAccount || !selectedWorkspace?.account_owner || !accountForm.closureConfirm) return;
     if (!confirm('Schedule this account for closure? Monitoring will stop.')) return;
-    const result = await perform<{ scheduled_deletion_at?: string | null; lifecycle_status?: string }>(
-      'close-account', `/accounts/${encodeURIComponent(selectedAccount.account_id)}/closure`,
+    const result = await perform(
+      'close-account', `/accounts/${encodeURIComponent(selectedAccount.account_id)}/closure`, settingsAccountLifecycleSchema,
       { method: 'POST', body: JSON.stringify({ confirm: true }) },
     );
     if (result) {
@@ -196,8 +210,8 @@
   async function cancelClosure() {
     if (!selectedAccount || !selectedWorkspace?.account_owner) return;
     if (!confirm('Cancel the scheduled account closure?')) return;
-    const result = await perform<{ lifecycle_status?: string }>(
-      'cancel-closure', `/accounts/${encodeURIComponent(selectedAccount.account_id)}/closure/cancel`,
+    const result = await perform(
+      'cancel-closure', `/accounts/${encodeURIComponent(selectedAccount.account_id)}/closure/cancel`, settingsAccountLifecycleSchema,
       { method: 'POST' },
     );
     if (result) {

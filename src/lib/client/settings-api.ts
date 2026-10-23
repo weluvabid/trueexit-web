@@ -1,10 +1,17 @@
 import { getSharedQueryClient } from './query-client';
-import { getApiErrorCode, getApiList } from './api-response';
+import { getApiErrorCode } from './api-response';
+import { parseApiList } from './api-schemas';
+import type * as v from 'valibot';
 import { ApiClientError, requestApi } from './api-client';
 import { monitorResourceQueryKeys } from './monitor-queries';
 import { workspaceBootstrapKeys } from './workspace-bootstrap';
 
-export const listSettingsData = getApiList;
+export function listSettingsData<TSchema extends v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>>(
+  schema: TSchema,
+  body: unknown,
+): v.InferOutput<TSchema>[] {
+  return parseApiList(schema, body);
+}
 
 export function getSettingsErrorCode(body: unknown): string | null {
   return getApiErrorCode(body);

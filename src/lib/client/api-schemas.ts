@@ -191,3 +191,150 @@ export const monitorDetailSchema = v.intersect([
 ]);
 
 export const monitorChannelIdsSchema = v.object({ channel_ids: v.array(v.string()) });
+
+
+// Investigation resources are validated independently because these endpoints
+// intentionally expose different projections of monitor/evidence state.
+export const investigationMonitorSchema = v.object({
+  id: v.string(),
+  workspace_id: v.optional(v.string()),
+  name: v.string(),
+  description: v.optional(v.string()),
+  status: monitorStatusSchema,
+  cadence_seconds: v.optional(v.number()),
+  current_config_version: v.optional(v.number()),
+  created_at: v.optional(v.string()),
+  updated_at: v.optional(v.string()),
+  config_versions: v.optional(v.array(v.object({
+    version: v.number(),
+    cadence_seconds: v.nullable(v.number()),
+    config: v.object({
+      fields: v.optional(v.array(v.object({ name: v.string(), path: v.string(), primitive: v.number() }))),
+    }),
+  }))),
+});
+
+export const investigationEvidenceSchema = v.looseObject({
+  id: v.string(),
+  request_id: v.string(),
+  config_version: v.number(),
+  observed_at: v.optional(v.nullable(v.string())),
+  created_at: v.optional(v.string()),
+  fields: v.optional(v.record(v.string(), v.unknown())),
+  reason: v.optional(v.object({ code: v.string(), params: v.optional(v.unknown()) })),
+});
+
+export const investigationDeliverySchema = v.looseObject({
+  request_id: v.string(),
+  monitor_id: v.optional(v.string()),
+  monitor_name: v.optional(v.string()),
+  mode: v.optional(v.string()),
+  evidence_outcome: v.optional(v.string()),
+  created_at: v.optional(v.string()),
+  updated_at: v.optional(v.string()),
+  status: v.optional(v.string()),
+  summary: v.optional(v.record(v.string(), v.unknown())),
+});
+
+export const investigationRecordSchema = v.record(v.string(), v.unknown());
+export const investigationEvidencePageSchema = v.object({
+  data: v.array(investigationEvidenceSchema),
+  page: v.optional(v.object({ next_cursor: v.nullable(v.string()) })),
+});
+export const investigationDeliveryPageSchema = v.object({
+  data: v.array(investigationDeliverySchema),
+  page: v.optional(v.object({ next_cursor: v.nullable(v.string()) })),
+});
+export const investigationRecordPageSchema = v.object({
+  data: v.array(v.looseObject({
+    config_version: v.number(),
+    is_current: v.boolean(),
+    health_summary: v.optional(v.record(v.string(), v.unknown())),
+  })),
+  page: v.optional(v.object({ next_cursor: v.nullable(v.string()) })),
+});
+export const investigationHealthSchema = v.looseObject({
+  health: v.optional(v.looseObject({
+    fields: v.optional(v.record(v.string(), v.looseObject({
+      state: v.optional(v.string()),
+      consecutive_anomalies: v.optional(v.unknown()),
+      consecutive_healthy: v.optional(v.unknown()),
+    }))),
+    checkpoints: v.optional(v.unknown()),
+    adopted_baselines: v.optional(v.unknown()),
+  })),
+});
+export const investigationHealthVersionSchema = v.looseObject({
+  config_version: v.number(),
+  is_current: v.boolean(),
+  configuration: v.optional(v.looseObject({ cadence_seconds: v.optional(v.nullable(v.number())) })),
+  health: v.optional(v.unknown()),
+});
+
+export const discoveredFieldsResponseSchema = v.object({
+  fields: v.array(v.object({
+    name: v.string(),
+    path: v.string(),
+    primitive: primitiveSchema,
+    meta: v.optional(v.record(v.string(), v.unknown())),
+    source_type: v.optional(v.string()),
+  })),
+  warnings: v.optional(v.array(v.object({ code: v.string() }))),
+});
+
+export const settingsAccountSchema = v.object({
+  account_id: v.string(),
+  lifecycle_status: v.string(),
+  scheduled_deletion_at: v.nullable(v.string()),
+  billing_cancellation_status: v.nullable(v.string()),
+});
+export const settingsMemberSchema = v.object({
+  user_id: v.string(),
+  email: v.string(),
+  display_name: v.nullable(v.string()),
+  role: v.nullable(v.picklist(['admin', 'member'])),
+  account_owner: v.boolean(),
+});
+export const settingsInvitationSchema = v.object({
+  id: v.string(),
+  email: v.string(),
+  role: v.string(),
+  invited_by_user_id: v.string(),
+  expires_at: v.string(),
+  created_at: v.optional(v.string()),
+  email_delivery: v.optional(v.string()),
+});
+export const settingsChannelSchema = v.object({
+  id: v.string(),
+  label: v.string(),
+  type: v.picklist(['email', 'webhook', 'slack', 'discord']),
+  priority: nonNegativeInteger,
+  enabled: v.boolean(),
+  configured: v.boolean(),
+  total_attempts: v.optional(nonNegativeInteger),
+  successful_attempts: v.optional(nonNegativeInteger),
+});
+export const settingsChannelValidationSchema = v.object({
+  valid: v.optional(v.boolean()),
+  duplicate: v.optional(v.boolean()),
+  existing_channel: v.optional(v.nullable(v.object({ id: v.string(), label: v.string() }))),
+});
+
+export const settingsAccountCreateSchema = v.object({
+  account_id: v.string(),
+  workspace: v.optional(workspaceContextSchema),
+});
+export const settingsAccountLifecycleSchema = v.object({
+  scheduled_deletion_at: v.optional(v.nullable(v.string())),
+  lifecycle_status: v.optional(v.string()),
+});
+export const settingsAcknowledgementSchema = v.union([v.null(), v.record(v.string(), v.unknown())]);
+
+export const dashboardMonitorItemSchema = v.object({
+  id: v.string(),
+  name: v.string(),
+  status: monitorStatusSchema,
+  cadence_seconds: v.optional(v.number()),
+  updated_at: v.optional(v.string()),
+});
+export const dashboardEvidenceItemSchema = v.record(v.string(), v.unknown());

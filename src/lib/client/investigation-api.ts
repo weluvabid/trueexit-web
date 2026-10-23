@@ -1,5 +1,7 @@
 import { getSharedQueryClient } from './query-client';
+import * as v from 'valibot';
 import { ApiClientError, requestApi } from './api-client';
+import { parseApiBody } from './api-schemas';
 
 export type Resource<T> = { ok: true; data: T } | { ok: false; status: number; code: string | null; requestId: string | null };
 
@@ -17,13 +19,16 @@ export function buildInvestigationApiPath(workspaceId: string, path: string, ext
   return `/api/backend/${path}?${params.toString()}`;
 }
 
-export async function readInvestigationResource<T>(path: string): Promise<Resource<T>> {
+export async function readInvestigationResource<TSchema extends v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>>(
+  path: string,
+  schema: TSchema,
+): Promise<Resource<v.InferOutput<TSchema>>> {
   try {
     const data = await getSharedQueryClient().fetchQuery({
       queryKey: ['investigation-resource', path] as const,
       staleTime: 15_000,
       retry: false,
-      queryFn: async ({ signal }): Promise<T> => {
+      queryFn: async ({ signal }): Promise<v.InferOutput<TSchema>> => {
         const { response, body, code, requestId } = await requestApi(path, { signal });
         if (!response.ok) {
           throw new InvestigationQueryError(
@@ -33,7 +38,7 @@ export async function readInvestigationResource<T>(path: string): Promise<Resour
             requestId,
           );
         }
-        return body as T;
+        return parseApiBody(schema, body, { status: response.status, requestId });
       },
     });
     return { ok: true, data };
@@ -63,11 +68,12 @@ export function investigationQueryErrorMessage(error: unknown): string {
   return getInvestigationErrorMessage(0, 'network_error');
 }
 
-export function investigationResourceQueryOptions<T>(
+export function investigationResourceQueryOptions<TSchema extends v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>>(
   workspaceId: string,
   monitorId: string,
   resource: string,
   path: string,
+  schema: TSchema,
   extra: Record<string, string> = {},
 ) {
   const queryPath = buildInvestigationApiPath(workspaceId, path, extra);
@@ -75,7 +81,7 @@ export function investigationResourceQueryOptions<T>(
     queryKey: ['investigation', workspaceId, monitorId, resource, path, extra] as const,
     enabled: Boolean(workspaceId && monitorId),
     staleTime: 30_000,
-    queryFn: async ({ signal }: { signal: AbortSignal }): Promise<T> => {
+    queryFn: async ({ signal }: { signal: AbortSignal }): Promise<v.InferOutput<TSchema>> => {
       const { response, body, code, requestId } = await requestApi(queryPath, { signal });
       if (!response.ok) {
         throw new InvestigationQueryError(
@@ -85,7 +91,7 @@ export function investigationResourceQueryOptions<T>(
           requestId,
         );
       }
-      return body as T;
+      return parseApiBody(schema, body, { status: response.status, requestId });
     },
   };
 }

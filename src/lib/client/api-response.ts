@@ -20,11 +20,3 @@ export function getApiRequestId(body: unknown): string | null {
   return typeof requestId === 'string' ? requestId : null;
 }
 
-/** Normalize common list response shapes used by the backend API. */
-export function getApiList<T>(body: unknown): T[] {
-  if (Array.isArray(body)) return body as T[];
-  if (body && typeof body === 'object' && 'data' in body && Array.isArray(body.data)) {
-    return body.data as T[];
-  }
-  return [];
-}

@@ -14,6 +14,7 @@
   import { validateTemplateDraft } from '../lib/client/template-validation';
   import { buildTemplatePayload, createTemplateDraft, parseSamplePayload } from '../lib/client/template-model';
   import { templateErrorMessage } from '../lib/client/template-errors';
+  import { discoveredFieldsResponseSchema, parseApiBody } from '../lib/client/api-schemas';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
 
   const queryClient = getSharedQueryClient();
@@ -178,8 +179,8 @@
       });
       if (current !== discoverySequence || !formOpen || workspaceId !== targetWorkspaceId || samplePayload !== targetSamplePayload) return;
       assertApiSuccess(result);
-      const discovery = result.body as { fields?: DiscoveredField[]; warnings?: { code: string }[] };
-      discovered = Array.isArray(discovery.fields) ? discovery.fields : [];
+      const discovery = parseApiBody(discoveredFieldsResponseSchema, result.body, { status: result.response.status, requestId: result.requestId });
+      discovered = discovery.fields;
       discoveryWarnings = (discovery.warnings ?? []).map((warning) => warning.code);
     } catch (error) {
       if (current === discoverySequence && formOpen && workspaceId === targetWorkspaceId && samplePayload === targetSamplePayload) {

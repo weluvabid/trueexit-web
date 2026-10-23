@@ -1,5 +1,9 @@
 <svelte:options runes={true} />
 <script lang="ts">
+  import * as v from 'valibot';
+  import { ApiClientError } from '../../lib/client/api-client';
+  import { settingsAcknowledgementSchema, settingsInvitationSchema, settingsMemberSchema } from '../../lib/client/api-schemas';
+  import { parseApiBody } from '../../lib/client/api-schemas';
   import { getCachedSettingsResponse, getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../../lib/client/settings-api';
   import { formatDateTime } from '../../lib/client/date-format';
 
@@ -56,8 +60,12 @@
     const encodedId = encodeURIComponent(id);
     const cachedMembers = getCachedSettingsResponse(`/workspaces/${encodedId}/members`);
     const cachedInvitations = getCachedSettingsResponse(`/workspaces/${encodedId}/invitations`);
-    members = cachedMembers?.response.ok ? listSettingsData<Member>(cachedMembers.body) : [];
-    invitations = cachedInvitations?.response.ok ? listSettingsData<Invitation>(cachedInvitations.body) : [];
+    members = [];
+    invitations = [];
+    try { if (cachedMembers?.response.ok) members = listSettingsData(settingsMemberSchema, cachedMembers.body); }
+    catch { members = []; } // Cached data is revalidated before use.
+    try { if (cachedInvitations?.response.ok) invitations = listSettingsData(settingsInvitationSchema, cachedInvitations.body); }
+    catch { invitations = []; } // Cached data is revalidated before use.
     invitationsUnavailable = cachedInvitations?.response.status === 404;
     // Member availability controls the section's loading state. The invitations
     // endpoint is independent and must not keep the whole People section loading.
@@ -70,8 +78,10 @@
 
     if (membersSettled.status === 'fulfilled') {
       const result = membersSettled.value;
-      if (result.response.ok) members = listSettingsData<Member>(result.body);
-      else if (result.response.status !== 403 && result.response.status !== 404) {
+      if (result.response.ok) {
+        try { members = listSettingsData(settingsMemberSchema, result.body); }
+        catch (caught) { error = caught instanceof ApiClientError ? settingsErrorMessage(caught.status, caught.code) : settingsErrorMessage(200, 'invalid_response'); }
+      } else if (result.response.status !== 403 && result.response.status !== 404) {
         error = settingsErrorMessage(result.response.status, getSettingsErrorCode(result.body));
       }
     } else {
@@ -81,8 +91,10 @@
     if (invitationsSettled.status === 'fulfilled') {
       const result = invitationsSettled.value;
       invitationsUnavailable = result.response.status === 404;
-      if (result.response.ok) invitations = listSettingsData<Invitation>(result.body);
-      else if (result.response.status !== 403 && result.response.status !== 404 && !error) {
+      if (result.response.ok) {
+        try { invitations = listSettingsData(settingsInvitationSchema, result.body); }
+        catch (caught) { if (!error) error = caught instanceof ApiClientError ? settingsErrorMessage(caught.status, caught.code) : settingsErrorMessage(200, 'invalid_response'); }
+      } else if (result.response.status !== 403 && result.response.status !== 404 && !error) {
         error = settingsErrorMessage(result.response.status, getSettingsErrorCode(result.body));
       }
     } else if (!error) {
@@ -91,7 +103,9 @@
     loading = false;
   }
 
-  async function perform<T = unknown>(key: string, id: string, path: string, init: RequestInit = {}): Promise<{ ok: boolean; value: T | null }> {
+  async function perform<TSchema extends v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>>(
+    key: string, id: string, path: string, schema: TSchema, init: RequestInit = {},
+  ): Promise<{ ok: boolean; value: v.InferOutput<TSchema> | null }> {
     const currentMutation = ++mutationGeneration;
     busyKey = key;
     error = '';
@@ -103,9 +117,11 @@
         error = settingsErrorMessage(response.status, getSettingsErrorCode(body));
         return { ok: false, value: null };
       }
-      return { ok: true, value: body as T | null };
-    } catch {
-      if (id === workspaceId) error = settingsErrorMessage(0, 'network_error');
+      return { ok: true, value: parseApiBody(schema, body, { status: response.status }) };
+    } catch (caught) {
+      if (id === workspaceId) error = caught instanceof ApiClientError
+        ? settingsErrorMessage(caught.status, caught.code)
+        : settingsErrorMessage(0, 'network_error');
       return { ok: false, value: null };
     } finally {
       if (currentMutation === mutationGeneration) busyKey = '';
@@ -117,7 +133,7 @@
     const id = workspaceId;
     const email = inviteEmail.trim();
     if (!id || !canManageWorkspace || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
-    const result = await perform<Invitation>('invite', id, `/workspaces/${encodeURIComponent(id)}/invitations`, {
+    const result = await perform('invite', id, `/workspaces/${encodeURIComponent(id)}/invitations`, settingsInvitationSchema, {
       method: 'POST', body: JSON.stringify({ email }),
     });
     if (!result.ok || !result.value || id !== workspaceId) return;
@@ -132,7 +148,7 @@
   async function changeRole(member: Member, role: 'admin' | 'member') {
     const id = workspaceId;
     if (!id || member.account_owner || !canManageWorkspace || member.role === role) return;
-    const result = await perform<Member>('role', id, `/workspaces/${encodeURIComponent(id)}/members/${encodeURIComponent(member.user_id)}`, {
+    const result = await perform('role', id, `/workspaces/${encodeURIComponent(id)}/members/${encodeURIComponent(member.user_id)}`, settingsMemberSchema, {
       method: 'PATCH', body: JSON.stringify({ role }),
     });
     if (!result.ok || id !== workspaceId) return;
@@ -144,7 +160,7 @@
     const id = workspaceId;
     if (!id || member.account_owner || !canManageWorkspace) return;
     if (!confirm(`Remove ${member.email} from this workspace?`)) return;
-    const result = await perform<unknown>('remove-member', id, `/workspaces/${encodeURIComponent(id)}/members/${encodeURIComponent(member.user_id)}`, { method: 'DELETE' });
+    const result = await perform('remove-member', id, `/workspaces/${encodeURIComponent(id)}/members/${encodeURIComponent(member.user_id)}`, settingsAcknowledgementSchema, { method: 'DELETE' });
     if (!result.ok || id !== workspaceId) return;
     members = members.filter((item) => item.user_id !== member.user_id);
     notice = `${member.email} removed from this workspace.`;
@@ -154,7 +170,7 @@
     const id = workspaceId;
     if (!id || !canManageWorkspace) return;
     if (!confirm(`Revoke the invitation for ${invitation.email}?`)) return;
-    const result = await perform<unknown>('revoke-invitation', id, `/workspaces/${encodeURIComponent(id)}/invitations/${encodeURIComponent(invitation.id)}`, { method: 'DELETE' });
+    const result = await perform('revoke-invitation', id, `/workspaces/${encodeURIComponent(id)}/invitations/${encodeURIComponent(invitation.id)}`, settingsAcknowledgementSchema, { method: 'DELETE' });
     if (!result.ok || id !== workspaceId) return;
     invitations = invitations.filter((item) => item.id !== invitation.id);
     notice = `Invitation for ${invitation.email} revoked.`;
