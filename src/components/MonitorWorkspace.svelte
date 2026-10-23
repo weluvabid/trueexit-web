@@ -334,12 +334,12 @@
     resetEditorDraft();
   }
 
-  async function openEdit(monitor: Monitor) {
+  async function openEdit(monitor: Pick<Monitor, 'id'>) {
     if (initialMode === 'inventory') { window.location.href = `/monitors/${encodeURIComponent(monitor.id)}/edit?workspace_id=${encodeURIComponent(selectedWorkspaceId)}`; return; }
     if (busyMonitorId || creating) return;
     const workspaceId = selectedWorkspaceId;
     const sequence = ++editorLoadSequence;
-    editingMonitor = monitor as MonitorDetail;
+    editingMonitor = null;
     resetEditorDraft();
     createError = '';
     createMessage = '';
@@ -611,7 +611,7 @@
       if (selectedWorkspaceId) void loadWorkspaceTags();
       if (selectedWorkspaceId && initialMode === 'inventory') await loadMonitors(null);
       if (initialMode === 'create') { await openCreate(); }
-      else if (initialMode === 'edit' && monitorId) { await openEdit({ id: monitorId, workspace_id: selectedWorkspaceId } as Monitor); }
+      else if (initialMode === 'edit' && monitorId) { await openEdit({ id: monitorId }); }
     } catch {
       if (!disposed) {
         bootError = messageFor(0, 'network_error');
