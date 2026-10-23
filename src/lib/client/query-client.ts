@@ -97,7 +97,7 @@ function startBrowserPersistence(queryClient: QueryClient): void {
   // account's in-memory cache. Its IndexedDB record is removed as well.
   if (previousUserId && previousUserId !== userId) {
     queryClient.clear();
-    void createUserPersister(previousUserId).removeClient().catch(() => undefined);
+    void Promise.resolve(createUserPersister(previousUserId).removeClient()).catch(() => undefined);
   }
   try { window.localStorage.setItem(PERSISTENCE_USER_MARKER, userId); }
   catch { /* Persistence can still work when localStorage is unavailable. */ }
@@ -136,7 +136,7 @@ export async function clearPersistedQueryCache(): Promise<void> {
   queryClient.clear();
 
   const userId = getBrowserUserId();
-  if (userId) await createUserPersister(userId).removeClient().catch(() => undefined);
+  if (userId) await Promise.resolve(createUserPersister(userId).removeClient()).catch(() => undefined);
 
   try { window.localStorage.removeItem(PERSISTENCE_USER_MARKER); }
   catch { /* The next authenticated session still has a user-scoped key. */ }

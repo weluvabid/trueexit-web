@@ -15,11 +15,10 @@ type MonitorQueryResult =
   | { ok: false; status: number; code: string | null; requestId: string | null };
 
 /** Turn a Result-like API response into data or a typed query error. */
-export function requireMonitorQueryResult<T extends MonitorQueryResult>(
-  result: T,
-): T & { ok: true } {
-  if (!result.ok) throw new MonitorQueryError(result.status, result.code, result.requestId);
-  return result;
+export function requireMonitorQueryResult<T extends MonitorQueryResult>(result: T): Extract<T, { ok: true }> {
+  if (result.ok === false) throw new MonitorQueryError(result.status, result.code, result.requestId);
+  // TypeScript cannot preserve the generic success branch after narrowing T.
+  return result as Extract<T, { ok: true }>;
 }
 
 export function monitorQueryErrorMessage(error: unknown, fallback: (status: number, code: string | null) => string): string {

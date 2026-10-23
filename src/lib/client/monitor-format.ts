@@ -1,4 +1,3 @@
-import type { Monitor } from './monitor-types';
 import { formatDateTime } from './date-format';
 
 export function formatMonitorDate(value: string): string {

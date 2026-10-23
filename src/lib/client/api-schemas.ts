@@ -63,6 +63,33 @@ export const workspacePageSchema = v.object({
   page: v.object({ next_cursor: v.nullable(v.string()) }),
 });
 
+/** Search results are untrusted API data; validate the subset rendered by the shell. */
+export const workspaceSearchResponseSchema = v.object({
+  results: v.optional(v.object({
+    monitors: v.optional(v.object({ data: v.optional(v.array(v.looseObject({
+      id: v.string(),
+      name: v.string(),
+      description: v.optional(v.nullable(v.string())),
+    }))) })),
+    evidence: v.optional(v.object({ data: v.optional(v.array(v.looseObject({
+      monitor_id: v.string(),
+      monitor_name: v.optional(v.nullable(v.string())),
+      outcome: v.optional(v.nullable(v.string())),
+      recorded_at: v.optional(v.nullable(v.string())),
+    }))) })),
+    templates: v.optional(v.object({ data: v.optional(v.array(v.looseObject({
+      id: v.string(),
+      name: v.string(),
+      kind: v.picklist(['built_in', 'custom']),
+      version: nonNegativeInteger,
+    }))) })),
+    tags: v.optional(v.object({ data: v.optional(v.array(v.looseObject({
+      name: v.string(),
+      monitor_count: v.optional(nonNegativeInteger),
+    }))) })),
+  })),
+});
+
 export const monitorSchema = v.object({
   id: v.string(),
   workspace_id: v.string(),

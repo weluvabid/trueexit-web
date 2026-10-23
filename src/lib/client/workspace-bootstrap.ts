@@ -1,4 +1,5 @@
 import { getSharedQueryClient, waitForQueryCacheRestoration } from './query-client';
+import type { Query } from '@tanstack/query-core';
 import { ApiClientError, isAbortError, requestApi } from './api-client';
 import { currentUserContextSchema, parseApiBody, workspacePageSchema } from './api-schemas';
 
@@ -51,13 +52,13 @@ export async function loadWorkspaceBootstrap(): Promise<{
     queryFn: ({ signal }: { signal: AbortSignal }) => readResource('/api/backend/me', signal),
     // Failures are intentionally represented as data so the shell can render
     // partial bootstrap state. Do not cache that failure as fresh for 30 seconds.
-    staleTime: (query) =>
+    staleTime: (query: Query<SharedHttpResult>) =>
       query.state.data?.ok ? 30_000 : 0,
   };
   const workspacesOptions = {
     queryKey: workspaceBootstrapKeys.workspaces,
     queryFn: ({ signal }: { signal: AbortSignal }) => readResource('/api/backend/workspaces?limit=50', signal),
-    staleTime: (query) =>
+    staleTime: (query: Query<SharedHttpResult>) =>
       query.state.data?.ok ? 30_000 : 0,
   };
 

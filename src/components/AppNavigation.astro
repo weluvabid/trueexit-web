@@ -9,7 +9,7 @@ const items = [
 ---
 
 <nav class="app-nav" aria-label="Primary navigation">
-  {items.map((item, index) => {
+  {items.map((item) => {
     const active = item.href === '/' ? currentPath === '/' : currentPath === item.href || currentPath.startsWith(`${item.href}/`);
     return (
       <Fragment>

@@ -129,17 +129,34 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
       import { assertApiSuccess, ApiClientError, requestApi } from '../lib/client/api-client';
       import { clearPersistedQueryCache, getSharedQueryClient } from '../lib/client/query-client';
       import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
+      import { parseApiBody, workspaceSearchResponseSchema } from '../lib/client/api-schemas';
+      import type { WorkspaceContext } from '../lib/client/workspace-bootstrap';
+
+      type AppearancePreference = 'system' | 'light' | 'dark';
+      function isAppearancePreference(value: string | undefined): value is AppearancePreference {
+        return value === 'system' || value === 'light' || value === 'dark';
+      }
+      function requiredElement<T extends Element>(selector: string): T {
+        const element = document.querySelector<T>(selector);
+        if (!element) throw new Error(`Required application element not found: ${selector}`);
+        return element;
+      }
+      function requiredElementWithin<T extends Element>(root: ParentNode, selector: string): T {
+        const element = root.querySelector<T>(selector);
+        if (!element) throw new Error(`Required child element not found: ${selector}`);
+        return element;
+      }
 
       (() => {
-        const header = document.querySelector('[data-app-header]');
-        const workspaceTrigger = document.querySelector('[data-workspace-trigger]');
-        const workspaceOptions = document.querySelector('[data-workspace-options]');
-        const workspaceName = document.querySelector('[data-workspace-name]');
-        const workspaceItems = document.querySelector('[data-workspace-items]');
-        const workspaceMessage = document.querySelector('[data-workspace-message]');
-        const accountTrigger = document.querySelector('[data-account-trigger]');
-        const accountPanel = document.querySelector('[data-account-panel]');
-        const signOutLink = document.querySelector('.account-menu__item--signout');
+        const header = requiredElement<HTMLElement>('[data-app-header]');
+        const workspaceTrigger = requiredElement<HTMLButtonElement>('[data-workspace-trigger]');
+        const workspaceOptions = requiredElement<HTMLDivElement>('[data-workspace-options]');
+        const workspaceName = requiredElement<HTMLSpanElement>('[data-workspace-name]');
+        const workspaceItems = requiredElement<HTMLDivElement>('[data-workspace-items]');
+        const workspaceMessage = requiredElement<HTMLParagraphElement>('[data-workspace-message]');
+        const accountTrigger = requiredElement<HTMLButtonElement>('[data-account-trigger]');
+        const accountPanel = requiredElement<HTMLDivElement>('[data-account-panel]');
+        const signOutLink = document.querySelector<HTMLAnchorElement>('.account-menu__item--signout');
         signOutLink?.addEventListener('click', (event) => {
           event.preventDefault();
           const href = signOutLink.getAttribute('href');
@@ -147,17 +164,15 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
             if (href) window.location.assign(href);
           });
         });
-        const searchDialog = document.querySelector('[data-search-dialog]');
-        const searchInput = document.querySelector('[data-search-input]');
-        const searchOpen = document.querySelector('[data-search-open]');
-        const themeToggle = document.querySelector('[data-theme-toggle]');
-        const themeColor = document.querySelector('[data-theme-color]');
-        const themeIcons = [...document.querySelectorAll('[data-theme-icon]')];
+        const searchDialog = requiredElement<HTMLDialogElement>('[data-search-dialog]');
+        const themeToggle = document.querySelector<HTMLButtonElement>('[data-theme-toggle]');
+        const themeColor = document.querySelector<HTMLMetaElement>('[data-theme-color]');
+        const themeIcons = [...document.querySelectorAll<SVGElement>('[data-theme-icon]')];
         const THEME_KEY = 'trueexit.appearance';
-        const themeOrder = ['light', 'dark', 'system'];
-        const themeLabels = { system: 'System', light: 'Light', dark: 'Dark' };
+        const themeOrder: readonly AppearancePreference[] = ['light', 'dark', 'system'];
+        const themeLabels: Record<AppearancePreference, string> = { system: 'System', light: 'Light', dark: 'Dark' };
 
-        function applyTheme(preference, persist = true) {
+        function applyTheme(preference: AppearancePreference, persist = true): void {
           const resolved = preference === 'system'
             ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
             : preference;
@@ -172,7 +187,9 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
           themeToggle?.setAttribute('title', description);
           if (persist) { try { localStorage.setItem(THEME_KEY, preference); } catch { /* Preference still applies for this page. */ } }
         }
-        let themePreference = document.documentElement.dataset.themePreference || 'system';
+        let themePreference: AppearancePreference = isAppearancePreference(document.documentElement.dataset.themePreference)
+          ? document.documentElement.dataset.themePreference
+          : 'system';
         applyTheme(themePreference, false);
         themeToggle?.addEventListener('click', () => {
           themePreference = themeOrder[(themeOrder.indexOf(themePreference) + 1) % themeOrder.length];
@@ -181,16 +198,19 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => {
           if (themePreference === 'system') applyTheme('system', false);
         });
-        const searchClose = document.querySelector('[data-search-close]');
-        const searchItems = [...document.querySelectorAll('[data-search-item]')];
-        const searchEmpty = document.querySelector('[data-search-empty]');
-        const searchNavigationSection = document.querySelector('[data-search-navigation-section]');
-        const workspaceSearchSection = document.querySelector('[data-workspace-search-section]');
-        const workspaceSearchResults = document.querySelector('[data-workspace-search-results]');
-        const workspaceSearchStatus = document.querySelector('[data-workspace-search-status]');
-        let searchTimer;
+        const searchClose = requiredElement<HTMLButtonElement>('[data-search-close]');
+        const searchInput = requiredElement<HTMLInputElement>('[data-search-input]');
+        const searchOpen = requiredElement<HTMLButtonElement>('[data-search-open]');
+        const searchItems = [...document.querySelectorAll<HTMLAnchorElement>('[data-search-item]')];
+        const searchEmpty = requiredElement<HTMLParagraphElement>('[data-search-empty]');
+        const searchNavigationSection = requiredElement<HTMLElement>('[data-search-navigation-section]');
+        const workspaceSearchSection = requiredElement<HTMLElement>('[data-workspace-search-section]');
+        const workspaceSearchLabel = requiredElement<HTMLParagraphElement>('[data-workspace-search-section] .search-dialog__label');
+        const workspaceSearchResults = requiredElement<HTMLDivElement>('[data-workspace-search-results]');
+        const workspaceSearchStatus = requiredElement<HTMLParagraphElement>('[data-workspace-search-status]');
+        let searchTimer: ReturnType<typeof setTimeout> | undefined;
         let searchRequestSequence = 0;
-        let workspaces = [];
+        let workspaces: WorkspaceContext[] = [];
         let activeWorkspaceId = '';
 
         const closeWorkspaceMenu = () => {
@@ -222,7 +242,7 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
         };
         const closeMenus = () => { closeWorkspaceMenu(); closeAccountMenu(); };
 
-        function chooseWorkspace(id) {
+        function chooseWorkspace(id: string): void {
           const next = workspaces.find((workspace) => workspace.id === id);
           if (!next || id === activeWorkspaceId) { closeWorkspaceMenu(); return; }
           const confirmed = window.confirm(`Switch to “${next.name}”? This reloads the current page, so any unsaved changes may be lost.`);
@@ -254,7 +274,7 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
             button.setAttribute('role', 'option');
             button.setAttribute('aria-selected', String(workspace.id === activeWorkspaceId));
             button.innerHTML = '<span class="workspace-switcher__option-mark" aria-hidden="true"></span><span class="workspace-switcher__option-copy"></span><span class="workspace-switcher__option-check" aria-hidden="true">✓</span>';
-            button.querySelector('.workspace-switcher__option-copy').textContent = workspace.name + (workspace.personal ? ' · Personal' : '');
+            requiredElementWithin<HTMLSpanElement>(button, '.workspace-switcher__option-copy').textContent = workspace.name + (workspace.personal ? ' · Personal' : '');
             button.addEventListener('click', () => chooseWorkspace(workspace.id));
             workspaceItems.append(button);
           });
@@ -274,8 +294,8 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
           if (event.key === 'ArrowDown' && workspaceOptions.hidden) { event.preventDefault(); workspaceTrigger.click(); }
         });
         workspaceItems.addEventListener('keydown', (event) => {
-          const options = [...workspaceItems.querySelectorAll('[role="option"]')];
-          const index = options.indexOf(document.activeElement);
+          const options = [...workspaceItems.querySelectorAll<HTMLButtonElement>('[role="option"]')];
+          const index = options.findIndex((option) => option === document.activeElement);
           if (event.key === 'ArrowDown' && options.length) { event.preventDefault(); options[(index + 1 + options.length) % options.length].focus(); }
           if (event.key === 'ArrowUp' && options.length) { event.preventDefault(); if (index <= 0) workspaceTrigger.focus(); else options[index - 1].focus(); }
           if (event.key === 'Home' && options.length) { event.preventDefault(); options[0].focus(); }
@@ -309,7 +329,7 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
           const query = rawQuery.toLowerCase();
           let visible = 0;
           searchItems.forEach((item) => {
-            const matches = !query || (item.dataset.searchTerms + ' ' + item.textContent).toLowerCase().includes(query);
+            const matches = !query || `${item.dataset.searchTerms ?? ''} ${item.textContent ?? ''}`.toLowerCase().includes(query);
             item.hidden = !matches;
             if (matches) visible += 1;
           });
@@ -318,7 +338,7 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
           workspaceSearchSection.hidden = rawQuery.length < 2;
           workspaceSearchResults.replaceChildren();
           workspaceSearchStatus.hidden = true;
-          workspaceSearchSection.querySelector('.search-dialog__label').hidden = false;
+          workspaceSearchLabel.hidden = false;
           if (searchTimer) clearTimeout(searchTimer);
           const sequence = ++searchRequestSequence;
           if (rawQuery.length >= 2) {
@@ -328,17 +348,17 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
           }
         }
 
-        function appendWorkspaceResult(label, detail, href, icon) {
+        function appendWorkspaceResult(label: string, detail: string, href: string, icon: string): void {
           const link = document.createElement('a');
           link.href = href;
           link.innerHTML = '<span class="search-dialog__result-icon" aria-hidden="true"></span><span class="search-dialog__result-copy"><strong></strong><small></small></span><span class="search-dialog__result-arrow" aria-hidden="true">↗</span>';
-          link.querySelector('.search-dialog__result-icon').textContent = icon;
-          link.querySelector('strong').textContent = label;
-          link.querySelector('small').textContent = detail || '';
+          requiredElementWithin<HTMLSpanElement>(link, '.search-dialog__result-icon').textContent = icon;
+          requiredElementWithin<HTMLElement>(link, 'strong').textContent = label;
+          requiredElementWithin<HTMLElement>(link, 'small').textContent = detail || '';
           workspaceSearchResults.append(link);
         }
 
-        async function searchWorkspace(query, sequence) {
+        async function searchWorkspace(query: string, sequence: number): Promise<void> {
           const workspaceId = activeWorkspaceId || readActiveWorkspaceId();
           if (!workspaceId) {
             if (sequence === searchRequestSequence) { workspaceSearchStatus.textContent = 'Choose a workspace to search its resources.'; }
@@ -356,7 +376,7 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
               },
             });
             if (sequence !== searchRequestSequence) return;
-            const groups = body?.results || {};
+            const groups = parseApiBody(workspaceSearchResponseSchema, body).results ?? {};
             let count = 0;
             for (const item of groups.monitors?.data || []) {
               appendWorkspaceResult(item.name, item.description || 'Monitor', `/monitors/${encodeURIComponent(item.id)}?workspace_id=${encodeURIComponent(workspaceId)}`, '⌁'); count++;
@@ -372,7 +392,7 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
             }
             workspaceSearchStatus.hidden = count > 0;
             if (count === 0) { workspaceSearchStatus.hidden = false; workspaceSearchStatus.textContent = 'No matching workspace resources.'; }
-            workspaceSearchSection.querySelector('.search-dialog__label').hidden = count === 0;
+            workspaceSearchLabel.hidden = count === 0;
           } catch (error) {
             if (sequence === searchRequestSequence) {
               const status = error instanceof ApiClientError ? error.status : undefined;
@@ -391,7 +411,6 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
         searchInput.addEventListener('input', updateSearch);
         searchInput.addEventListener('keydown', (event) => {
           const visibleItems = searchItems.filter((item) => !item.hidden);
-          const focusedIndex = visibleItems.indexOf(document.activeElement);
           if (event.key === 'ArrowDown' && visibleItems.length) { event.preventDefault(); visibleItems[0].focus(); }
         });
         searchItems.forEach((item) => item.addEventListener('keydown', (event) => {
