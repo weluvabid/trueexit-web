@@ -12,6 +12,7 @@
   import TemplateManualFieldEditor from './templates/TemplateManualFieldEditor.svelte';
   import { addTemplateField, removeTemplateField, updateTemplateField, discoveredFieldKey, mergeDiscoveredFields } from '../lib/client/template-field-model';
   import { validateTemplateDraft } from '../lib/client/template-validation';
+  import { buildTemplatePayload, createTemplateDraft, parseSamplePayload } from '../lib/client/template-model';
   import { templateErrorMessage } from '../lib/client/template-errors';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
 
@@ -137,14 +138,13 @@
     discovering = false;
     const targetWorkspaceId = workspaceId;
     formError = ''; notice = ''; formTab = 'fields'; formOpen = true; mode = 'edit'; editing = template;
-    name = template.name; description = template.description ?? '';
-    fields = template.fields.map((field) => ({ ...field }));
+    ({ name, description, fields } = createTemplateDraft(template));
     discoveryError = ''; discoveryWarnings = []; discovered = []; selectedDiscovered = [];
     // Load the latest version before editing to avoid silently overwriting a concurrent update.
     try {
       const latest = await fetchTemplateDetail<Template>(targetWorkspaceId, template.id);
       if (current !== editSequence || !formOpen || mode !== 'edit' || editing?.id !== template.id || workspaceId !== targetWorkspaceId) return;
-      editing = latest; name = latest.name; description = latest.description ?? ''; fields = latest.fields.map((field) => ({ ...field }));
+      editing = latest; ({ name, description, fields } = createTemplateDraft(latest));
     } catch (error) {
       if (current === editSequence && formOpen && mode === 'edit' && editing?.id === template.id && workspaceId === targetWorkspaceId) {
         // Query failures retain the API status and domain error code.
@@ -166,9 +166,14 @@
     const targetWorkspaceId = workspaceId;
     const targetSamplePayload = samplePayload;
     discoveryError = ''; discoveryWarnings = []; discovered = []; selectedDiscovered = [];
-    let payload: unknown;
-    try { payload = JSON.parse(targetSamplePayload); } catch { discoveryError = 'Enter valid JSON before discovering fields.'; return; }
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) { discoveryError = 'The sample payload must be a JSON object.'; return; }
+    const parsedPayload = parseSamplePayload(targetSamplePayload);
+    if (!parsedPayload.ok) {
+      discoveryError = parsedPayload.reason === 'invalid_json'
+        ? 'Enter valid JSON before discovering fields.'
+        : 'The sample payload must be a JSON object.';
+      return;
+    }
+    const payload = parsedPayload.value;
     discovering = true;
     try {
       const result = await requestApi('/api/backend/templates/discover-fields', {
@@ -221,12 +226,7 @@
       formError = 'The template being edited is no longer available. Close the editor and try again.';
       return;
     }
-    const payload = {
-      workspace_id: targetWorkspaceId,
-      name: name.trim(),
-      description: description.trim(),
-      fields: fields.filter((field) => field.name.trim() && field.path.trim()).map((field) => ({ ...field, name: field.name.trim(), path: field.path.trim() })),
-    };
+    const payload = buildTemplatePayload(targetWorkspaceId, { name, description, fields });
     saving = true;
     try {
       const result = targetMode === 'create'
