@@ -28,6 +28,13 @@ export type ActivityItem = {
   occurred_at: string;
 };
 
+export const dashboardQueryKeys = {
+  overview: (workspaceId: string) => ['dashboard', 'overview', workspaceId] as const,
+  pages: (workspaceId: string, resource: 'monitors' | 'evidence') => ['dashboard-page', workspaceId, resource] as const,
+  page: (workspaceId: string, resource: 'monitors' | 'evidence', queryIdentity: string) =>
+    ['dashboard-page', workspaceId, resource, queryIdentity] as const,
+};
+
 export type DashboardResponse = {
   generated_at: string;
   summary: DashboardSummary;
@@ -44,7 +51,7 @@ export class DashboardQueryError extends ApiClientError {
 
 export function dashboardQueryOptions(workspaceId: string) {
   return {
-    queryKey: ['dashboard', 'overview', workspaceId] as const,
+    queryKey: dashboardQueryKeys.overview(workspaceId),
     enabled: Boolean(workspaceId),
     staleTime: 30_000,
     queryFn: async ({ signal }: { signal: AbortSignal }): Promise<DashboardResponse> => {

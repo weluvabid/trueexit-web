@@ -1,6 +1,7 @@
 import { assertApiSuccess, requestApi } from './api-client';
 import type { QueryClient } from '@tanstack/svelte-query';
 import { monitorQueryKeys, monitorResourceQueryKeys } from './monitor-queries';
+import { dashboardQueryKeys } from './dashboard-queries';
 
 export type MonitorMutationResult = {
   status: number;
@@ -44,8 +45,8 @@ export function createMonitorMutationOptions(queryClient: QueryClient) {
     onSuccess: async (_result: MonitorMutationResult, variables: CreateMonitorVariables) => {
       await Promise.all([
           queryClient.invalidateQueries({ queryKey: monitorQueryKeys.workspaceLists(variables.workspaceId) }),
-          queryClient.invalidateQueries({ queryKey: ['dashboard-page', variables.workspaceId, 'monitors'] }),
-          queryClient.invalidateQueries({ queryKey: ['dashboard', 'overview', variables.workspaceId] }),
+          queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.pages(variables.workspaceId, 'monitors') }),
+          queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.overview(variables.workspaceId) }),
           queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceChannels(variables.workspaceId) }),
         ]);
     },
@@ -64,8 +65,8 @@ export function editMonitorMutationOptions(queryClient: QueryClient) {
     onSuccess: async (_result: MonitorMutationResult, variables: EditMonitorVariables) => {
       await Promise.all([
           queryClient.invalidateQueries({ queryKey: monitorQueryKeys.workspaceLists(variables.workspaceId) }),
-          queryClient.invalidateQueries({ queryKey: ['dashboard-page', variables.workspaceId, 'monitors'] }),
-          queryClient.invalidateQueries({ queryKey: ['dashboard', 'overview', variables.workspaceId] }),
+          queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.pages(variables.workspaceId, 'monitors') }),
+          queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.overview(variables.workspaceId) }),
           queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorDetail(variables.workspaceId, variables.monitorId) }),
           queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorChannels(variables.workspaceId, variables.monitorId) }),
           queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceChannels(variables.workspaceId) }),
@@ -97,8 +98,8 @@ export function tagMonitorMutationOptions(queryClient: QueryClient) {
     onSuccess: async (_result: MonitorMutationResult, variables: TagMonitorVariables) => {
       await Promise.all([
           queryClient.invalidateQueries({ queryKey: monitorQueryKeys.workspaceLists(variables.workspaceId) }),
-          queryClient.invalidateQueries({ queryKey: ['dashboard-page', variables.workspaceId, 'monitors'] }),
-          queryClient.invalidateQueries({ queryKey: ['dashboard', 'overview', variables.workspaceId] }),
+          queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.pages(variables.workspaceId, 'monitors') }),
+          queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.overview(variables.workspaceId) }),
           queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceTags(variables.workspaceId) }),
           queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorTags(variables.workspaceId, variables.monitorId) }),
         ]);
@@ -122,8 +123,9 @@ export function lifecycleMonitorMutationOptions(queryClient: QueryClient) {
     onSuccess: async (_result: MonitorMutationResult, variables: LifecycleMonitorVariables) => {
       await Promise.all([
           queryClient.invalidateQueries({ queryKey: monitorQueryKeys.workspaceLists(variables.workspaceId) }),
-          queryClient.invalidateQueries({ queryKey: ['dashboard-page', variables.workspaceId, 'monitors'] }),
-          queryClient.invalidateQueries({ queryKey: ['dashboard', 'overview', variables.workspaceId] }),
+          queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.pages(variables.workspaceId, 'monitors') }),
+          queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.overview(variables.workspaceId) }),
+          queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorDetail(variables.workspaceId, variables.monitorId) }),
         ]);
     },
   };

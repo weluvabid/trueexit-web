@@ -27,7 +27,8 @@ export type BootstrapResource<T> =
 
 type SharedHttpResult = { ok: boolean; status: number; body: unknown; code: string | null; requestId: string | null };
 
-const workspaceBootstrapKeys = {
+export const workspaceBootstrapKeys = {
+  all: ['workspace-bootstrap'] as const,
   me: ['workspace-bootstrap', 'me'] as const,
   workspaces: ['workspace-bootstrap', 'workspaces', { limit: 50 }] as const,
 };

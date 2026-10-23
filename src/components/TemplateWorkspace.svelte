@@ -2,6 +2,7 @@
 <script lang="ts">
   import { getSharedQueryClient } from '../lib/client/query-client';
   import { templateQueryKeys } from '../lib/client/template-queries';
+  import { monitorTemplateQueryKeys } from '../lib/client/monitor-queries';
   import { fetchTemplatePage, fetchTemplateDetail, TemplateQueryError } from '../lib/client/template-queries';
   import { ApiClientError, assertApiSuccess, requestApi } from '../lib/client/api-client';
   import { can } from '../lib/client/permissions';
@@ -235,7 +236,7 @@
       assertApiSuccess(result);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: templateQueryKeys.all }),
-        queryClient.invalidateQueries({ queryKey: ['monitor-templates'] }),
+        queryClient.invalidateQueries({ queryKey: monitorTemplateQueryKeys.all }),
       ]);
       if (operation !== mutationSequence) return;
       formOpen = false;
@@ -290,7 +291,7 @@
       assertApiSuccess(result);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: templateQueryKeys.all }),
-        queryClient.invalidateQueries({ queryKey: ['monitor-templates'] }),
+        queryClient.invalidateQueries({ queryKey: monitorTemplateQueryKeys.all }),
       ]);
       if (operation !== mutationSequence) return;
       pendingDelete = null;

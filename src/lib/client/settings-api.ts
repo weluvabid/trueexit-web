@@ -1,6 +1,8 @@
 import { getSharedQueryClient } from './query-client';
 import { getApiErrorCode, getApiList } from './api-response';
 import { ApiClientError, requestApi } from './api-client';
+import { monitorResourceQueryKeys } from './monitor-queries';
+import { workspaceBootstrapKeys } from './workspace-bootstrap';
 
 export const listSettingsData = getApiList;
 
@@ -66,12 +68,16 @@ async function invalidateSettingsAfterMutation(path: string): Promise<void> {
     invalidations.push(client.invalidateQueries({ queryKey: settingsReadKey(`/workspaces/${encodeURIComponent(id)}/members`) }));
   } else if (resource === 'workspaces' && id && child === 'invitations') {
     invalidations.push(client.invalidateQueries({ queryKey: settingsReadKey(`/workspaces/${encodeURIComponent(id)}/invitations`) }));
-  } else if (resource === 'workspaces' && id && child === 'channels') {
-    invalidations.push(client.invalidateQueries({ queryKey: settingsReadKey(`/workspaces/${encodeURIComponent(id)}/channels`) }));
+  } else if (resource === 'workspaces' && id && child === 'channels' && segments[3] !== 'validate') {
+    invalidations.push(
+      client.invalidateQueries({ queryKey: settingsReadKey(`/workspaces/${encodeURIComponent(id)}/channels`) }),
+      // Destination edits also affect the monitor editor's cached channel inventory.
+      client.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceChannels(id) }),
+    );
   } else if (resource === 'workspaces' || resource === 'accounts') {
     invalidations.push(
       client.invalidateQueries({ queryKey: settingsReadKey('/accounts') }),
-      client.invalidateQueries({ queryKey: ['workspace-bootstrap'] }),
+      client.invalidateQueries({ queryKey: workspaceBootstrapKeys.all }),
     );
   }
 

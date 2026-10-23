@@ -119,6 +119,7 @@ export type MonitorTemplatesResponse = {
 };
 
 export const monitorTemplateQueryKeys = {
+  all: ['monitor-templates'] as const,
   workspaceList: (workspaceId: string) => ['monitor-templates', 'list', workspaceId] as const,
 };
 

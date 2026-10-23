@@ -72,7 +72,7 @@ export function investigationResourceQueryOptions<T>(
 ) {
   const queryPath = buildInvestigationApiPath(workspaceId, path, extra);
   return {
-    queryKey: ['investigation', workspaceId, monitorId, resource, extra] as const,
+    queryKey: ['investigation', workspaceId, monitorId, resource, path, extra] as const,
     enabled: Boolean(workspaceId && monitorId),
     staleTime: 30_000,
     queryFn: async ({ signal }: { signal: AbortSignal }): Promise<T> => {

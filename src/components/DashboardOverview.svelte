@@ -4,7 +4,7 @@
   import { createQuery } from '@tanstack/svelte-query';
   import { getSharedQueryClient } from '../lib/client/query-client';
   import { assertApiSuccess, requestApi } from '../lib/client/api-client';
-  import { dashboardQueryOptions, dashboardQueryErrorMessage, type DashboardResponse } from '../lib/client/dashboard-queries';
+  import { dashboardQueryErrorMessage, dashboardQueryKeys, dashboardQueryOptions, type DashboardResponse } from '../lib/client/dashboard-queries';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
   import { formatDateTime } from '../lib/client/date-format';
@@ -94,7 +94,7 @@
     const workspaceId = params.get('workspace_id') ?? '';
     const queryIdentity = params.toString();
     return queryClient.fetchQuery({
-      queryKey: ['dashboard-page', workspaceId, resource, queryIdentity] as const,
+      queryKey: dashboardQueryKeys.page(workspaceId, resource, queryIdentity),
       staleTime: 15_000,
       queryFn: async ({ signal }) => {
         const { response, body, code, requestId } = await requestApi(`/api/backend/${resource}?${params.toString()}`, { signal });
