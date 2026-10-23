@@ -9,7 +9,7 @@
   import MonitorCadenceConfiguration from './MonitorCadenceConfiguration.svelte';
   import MonitorDestinationConfiguration from './MonitorDestinationConfiguration.svelte';
   import type { Monitor, MonitorStatus } from '../lib/client/monitor-types';
-  import { formatMonitorCadence } from '../lib/client/monitor-format';
+  import { addMonitorTagDraft, removeMonitorTagDraft, getCadenceDraftFromSeconds } from '../lib/client/monitor-editor-model';
   import { prepareMonitorSubmission } from '../lib/client/monitor-editor-validation';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import { createMutation, createQuery } from '@tanstack/svelte-query';
@@ -128,11 +128,11 @@
   }
 
   function secondsToCadence(seconds: number) {
-    if (seconds % 3600 === 0) { editorDraft.cadenceValue = String(seconds / 3600); editorDraft.cadenceUnit = 'hours'; }
-    else if (seconds % 60 === 0) { editorDraft.cadenceValue = String(seconds / 60); editorDraft.cadenceUnit = 'minutes'; }
-    else { editorDraft.cadenceValue = String(seconds); editorDraft.cadenceUnit = 'seconds'; }
-    editorDraft.cadenceMode = 'interval';
-    cadencePreview = `Every ${formatMonitorCadence(seconds)}`;
+    const cadence = getCadenceDraftFromSeconds(seconds);
+    editorDraft.cadenceValue = cadence.cadenceValue;
+    editorDraft.cadenceUnit = cadence.cadenceUnit;
+    editorDraft.cadenceMode = cadence.cadenceMode;
+    cadencePreview = cadence.cadencePreview;
   }
 
 
@@ -232,28 +232,25 @@
   }
 
   function addTagDraft() {
-    const name = tagInput.trim().replace(/\s+/g, ' ');
-    if (!name) return;
-    if (name.length > 40) {
-      tagError = 'Tag names must be 40 characters or fewer.';
+    const result = addMonitorTagDraft({
+      input: tagInput,
+      selectedTagIds: monitorTagIds,
+      newTagNames,
+      workspaceTags,
+    });
+    if (result.kind === 'unchanged') return;
+    if (result.kind === 'error') {
+      tagError = result.message;
       return;
     }
-    if (monitorTagIds.length + newTagNames.length >= 3) {
-      tagError = 'A monitor can have at most three tags.';
-      return;
-    }
-    const existing = workspaceTags.find((tag) => tag.name.toLocaleLowerCase() === name.toLocaleLowerCase());
-    if (existing) {
-      if (!monitorTagIds.includes(existing.id)) monitorTagIds = [...monitorTagIds, existing.id];
-    } else if (!newTagNames.some((tag) => tag.toLocaleLowerCase() === name.toLocaleLowerCase())) {
-      newTagNames = [...newTagNames, name];
-    }
+    monitorTagIds = result.selectedTagIds;
+    newTagNames = result.newTagNames;
     tagInput = '';
     tagError = '';
   }
 
   function removeTagDraft(name: string) {
-    newTagNames = newTagNames.filter((tag) => tag !== name);
+    newTagNames = removeMonitorTagDraft(newTagNames, name);
   }
 
   async function saveMonitorTags(event: SubmitEvent) {
