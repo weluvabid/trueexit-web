@@ -1,7 +1,8 @@
 import type { FieldDefinition } from './template-types';
+import { PrimitiveCode, isPrimitiveValue } from './field-primitives';
 
 export function addTemplateField(fields: FieldDefinition[]): FieldDefinition[] {
-  return [...fields, { name: '', path: '', primitive: 1 }];
+  return [...fields, { name: '', path: '', primitive: PrimitiveCode.count }];
 }
 
 export function removeTemplateField(fields: FieldDefinition[], index: number): FieldDefinition[] {
@@ -23,16 +24,12 @@ export function updateTemplateField(
       case 'path':
         return { ...field, path: String(value) };
       case 'primitive':
-        if (!isPrimitive(value)) return field;
+        if (!isPrimitiveValue(value)) return field;
         return { ...field, primitive: value };
       case 'meta':
         return field;
     }
   });
-}
-
-function isPrimitive(value: string | number): value is FieldDefinition['primitive'] {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 7;
 }
 
 export function discoveredFieldKey(field: Pick<FieldDefinition, 'name' | 'path'>): string {
@@ -53,5 +50,5 @@ export function mergeDiscoveredFields(
   ];
   const unique = new Map<string, FieldDefinition>();
   for (const field of combined) unique.set(discoveredFieldKey(field), field);
-  return unique.size ? [...unique.values()] : [{ name: '', path: '', primitive: 1 }];
+  return unique.size ? [...unique.values()] : [{ name: '', path: '', primitive: PrimitiveCode.count }];
 }

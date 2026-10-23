@@ -1,7 +1,9 @@
 import * as v from 'valibot';
 import { parseCronExpression } from 'cron-schedule';
 import cronstrue from 'cronstrue';
-import { fieldPrimitiveToValue, type MonitorEditorDraft, type MonitorField } from './monitor-editor-state';
+import type { MonitorEditorDraft, MonitorField } from './monitor-editor-state';
+import { ChecksumAlgorithm, ChecksumEncoding, fieldPrimitiveToValue } from './field-primitives';
+import { findConflictingFieldPath, isValidFieldPath, normalizeFieldName, normalizeFieldPath } from './field-definition-rules';
 import { formatMonitorCadence } from './monitor-format';
 
 const monitorIdentitySchema = v.object({
@@ -90,48 +92,49 @@ export function resolveMonitorCadence(draft: Pick<MonitorEditorDraft, 'cadenceMo
   };
 }
 
-const CHECKSUM_ALGORITHM_SHA256 = 0;
-const CHECKSUM_ENCODING_HEXADECIMAL = 0;
-
 export type MonitorConfigValidation =
   | { ok: true; config: { fields: Record<string, unknown>[] } }
   | { ok: false; error: string };
 
 export function buildMonitorConfig(fields: MonitorField[]): MonitorConfigValidation {
-  const seen = new Set<string>();
   const names = new Set<string>();
-  const paths = new Set<string>();
+  const paths: string[] = [];
+  let hasTimestamp = false;
   const configuredFields: Record<string, unknown>[] = [];
 
   for (const field of fields) {
-    const name = field.name.trim();
-    const path = field.path.trim();
-    if (!name || !path || path.split('.').some((part) => !part.trim())) {
+    const name = normalizeFieldName(field.name);
+    const path = normalizeFieldPath(field.path);
+    if (!name || !isValidFieldPath(path)) {
       return { ok: false, error: 'Every field needs a name and a dot-separated JSON path.' };
     }
     if (names.has(name)) {
       return { ok: false, error: `Field name “${name}” is repeated. Field names must be unique.` };
     }
     names.add(name);
-    if (paths.has(path)) {
-      return { ok: false, error: `JSON path “${path}” is repeated. Each configured field needs a unique path.` };
-    }
-    if ([...paths].some((existing) => existing.startsWith(`${path}.`) || path.startsWith(`${existing}.`))) {
+
+    const conflictingPath = findConflictingFieldPath(path, paths);
+    if (conflictingPath !== null) {
+      if (conflictingPath === path) {
+        return { ok: false, error: `JSON path “${path}” is repeated. Each configured field needs a unique path.` };
+      }
       return { ok: false, error: `JSON path “${path}” conflicts with a parent or child field path.` };
     }
-    paths.add(path);
+    paths.push(path);
+
     if (field.primitive === 'timestamp') {
-      if (seen.has('timestamp')) {
+      if (hasTimestamp) {
         return { ok: false, error: 'Only one Timestamp field can be configured.' };
       }
-      seen.add('timestamp');
+      hasTimestamp = true;
     }
+
     const item: Record<string, unknown> = { name, path, primitive: fieldPrimitiveToValue(field.primitive) };
     if (field.primitive === 'checksum') {
       item.meta = {
         checksum: {
-          algorithm: CHECKSUM_ALGORITHM_SHA256,
-          encoding: CHECKSUM_ENCODING_HEXADECIMAL,
+          algorithm: ChecksumAlgorithm.sha256,
+          encoding: ChecksumEncoding.hexadecimal,
         },
       };
     }

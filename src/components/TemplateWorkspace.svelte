@@ -8,6 +8,7 @@
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import type { FieldDefinition, Primitive, Template } from '../lib/client/template-types';
+  import { PRIMITIVE_VALUES, PrimitiveCode } from '../lib/client/field-primitives';
   import TemplateManualFieldEditor from './templates/TemplateManualFieldEditor.svelte';
   import { addTemplateField, removeTemplateField, updateTemplateField, discoveredFieldKey, mergeDiscoveredFields } from '../lib/client/template-field-model';
   import { validateTemplateDraft } from '../lib/client/template-validation';
@@ -22,10 +23,16 @@
   type Mode = 'create' | 'edit';
 
   const primitiveNames: Record<Primitive, string> = {
-    0: 'Size', 1: 'Count', 2: 'Duration', 3: 'Timestamp',
-    4: 'Boolean', 5: 'Categorical', 6: 'Checksum', 7: 'Text',
+    [PrimitiveCode.size]: 'Size',
+    [PrimitiveCode.count]: 'Count',
+    [PrimitiveCode.duration]: 'Duration',
+    [PrimitiveCode.timestamp]: 'Timestamp',
+    [PrimitiveCode.boolean]: 'Boolean',
+    [PrimitiveCode.categorical]: 'Categorical',
+    [PrimitiveCode.checksum]: 'Checksum',
+    [PrimitiveCode.text]: 'Text',
   };
-  const primitiveValues = [0, 1, 2, 3, 4, 5, 6, 7] as const satisfies readonly Primitive[];
+  const primitiveValues = PRIMITIVE_VALUES satisfies readonly Primitive[];
   const primitiveOptions = primitiveValues.map((value) => ({ value, label: primitiveNames[value] }));
 
   let workspaces = $state<WorkspaceContext[]>([]);
@@ -56,7 +63,7 @@
   let editing = $state<Template | null>(null);
   let name = $state('');
   let description = $state('');
-  let fields = $state<FieldDefinition[]>([{ name: '', path: '', primitive: 1 }]);
+  let fields = $state<FieldDefinition[]>([{ name: '', path: '', primitive: PrimitiveCode.count }]);
   let samplePayload = $state('{\n  "backup": {\n    "size": 1024,\n    "processed_rows": 42\n  }\n}');
   let discovering = $state(false);
   let discoveryError = $state('');
@@ -119,7 +126,7 @@
     discoverySequence += 1;
     discovering = false;
     mode = 'create'; editing = null; name = ''; description = '';
-    fields = [{ name: '', path: '', primitive: 1 }]; formError = ''; notice = ''; formTab = 'json'; formOpen = true;
+    fields = [{ name: '', path: '', primitive: PrimitiveCode.count }]; formError = ''; notice = ''; formTab = 'json'; formOpen = true;
     discoveryError = ''; discoveryWarnings = []; discovered = []; selectedDiscovered = [];
   }
 

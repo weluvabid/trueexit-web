@@ -1,10 +1,11 @@
 import * as v from 'valibot';
 import { ApiClientError } from './api-client';
+import { PRIMITIVE_VALUES } from './field-primitives';
 
 const nonNegativeInteger = v.pipe(v.number(), v.integer(), v.minValue(0));
 const nullableTimestamp = v.nullable(v.string());
 const monitorStatusSchema = v.picklist(['enabled', 'disabled', 'archived']);
-export const primitiveSchema = v.picklist([0, 1, 2, 3, 4, 5, 6, 7]);
+export const primitiveSchema = v.picklist(PRIMITIVE_VALUES);
 
 export const dashboardResponseSchema = v.object({
   generated_at: v.string(),

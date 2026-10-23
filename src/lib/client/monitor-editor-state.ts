@@ -1,42 +1,14 @@
 export type ChannelKind = 'email' | 'webhook' | 'slack' | 'discord';
-export type FieldPrimitive = 'size' | 'count' | 'duration' | 'timestamp' | 'boolean' | 'categorical' | 'checksum' | 'text';
+import { fieldPrimitiveFromValue, fieldPrimitiveToValue, type PrimitiveName } from './field-primitives';
+
+export type FieldPrimitive = PrimitiveName;
+export { fieldPrimitiveFromValue, fieldPrimitiveToValue };
 export type MonitorField = { key: number; name: string; path: string; primitive: FieldPrimitive };
 export type ExistingChannelSelection = { kind: 'existing'; channel_id: string; label: string };
 export type NewChannelSelection = { kind: 'new'; type: ChannelKind; label: string; priority: number; enabled: boolean; config: Record<string, unknown>; displayLabel: string };
 export type ChannelSelection = ExistingChannelSelection | NewChannelSelection;
 
 
-const fieldPrimitiveValues: Record<FieldPrimitive, number> = {
-  size: 0,
-  count: 1,
-  duration: 2,
-  timestamp: 3,
-  boolean: 4,
-  categorical: 5,
-  checksum: 6,
-  text: 7,
-};
-
-/** Convert the editor's domain primitive into the backend's numeric representation. */
-export function fieldPrimitiveToValue(primitive: FieldPrimitive): number {
-  return fieldPrimitiveValues[primitive];
-}
-
-/** Resolve a backend primitive value without asserting that unknown values are valid. */
-const fieldPrimitives: readonly FieldPrimitive[] = [
-  'size',
-  'count',
-  'duration',
-  'timestamp',
-  'boolean',
-  'categorical',
-  'checksum',
-  'text',
-];
-
-export function fieldPrimitiveFromValue(value: number): FieldPrimitive | null {
-  return fieldPrimitives.find((primitive) => fieldPrimitiveValues[primitive] === value) ?? null;
-}
 
 export type MonitorEditorDraft = {
   name: string;

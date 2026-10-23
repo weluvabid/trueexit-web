@@ -13,7 +13,9 @@ export type BootstrapResource<T> =
   | { ok: true; data: T }
   | { ok: false; status: number; code: string | null; requestId: string | null };
 
-type SharedHttpResult = { ok: boolean; status: number; body: unknown; code: string | null; requestId: string | null };
+type SharedHttpResult =
+  | { ok: true; status: number; body: unknown; code: string | null; requestId: string | null }
+  | { ok: false; status: number; body: null; code: string | null; requestId: string | null };
 
 export const workspaceBootstrapKeys = {
   all: ['workspace-bootstrap'] as const,
@@ -24,7 +26,10 @@ export const workspaceBootstrapKeys = {
 async function readResource(path: string, signal: AbortSignal): Promise<SharedHttpResult> {
   try {
     const { response, body, code, requestId } = await requestApi(path, { signal });
-    return { ok: response.ok, status: response.status, body, code, requestId };
+    if (!response.ok) {
+      return { ok: false, status: response.status, body: null, code, requestId };
+    }
+    return { ok: true, status: response.status, body, code, requestId };
   } catch (error) {
     if (isAbortError(error)) throw error;
     if (error instanceof ApiClientError) {
