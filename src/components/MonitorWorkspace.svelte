@@ -14,7 +14,7 @@
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import { createMutation, createQuery } from '@tanstack/svelte-query';
   import { fetchWorkspaceTags, fetchMonitorTags, fetchWorkspaceChannels, fetchMonitorDetail, fetchMonitorChannelIds, monitorResourceQueryKeys, monitorListQueryOptions, type MonitorListQuery, type MonitorListResponse, type WorkspaceTag, type MonitorChannel, requireMonitorQueryResult, monitorQueryErrorMessage } from '../lib/client/monitor-queries';
-  import { createEmptyMonitorDraft, createMonitorDraft, serializeMonitorChannelSelection, type FieldPrimitive } from '../lib/client/monitor-editor-state';
+  import { createEmptyMonitorDraft, createMonitorDraft, fieldPrimitiveFromValue, serializeMonitorChannelSelection } from '../lib/client/monitor-editor-state';
   import { createMonitorMutationOptions, editMonitorMutationOptions, lifecycleMonitorMutationOptions, tagMonitorMutationOptions } from '../lib/client/monitor-mutations';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
   import { getSharedQueryClient } from '../lib/client/query-client';
@@ -42,10 +42,6 @@
   const nextCursor = $derived(monitorsQuery.data?.page?.page.next_cursor ?? null);
   const loadingMonitors = $derived(Boolean(activeListQuery?.workspaceId) && monitorsQuery.isFetching);
   const listError = $derived(monitorsQuery.error ? monitorQueryErrorMessage(monitorsQuery.error, messageFor) : '');
-
-  const primitiveValues: Record<FieldPrimitive, number> = {
-    size: 0, count: 1, duration: 2, timestamp: 3, boolean: 4, categorical: 5, checksum: 6, text: 7,
-  };
 
   let workspaces: WorkspaceContext[] = $state([]);
   let selectedWorkspaceId = $state('');
@@ -404,7 +400,7 @@
       const draftFields = currentConfig.config.fields.map((field) => ({
         name: field.name,
         path: field.path,
-        primitive: (Object.entries(primitiveValues).find(([, value]) => value === field.primitive)?.[0] ?? 'text') as FieldPrimitive,
+        primitive: fieldPrimitiveFromValue(field.primitive) ?? 'text',
       }));
       editorDraft = createMonitorDraft({
         name: detail.name,

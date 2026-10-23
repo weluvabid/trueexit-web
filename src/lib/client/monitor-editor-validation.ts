@@ -1,7 +1,7 @@
 import * as v from 'valibot';
 import { parseCronExpression } from 'cron-schedule';
 import cronstrue from 'cronstrue';
-import type { FieldPrimitive, MonitorEditorDraft, MonitorField } from './monitor-editor-state';
+import { fieldPrimitiveToValue, type MonitorEditorDraft, type MonitorField } from './monitor-editor-state';
 import { formatMonitorCadence } from './monitor-format';
 
 const monitorIdentitySchema = v.object({
@@ -90,16 +90,6 @@ export function resolveMonitorCadence(draft: Pick<MonitorEditorDraft, 'cadenceMo
   };
 }
 
-const primitiveValues: Record<FieldPrimitive, number> = {
-  size: 0,
-  count: 1,
-  duration: 2,
-  timestamp: 3,
-  boolean: 4,
-  categorical: 5,
-  checksum: 6,
-  text: 7,
-};
 const CHECKSUM_ALGORITHM_SHA256 = 0;
 const CHECKSUM_ENCODING_HEXADECIMAL = 0;
 
@@ -136,7 +126,7 @@ export function buildMonitorConfig(fields: MonitorField[]): MonitorConfigValidat
       }
       seen.add('timestamp');
     }
-    const item: Record<string, unknown> = { name, path, primitive: primitiveValues[field.primitive] };
+    const item: Record<string, unknown> = { name, path, primitive: fieldPrimitiveToValue(field.primitive) };
     if (field.primitive === 'checksum') {
       item.meta = {
         checksum: {
