@@ -62,25 +62,31 @@ export async function loadWorkspaceBootstrap(): Promise<{
   const meOptions = {
     queryKey: workspaceBootstrapKeys.me,
     queryFn: ({ signal }: { signal: AbortSignal }) => readResource('/api/backend/me', signal),
-    staleTime: 30_000,
+    // Failures are intentionally represented as data so the shell can render
+    // partial bootstrap state. Do not cache that failure as fresh for 30 seconds.
+    staleTime: (query) =>
+      query.state.data?.ok ? 30_000 : 0,
   };
   const workspacesOptions = {
     queryKey: workspaceBootstrapKeys.workspaces,
     queryFn: ({ signal }: { signal: AbortSignal }) => readResource('/api/backend/workspaces?limit=50', signal),
-    staleTime: 30_000,
+    staleTime: (query) =>
+      query.state.data?.ok ? 30_000 : 0,
   };
 
   const cachedMe = queryClient.getQueryData<SharedHttpResult>(workspaceBootstrapKeys.me);
   const cachedWorkspaces = queryClient.getQueryData<SharedHttpResult>(workspaceBootstrapKeys.workspaces);
+  const usableCachedMe = cachedMe?.ok ? cachedMe : undefined;
+  const usableCachedWorkspaces = cachedWorkspaces?.ok ? cachedWorkspaces : undefined;
 
-  // Use any restored successful response immediately. fetchQuery still performs
-  // stale revalidation, but its promise must not hold up the first render.
-  if (cachedMe) void queryClient.fetchQuery(meOptions).catch(() => undefined);
-  if (cachedWorkspaces) void queryClient.fetchQuery(workspacesOptions).catch(() => undefined);
+  // Use restored successful responses immediately. Stale revalidation must not
+  // hold up first render, while cached failures are retried on the next bootstrap.
+  if (usableCachedMe) void queryClient.fetchQuery(meOptions).catch(() => undefined);
+  if (usableCachedWorkspaces) void queryClient.fetchQuery(workspacesOptions).catch(() => undefined);
 
   const [me, workspaces] = await Promise.all([
-    cachedMe ?? queryClient.fetchQuery(meOptions),
-    cachedWorkspaces ?? queryClient.fetchQuery(workspacesOptions),
+    usableCachedMe ?? queryClient.fetchQuery(meOptions),
+    usableCachedWorkspaces ?? queryClient.fetchQuery(workspacesOptions),
   ]);
 
   return normalizeBootstrap(me, workspaces);

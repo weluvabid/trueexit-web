@@ -36,7 +36,11 @@ declare global {
   }
 }
 
-function isPersistableQuery(queryKey: readonly unknown[]): boolean {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isPersistableQuery(queryKey: readonly unknown[], data: unknown): boolean {
   const [family, resource] = queryKey;
 
   // Persist only compact, read-only resources that improve return visits.
@@ -45,7 +49,13 @@ function isPersistableQuery(queryKey: readonly unknown[]): boolean {
   if (family === 'dashboard') return resource === 'overview';
   if (family === 'monitors') return resource === 'list';
   if (family === 'templates') return resource === 'list' || resource === 'detail';
-  if (family === 'workspace-bootstrap') return resource === 'me' || resource === 'workspaces';
+  if (family === 'workspace-bootstrap') {
+    // Bootstrap intentionally models individual resource failures as data so
+    // the shell can render partial state. Never persist those failures as if
+    // they were useful successful snapshots.
+    if (resource !== 'me' && resource !== 'workspaces') return false;
+    return isRecord(data) && data.ok === true;
+  }
   return false;
 }
 
@@ -99,7 +109,7 @@ function startBrowserPersistence(queryClient: QueryClient): void {
     buster: PERSISTENCE_VERSION,
     dehydrateOptions: {
       shouldDehydrateQuery: (query: Query) =>
-        query.state.status === 'success' && isPersistableQuery(query.queryKey),
+        query.state.status === 'success' && isPersistableQuery(query.queryKey, query.state.data),
     },
   };
 

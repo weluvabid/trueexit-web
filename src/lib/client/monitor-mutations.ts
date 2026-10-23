@@ -20,6 +20,15 @@ type EditMonitorVariables = CreateMonitorVariables & {
   monitorId: string;
 };
 
+
+async function invalidateMonitorInventory(queryClient: QueryClient, workspaceId: string): Promise<void> {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: monitorQueryKeys.workspaceLists(workspaceId) }),
+    queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.pages(workspaceId, 'monitors') }),
+    queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.overview(workspaceId) }),
+  ]);
+}
+
 async function sendMonitorMutation(
   url: string,
   method: 'POST' | 'PATCH' | 'PUT',
@@ -43,12 +52,7 @@ export function createMonitorMutationOptions(queryClient: QueryClient) {
     mutationFn: (variables: CreateMonitorVariables) =>
       sendMonitorMutation('/api/backend/monitors', 'POST', variables.requestBody, variables.idempotencyKey),
     onSuccess: async (_result: MonitorMutationResult, variables: CreateMonitorVariables) => {
-      await Promise.all([
-          queryClient.invalidateQueries({ queryKey: monitorQueryKeys.workspaceLists(variables.workspaceId) }),
-          queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.pages(variables.workspaceId, 'monitors') }),
-          queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.overview(variables.workspaceId) }),
-          queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceChannels(variables.workspaceId) }),
-        ]);
+      await invalidateMonitorInventory(queryClient, variables.workspaceId);
     },
   };
 }
@@ -64,13 +68,11 @@ export function editMonitorMutationOptions(queryClient: QueryClient) {
       ),
     onSuccess: async (_result: MonitorMutationResult, variables: EditMonitorVariables) => {
       await Promise.all([
-          queryClient.invalidateQueries({ queryKey: monitorQueryKeys.workspaceLists(variables.workspaceId) }),
-          queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.pages(variables.workspaceId, 'monitors') }),
-          queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.overview(variables.workspaceId) }),
-          queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorDetail(variables.workspaceId, variables.monitorId) }),
-          queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorChannels(variables.workspaceId, variables.monitorId) }),
-          queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceChannels(variables.workspaceId) }),
-        ]);
+        invalidateMonitorInventory(queryClient, variables.workspaceId),
+        queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorDetail(variables.workspaceId, variables.monitorId) }),
+        queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorChannels(variables.workspaceId, variables.monitorId) }),
+        queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceChannels(variables.workspaceId) }),
+      ]);
     },
   };
 }
@@ -97,12 +99,10 @@ export function tagMonitorMutationOptions(queryClient: QueryClient) {
       ),
     onSuccess: async (_result: MonitorMutationResult, variables: TagMonitorVariables) => {
       await Promise.all([
-          queryClient.invalidateQueries({ queryKey: monitorQueryKeys.workspaceLists(variables.workspaceId) }),
-          queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.pages(variables.workspaceId, 'monitors') }),
-          queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.overview(variables.workspaceId) }),
-          queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceTags(variables.workspaceId) }),
-          queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorTags(variables.workspaceId, variables.monitorId) }),
-        ]);
+        invalidateMonitorInventory(queryClient, variables.workspaceId),
+        queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceTags(variables.workspaceId) }),
+        queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorTags(variables.workspaceId, variables.monitorId) }),
+      ]);
     },
   };
 }
@@ -122,11 +122,9 @@ export function lifecycleMonitorMutationOptions(queryClient: QueryClient) {
     },
     onSuccess: async (_result: MonitorMutationResult, variables: LifecycleMonitorVariables) => {
       await Promise.all([
-          queryClient.invalidateQueries({ queryKey: monitorQueryKeys.workspaceLists(variables.workspaceId) }),
-          queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.pages(variables.workspaceId, 'monitors') }),
-          queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.overview(variables.workspaceId) }),
-          queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorDetail(variables.workspaceId, variables.monitorId) }),
-        ]);
+        invalidateMonitorInventory(queryClient, variables.workspaceId),
+        queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorDetail(variables.workspaceId, variables.monitorId) }),
+      ]);
     },
   };
 }
