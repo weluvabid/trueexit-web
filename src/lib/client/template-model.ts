@@ -46,7 +46,7 @@ export function buildTemplatePayload(
 export function parseSamplePayload(input: string): SamplePayloadParseResult {
   let value: unknown;
   try {
-    value = JSON.parse(input) as unknown;
+    value = JSON.parse(input);
   } catch {
     return { ok: false, reason: 'invalid_json' };
   }

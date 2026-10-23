@@ -1,7 +1,7 @@
 <svelte:options runes={true} />
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
-  import type { MonitorEditorDraft, FieldPrimitive } from '../lib/client/monitor-editor-state';
+  import { fieldPrimitiveFromValue, type MonitorEditorDraft, type FieldPrimitive } from '../lib/client/monitor-editor-state';
   import { buildMonitorJsonDraft, parseMonitorJsonDraft } from '../lib/client/monitor-field-editor';
   import { fetchMonitorTemplates, monitorTemplateQueryKeys, requireMonitorQueryResult, monitorQueryErrorMessage } from '../lib/client/monitor-queries';
   import { getSharedQueryClient } from '../lib/client/query-client';
@@ -29,9 +29,6 @@
   const templatesLoading = $derived(fieldMode === 'templates' && Boolean(workspaceId) && templatesQuery.isFetching);
   const templatesError = $derived(templateActionError || (templatesQuery.error ? monitorQueryErrorMessage(templatesQuery.error, messageFor) : ''));
 
-  const primitiveValues: Record<FieldPrimitive, number> = {
-    size: 0, count: 1, duration: 2, timestamp: 3, boolean: 4, categorical: 5, checksum: 6, text: 7,
-  };
   const primitiveLabels: Record<FieldPrimitive, string> = {
     size: 'Size', count: 'Count', duration: 'Duration', timestamp: 'Timestamp',
     boolean: 'Boolean', categorical: 'Categorical', checksum: 'Checksum', text: 'Text',
@@ -109,7 +106,12 @@
   function applySelectedTemplate() {
     const template = templates.find((item) => item.id === selectedTemplateId);
     if (!template || !template.fields.length) return;
-    const mapped = template.fields.map((field) => ({ key: draft.nextFieldKey++, name: field.name, path: field.path, primitive: (Object.entries(primitiveValues).find(([, value]) => value === field.primitive)?.[0] ?? 'text') as FieldPrimitive }));
+    const mapped = template.fields.map((field) => ({
+      key: draft.nextFieldKey++,
+      name: field.name,
+      path: field.path,
+      primitive: fieldPrimitiveFromValue(field.primitive) ?? 'text',
+    }));
     if (mapped.length > 50 || (templateApplyMode === 'merge' && draft.fields.length + mapped.length > 50)) {
       templateActionError = 'The resulting configuration would exceed the 50-field limit. Choose a smaller template or replace the current fields.';
       return;
@@ -154,7 +156,7 @@
                 {#if templatesError}<p class="monitor-form-error" role="alert">{templatesError}</p>{/if}
                 {#if templatesLoading}<p class="monitor-form-hint">Loading templates…</p>{:else if templates.length === 0}<div class="monitor-template-empty"><strong>No templates available</strong><span>Create a reusable field template first, or use JSON to discover fields from a sample payload.</span><a href="/templates">Open Templates ↗</a></div>{:else}
                   <div class="monitor-template-picker"><label class="monitor-form-field"><span>Choose a template</span><select bind:value={selectedTemplateId}><option value="">Select a template…</option>{#each templates as template (template.id)}<option value={template.id}>{template.name} · {template.fields.length} fields</option>{/each}</select></label><label class="monitor-form-field"><span>Apply method</span><select bind:value={templateApplyMode}><option value="replace">Replace current fields</option><option value="merge">Merge with current fields</option></select></label></div>
-                  {#if selectedTemplateId}<div class="monitor-template-preview">{#each templates.find((template) => template.id === selectedTemplateId)?.fields ?? [] as field}<div><span><strong>{field.name}</strong><code>{field.path}</code></span><small>{primitiveLabels[(Object.entries(primitiveValues).find(([, value]) => value === field.primitive)?.[0] ?? 'text') as FieldPrimitive]}</small></div>{/each}</div><button type="button" class="monitor-button monitor-button--primary" onclick={applySelectedTemplate}>Apply template to draft →</button>{/if}
+                  {#if selectedTemplateId}<div class="monitor-template-preview">{#each templates.find((template) => template.id === selectedTemplateId)?.fields ?? [] as field}<div><span><strong>{field.name}</strong><code>{field.path}</code></span><small>{primitiveLabels[fieldPrimitiveFromValue(field.primitive) ?? 'text']}</small></div>{/each}</div><button type="button" class="monitor-button monitor-button--primary" onclick={applySelectedTemplate}>Apply template to draft →</button>{/if}
                 {/if}
               </div>
             {:else}

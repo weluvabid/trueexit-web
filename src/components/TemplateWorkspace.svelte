@@ -27,7 +27,8 @@
     0: 'Size', 1: 'Count', 2: 'Duration', 3: 'Timestamp',
     4: 'Boolean', 5: 'Categorical', 6: 'Checksum', 7: 'Text',
   };
-  const primitiveOptions = Object.entries(primitiveNames).map(([value, label]) => ({ value: Number(value) as Primitive, label }));
+  const primitiveValues = [0, 1, 2, 3, 4, 5, 6, 7] as const satisfies readonly Primitive[];
+  const primitiveOptions = primitiveValues.map((value) => ({ value, label: primitiveNames[value] }));
 
   let workspaces = $state<WorkspaceContext[]>([]);
   let workspaceId = $state('');

@@ -21,7 +21,7 @@ export function parseMonitorJsonDraft(json: string, firstFieldKey: number): Pars
 
   const visit = (node: unknown, path: string) => {
     if (node && typeof node === 'object' && !Array.isArray(node)) {
-      for (const [key, child] of Object.entries(node as Record<string, unknown>)) {
+      for (const [key, child] of Object.entries(node)) {
         visit(child, path ? `${path}.${key}` : key);
       }
       return;
@@ -70,11 +70,21 @@ export function buildMonitorJsonDraft(fields: MonitorField[]): string {
     let cursor: Record<string, unknown> = nested;
     for (let index = 0; index < parts.length - 1; index += 1) {
       const part = parts[index];
-      if (!part || (cursor[part] !== undefined && (!cursor[part] || typeof cursor[part] !== 'object' || Array.isArray(cursor[part])))) {
+      if (!part) {
+        throw new Error(`The path “${path}” contains an empty segment.`);
+      }
+
+      const existing = cursor[part];
+      if (existing !== undefined && !isRecord(existing)) {
         throw new Error(`The path “${path}” conflicts with another field.`);
       }
-      cursor[part] = cursor[part] ?? {};
-      cursor = cursor[part] as Record<string, unknown>;
+
+      if (existing === undefined) cursor[part] = {};
+      const next = cursor[part];
+      if (!isRecord(next)) {
+        throw new Error(`The path “${path}” conflicts with another field.`);
+      }
+      cursor = next;
     }
 
     const leaf = parts[parts.length - 1];
@@ -93,4 +103,9 @@ export function buildMonitorJsonDraft(fields: MonitorField[]): string {
   }
 
   return JSON.stringify(nested, null, 2);
+}
+
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
