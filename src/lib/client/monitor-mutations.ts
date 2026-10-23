@@ -2,6 +2,7 @@ import { assertApiSuccess, requestApi } from './api-client';
 import type { QueryClient } from '@tanstack/svelte-query';
 import { monitorQueryKeys, monitorResourceQueryKeys } from './monitor-queries';
 import { dashboardQueryKeys } from './dashboard-queries';
+import { investigationQueryKeys } from './investigation-api';
 
 export type MonitorMutationResult = {
   status: number;
@@ -72,6 +73,7 @@ export function editMonitorMutationOptions(queryClient: QueryClient) {
         queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorDetail(variables.workspaceId, variables.monitorId) }),
         queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorChannels(variables.workspaceId, variables.monitorId) }),
         queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceChannels(variables.workspaceId) }),
+        queryClient.invalidateQueries({ queryKey: investigationQueryKeys.monitor(variables.workspaceId, variables.monitorId) }),
       ]);
     },
   };
@@ -102,6 +104,7 @@ export function tagMonitorMutationOptions(queryClient: QueryClient) {
         invalidateMonitorInventory(queryClient, variables.workspaceId),
         queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceTags(variables.workspaceId) }),
         queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorTags(variables.workspaceId, variables.monitorId) }),
+        queryClient.invalidateQueries({ queryKey: investigationQueryKeys.monitor(variables.workspaceId, variables.monitorId) }),
       ]);
     },
   };
@@ -124,6 +127,7 @@ export function lifecycleMonitorMutationOptions(queryClient: QueryClient) {
       await Promise.all([
         invalidateMonitorInventory(queryClient, variables.workspaceId),
         queryClient.invalidateQueries({ queryKey: monitorResourceQueryKeys.monitorDetail(variables.workspaceId, variables.monitorId) }),
+        queryClient.invalidateQueries({ queryKey: investigationQueryKeys.monitor(variables.workspaceId, variables.monitorId) }),
       ]);
     },
   };

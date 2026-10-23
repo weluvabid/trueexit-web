@@ -21,9 +21,33 @@ export function buildInvestigationApiPath(workspaceId: string, path: string, ext
   return `/api/backend/${path}?${params.toString()}`;
 }
 
+/**
+ * Give investigation resources a structured cache identity so mutations can
+ * invalidate a monitor's entire investigation subtree without string matching
+ * opaque request URLs. Non-workspace query parameters remain part of identity.
+ */
+function investigationResourceKey(requestPath: string) {
+  const url = new URL(requestPath, 'https://trueexit.invalid');
+  const path = url.pathname.replace(/^\/api\/backend\/?/, '');
+  const pathSegments = path.split('/').filter(Boolean);
+  const workspaceId = url.searchParams.get('workspace_id') ?? '';
+  const query = [...url.searchParams.entries()]
+    .filter(([key]) => key !== 'workspace_id')
+    .sort(([leftKey, leftValue], [rightKey, rightValue]) =>
+      leftKey.localeCompare(rightKey) || leftValue.localeCompare(rightValue));
+
+  return ['investigation-resource', workspaceId, ...pathSegments, query] as const;
+}
+
 export const investigationQueryKeys = {
   all: ['investigation-resource'] as const,
-  resource: (requestPath: string) => ['investigation-resource', requestPath] as const,
+  resource: (requestPath: string) => investigationResourceKey(requestPath),
+  monitor: (workspaceId: string, monitorId: string) => [
+    'investigation-resource',
+    workspaceId,
+    'monitors',
+    encodeURIComponent(monitorId),
+  ] as const,
 };
 
 function investigationResourceQueryOptionsForPath<
