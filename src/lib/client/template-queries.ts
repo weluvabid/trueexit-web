@@ -1,4 +1,6 @@
 import { ApiClientError, isAbortError, requestApi } from './api-client';
+import { parseApiBody, templatePageSchema, templateSchema } from './api-schemas';
+import type { Template } from './template-types';
 import { getSharedQueryClient } from './query-client';
 
 export type TemplatePage<T> = {
@@ -23,7 +25,7 @@ export const templateQueryKeys = {
     [...templateQueryKeys.details(), workspaceId, templateId] as const,
 };
 
-async function fetchTemplateResource<T>(url: string, signal: AbortSignal): Promise<T> {
+async function fetchTemplateResource(url: string, signal: AbortSignal): Promise<unknown> {
   let response: Response;
   let body: unknown;
   let code: string | null;
@@ -39,10 +41,10 @@ async function fetchTemplateResource<T>(url: string, signal: AbortSignal): Promi
   if (!response.ok) {
     throw new TemplateQueryError(response.status, code, requestId);
   }
-  return body as T;
+  return body;
 }
 
-export function templateListQueryOptions<T>(
+export function templateListQueryOptions(
   workspaceId: string,
   search: string,
   cursor: string | null,
@@ -54,27 +56,32 @@ export function templateListQueryOptions<T>(
   return {
     queryKey: templateQueryKeys.list(workspaceId, search.trim(), cursor),
     staleTime: 30_000,
-    queryFn: ({ signal }: { signal: AbortSignal }) =>
-      fetchTemplateResource<TemplatePage<T>>(`/api/backend/templates?${params}`, signal),
+    queryFn: async ({ signal }: { signal: AbortSignal }): Promise<TemplatePage<Template>> => {
+      const body = await fetchTemplateResource(`/api/backend/templates?${params}`, signal);
+      const page = parseApiBody(templatePageSchema, body);
+      return { data: page.data, page: { next_cursor: page.page?.next_cursor ?? null } };
+    },
   };
 }
 
-export function templateDetailQueryOptions<T>(workspaceId: string, templateId: string) {
+export function templateDetailQueryOptions(workspaceId: string, templateId: string) {
   return {
     queryKey: templateQueryKeys.detail(workspaceId, templateId),
     staleTime: 30_000,
-    queryFn: ({ signal }: { signal: AbortSignal }) =>
-      fetchTemplateResource<T>(
+    queryFn: async ({ signal }: { signal: AbortSignal }): Promise<Template> => {
+      const body = await fetchTemplateResource(
         `/api/backend/templates/${encodeURIComponent(templateId)}?workspace_id=${encodeURIComponent(workspaceId)}`,
         signal,
-      ),
+      );
+      return parseApiBody(templateSchema, body);
+    },
   };
 }
 
-export function fetchTemplatePage<T>(workspaceId: string, search: string, cursor: string | null) {
-  return getSharedQueryClient().fetchQuery(templateListQueryOptions<T>(workspaceId, search, cursor));
+export function fetchTemplatePage(workspaceId: string, search: string, cursor: string | null) {
+  return getSharedQueryClient().fetchQuery(templateListQueryOptions(workspaceId, search, cursor));
 }
 
-export function fetchTemplateDetail<T>(workspaceId: string, templateId: string) {
-  return getSharedQueryClient().fetchQuery(templateDetailQueryOptions<T>(workspaceId, templateId));
+export function fetchTemplateDetail(workspaceId: string, templateId: string) {
+  return getSharedQueryClient().fetchQuery(templateDetailQueryOptions(workspaceId, templateId));
 }

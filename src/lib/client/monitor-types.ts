@@ -11,3 +11,11 @@ export type Monitor = {
   created_at: string;
   updated_at: string;
 };
+
+export type MonitorConfigVersion = {
+  version: number;
+  cadence_seconds: number;
+  config: { fields: Array<{ name: string; path: string; primitive: number; meta?: Record<string, unknown> }> };
+};
+
+export type MonitorDetail = Monitor & { config_versions?: MonitorConfigVersion[] };

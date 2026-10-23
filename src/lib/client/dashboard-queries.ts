@@ -1,4 +1,5 @@
 import { ApiClientError, requestApi } from './api-client';
+import { dashboardResponseSchema, parseApiBody } from './api-schemas';
 
 export type DashboardSummary = {
   active_monitors: number;
@@ -63,7 +64,7 @@ export function dashboardQueryOptions(workspaceId: string) {
         const status = response.status;
         throw new DashboardQueryError(dashboardErrorMessage(status, code), status, code, requestId);
       }
-      return body as DashboardResponse;
+      return parseApiBody(dashboardResponseSchema, body, { status: response.status, requestId });
     },
   };
 }

@@ -8,7 +8,7 @@
   import MonitorTagManager from './MonitorTagManager.svelte';
   import MonitorCadenceConfiguration from './MonitorCadenceConfiguration.svelte';
   import MonitorDestinationConfiguration from './MonitorDestinationConfiguration.svelte';
-  import type { Monitor, MonitorStatus } from '../lib/client/monitor-types';
+  import type { Monitor, MonitorDetail, MonitorStatus } from '../lib/client/monitor-types';
   import { addMonitorTagDraft, removeMonitorTagDraft, getCadenceDraftFromSeconds } from '../lib/client/monitor-editor-model';
   import { prepareMonitorSubmission } from '../lib/client/monitor-editor-validation';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
@@ -20,8 +20,6 @@
   import { getSharedQueryClient } from '../lib/client/query-client';
   import { ApiClientError } from '../lib/client/api-client';
 
-  type MonitorConfigVersion = { version: number; cadence_seconds: number; config: { fields: Array<{ name: string; path: string; primitive: number; meta?: Record<string, unknown> }> } };
-  type MonitorDetail = Monitor & { config_versions?: MonitorConfigVersion[] };
   // Query cache lifetime belongs to the application, not this component instance.
   const monitorQueryClient = getSharedQueryClient();
   const createMonitorMutation = createMutation(() => createMonitorMutationOptions(monitorQueryClient), () => monitorQueryClient);
@@ -32,7 +30,7 @@
 
   let activeListQuery = $state<MonitorListQuery | null>(null);
   const monitorsQuery = createQuery(() => ({
-    ...(activeListQuery ? monitorListQueryOptions<Monitor>(activeListQuery) : {
+    ...(activeListQuery ? monitorListQueryOptions(activeListQuery) : {
       queryKey: ['monitors', 'list', 'inactive'] as const,
       queryFn: async (): Promise<MonitorListResponse<Monitor>> => ({ ok: true, status: 200, code: null, requestId: null, page: { data: [], page: { next_cursor: null } } }),
     }),
@@ -353,7 +351,7 @@
       const [detailResult, channelIdsResult, destinationsResult] = await Promise.all([
         monitorQueryClient.fetchQuery({
           queryKey: monitorResourceQueryKeys.monitorDetail(workspaceId, monitor.id),
-          queryFn: async ({ signal }) => requireMonitorQueryResult(await fetchMonitorDetail<MonitorDetail>(workspaceId, monitor.id, signal)),
+          queryFn: async ({ signal }) => requireMonitorQueryResult(await fetchMonitorDetail(workspaceId, monitor.id, signal)),
           staleTime: 0,
           retry: false,
         }),
@@ -572,7 +570,7 @@
     // It lets existing mutation/navigation handlers await the refresh without
     // maintaining a second copy of query data or query lifecycle state.
     try {
-      await monitorQueryClient.fetchQuery(monitorListQueryOptions<Monitor>(query));
+      await monitorQueryClient.fetchQuery(monitorListQueryOptions(query));
     } catch {
       // The reactive query owns error state; the component derives listError from it.
     }

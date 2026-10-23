@@ -1,5 +1,6 @@
 import { getSharedQueryClient, waitForQueryCacheRestoration } from './query-client';
 import { ApiClientError, isAbortError, requestApi } from './api-client';
+import { currentUserContextSchema, parseApiBody, workspacePageSchema } from './api-schemas';
 
 export interface CurrentUserContext {
   user_id: string;
@@ -92,12 +93,30 @@ export async function loadWorkspaceBootstrap(): Promise<{
   return normalizeBootstrap(me, workspaces);
 }
 
+function normalizeBootstrapResource<T>(
+  result: SharedHttpResult,
+  parse: (body: unknown, status: number, requestId: string | null) => T,
+): BootstrapResource<T> {
+  if (!result.ok) {
+    return { ok: false, status: result.status, code: result.code, requestId: result.requestId };
+  }
+
+  try {
+    return { ok: true, data: parse(result.body, result.status, result.requestId) };
+  } catch (error) {
+    if (error instanceof ApiClientError && error.kind === 'invalid_response') {
+      return { ok: false, status: result.status, code: error.code, requestId: result.requestId };
+    }
+    throw error;
+  }
+}
+
 function normalizeBootstrap(me: SharedHttpResult, workspaces: SharedHttpResult): {
   me: BootstrapResource<CurrentUserContext>;
   workspaces: BootstrapResource<WorkspacePage>;
 } {
   return {
-    me: me.ok ? { ok: true, data: me.body as CurrentUserContext } : { ok: false, status: me.status, code: me.code ?? null, requestId: me.requestId },
-    workspaces: workspaces.ok ? { ok: true, data: workspaces.body as WorkspacePage } : { ok: false, status: workspaces.status, code: workspaces.code ?? null, requestId: workspaces.requestId },
+    me: normalizeBootstrapResource(me, (body, status, requestId) => parseApiBody(currentUserContextSchema, body, { status, requestId })),
+    workspaces: normalizeBootstrapResource(workspaces, (body, status, requestId) => parseApiBody(workspacePageSchema, body, { status, requestId })),
   };
 }

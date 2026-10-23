@@ -5,3 +5,15 @@ export type FieldDefinition = {
   primitive: Primitive;
   meta?: Record<string, unknown>;
 };
+
+export type Template = {
+  id: string;
+  owner_user_id: string | null;
+  kind: 'built_in' | 'custom';
+  name: string;
+  description: string;
+  fields: FieldDefinition[];
+  version: number;
+  created_at: string;
+  updated_at: string;
+};

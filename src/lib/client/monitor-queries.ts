@@ -1,4 +1,5 @@
-import { getApiList } from './api-response';
+import { monitorChannelIdsSchema, monitorChannelSchema, monitorDetailSchema, monitorPageSchema, monitorTemplateSchema, parseApiBody, parseApiList, workspaceTagSchema } from './api-schemas';
+import type { Monitor, MonitorDetail } from './monitor-types';
 import { ApiClientError, isAbortError, requestApi } from './api-client';
 
 export class MonitorQueryError extends ApiClientError {
@@ -58,20 +59,20 @@ export const monitorQueryKeys = {
   }] as const,
 };
 
-export function monitorListQueryOptions<TMonitor>(query: MonitorListQuery) {
+export function monitorListQueryOptions(query: MonitorListQuery) {
   return {
     queryKey: monitorQueryKeys.list(query),
     queryFn: async ({ signal }: { signal: AbortSignal }) =>
-      requireMonitorQueryResult(await fetchMonitorPage<TMonitor>(query, signal)),
+      requireMonitorQueryResult(await fetchMonitorPage(query, signal)),
     staleTime: 0,
     retry: false as const,
   };
 }
 
-export async function fetchMonitorPage<TMonitor>(
+export async function fetchMonitorPage(
   query: MonitorListQuery,
   signal: AbortSignal,
-): Promise<MonitorListResponse<TMonitor>> {
+): Promise<MonitorListResponse<Monitor>> {
   const params = new URLSearchParams({
     workspace_id: query.workspaceId,
     limit: String(query.limit),
@@ -90,15 +91,15 @@ export async function fetchMonitorPage<TMonitor>(
     return { ok: false, status: response.status, code, requestId, page: null };
   }
 
-  const result = body as MonitorPage<TMonitor> | null;
+  const result = parseApiBody(monitorPageSchema, body, { status: response.status, requestId });
   return {
     ok: true,
     status: response.status,
     code: null,
     requestId: null,
     page: {
-      data: Array.isArray(result?.data) ? result.data : [],
-      page: { next_cursor: result?.page?.next_cursor ?? null },
+      data: result.data,
+      page: { next_cursor: result.page?.next_cursor ?? null },
     },
   };
 }
@@ -135,17 +136,13 @@ export async function fetchMonitorTemplates(
   if (!response.ok) return { ok: false, status: response.status, code, requestId, data: [] };
 
   const rows = getApiList<unknown>(body);
+  const data = rows.map((row) => parseApiBody(monitorTemplateSchema, row, { status: response.status, requestId }));
   return {
     ok: true,
     status: response.status,
     code: null,
     requestId: null,
-    data: rows.map((template: any) => ({
-      id: String(template.id),
-      name: String(template.name),
-      description: typeof template.description === 'string' ? template.description : undefined,
-      fields: Array.isArray(template.fields) ? template.fields : [],
-    })),
+    data,
   };
 }
 
@@ -201,28 +198,26 @@ export const monitorResourceQueryKeys = {
 
 export function fetchWorkspaceTags(workspaceId: string, signal: AbortSignal): Promise<ApiResource<WorkspaceTag[] | null>> {
   return fetchApiResource(`/api/backend/workspaces/${encodeURIComponent(workspaceId)}/tags`, signal, (body) => {
-    if (Array.isArray(body)) return body as WorkspaceTag[];
-    if (body && typeof body === 'object' && 'data' in body && Array.isArray(body.data)) return body.data as WorkspaceTag[];
-    return null;
+    if (body === null) return null;
+    return parseApiList(workspaceTagSchema, body);
   });
 }
 
 export function fetchMonitorTags(workspaceId: string, monitorId: string, signal: AbortSignal): Promise<ApiResource<WorkspaceTag[]>> {
-  return fetchApiResource(`/api/backend/monitors/${encodeURIComponent(monitorId)}/tags?workspace_id=${encodeURIComponent(workspaceId)}`, signal, (body) => getApiList<WorkspaceTag>(body));
+  return fetchApiResource(`/api/backend/monitors/${encodeURIComponent(monitorId)}/tags?workspace_id=${encodeURIComponent(workspaceId)}`, signal, (body) => body === null ? [] : parseApiList(workspaceTagSchema, body));
 }
 
 export function fetchWorkspaceChannels(workspaceId: string, signal: AbortSignal): Promise<ApiResource<MonitorChannel[]>> {
-  return fetchApiResource(`/api/backend/workspaces/${encodeURIComponent(workspaceId)}/channels`, signal, (body) => Array.isArray(body) ? body as MonitorChannel[] : []);
+  return fetchApiResource(`/api/backend/workspaces/${encodeURIComponent(workspaceId)}/channels`, signal, (body) => body === null ? [] : parseApiList(monitorChannelSchema, body));
 }
 
-export function fetchMonitorDetail<TMonitor>(workspaceId: string, monitorId: string, signal: AbortSignal): Promise<ApiResource<TMonitor | null>> {
-  return fetchApiResource(`/api/backend/monitors/${encodeURIComponent(monitorId)}?workspace_id=${encodeURIComponent(workspaceId)}`, signal, (body) => body && typeof body === 'object' ? body as TMonitor : null);
+export function fetchMonitorDetail(workspaceId: string, monitorId: string, signal: AbortSignal): Promise<ApiResource<MonitorDetail | null>> {
+  return fetchApiResource(`/api/backend/monitors/${encodeURIComponent(monitorId)}?workspace_id=${encodeURIComponent(workspaceId)}`, signal, (body) => body === null ? null : parseApiBody(monitorDetailSchema, body));
 }
 
 export function fetchMonitorChannelIds(workspaceId: string, monitorId: string, signal: AbortSignal): Promise<ApiResource<string[]>> {
   return fetchApiResource(`/api/backend/monitors/${encodeURIComponent(monitorId)}/channels?workspace_id=${encodeURIComponent(workspaceId)}`, signal, (body) => {
-    if (!body || typeof body !== 'object' || !('channel_ids' in body)) return [];
-    const ids = (body as { channel_ids?: unknown }).channel_ids;
-    return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [];
+    if (body === null) return [];
+    return parseApiBody(monitorChannelIdsSchema, body).channel_ids;
   });
 }

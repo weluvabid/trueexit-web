@@ -8,7 +8,7 @@
   import { can } from '../lib/client/permissions';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
-  import type { FieldDefinition, Primitive } from '../lib/client/template-types';
+  import type { FieldDefinition, Primitive, Template } from '../lib/client/template-types';
   import TemplateManualFieldEditor from './templates/TemplateManualFieldEditor.svelte';
   import { addTemplateField, removeTemplateField, updateTemplateField, discoveredFieldKey, mergeDiscoveredFields } from '../lib/client/template-field-model';
   import { validateTemplateDraft } from '../lib/client/template-validation';
@@ -18,10 +18,6 @@
 
   const queryClient = getSharedQueryClient();
 
-  type Template = {
-    id: string; owner_user_id: string | null; kind: 'built_in' | 'custom'; name: string;
-    description: string; fields: FieldDefinition[]; version: number; created_at: string; updated_at: string;
-  };
   type Page<T> = { data: T[]; page: { next_cursor: string | null } };
   type DiscoveredField = FieldDefinition & { source_type?: string };
   type Mode = 'create' | 'edit';
@@ -86,7 +82,7 @@
     loading = true; listError = '';
     const targetWorkspaceId = workspaceId;
     try {
-      const page = await fetchTemplatePage<Template>(targetWorkspaceId, query, next);
+      const page = await fetchTemplatePage(targetWorkspaceId, query, next);
       if (current !== sequence || workspaceId !== targetWorkspaceId) return;
       templates = Array.isArray(page.data) ? page.data : [];
       nextCursor = page.page?.next_cursor ?? null;
@@ -142,7 +138,7 @@
     discoveryError = ''; discoveryWarnings = []; discovered = []; selectedDiscovered = [];
     // Load the latest version before editing to avoid silently overwriting a concurrent update.
     try {
-      const latest = await fetchTemplateDetail<Template>(targetWorkspaceId, template.id);
+      const latest = await fetchTemplateDetail(targetWorkspaceId, template.id);
       if (current !== editSequence || !formOpen || mode !== 'edit' || editing?.id !== template.id || workspaceId !== targetWorkspaceId) return;
       editing = latest; ({ name, description, fields } = createTemplateDraft(latest));
     } catch (error) {
@@ -257,7 +253,7 @@
     const targetWorkspaceId = workspaceId;
     detail = null; detailError = ''; detailLoading = true;
     try {
-      const result = await fetchTemplateDetail<Template>(targetWorkspaceId, template.id);
+      const result = await fetchTemplateDetail(targetWorkspaceId, template.id);
       if (current !== detailSequence || workspaceId !== targetWorkspaceId) return;
       detail = result;
     } catch (error) {
