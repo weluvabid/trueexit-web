@@ -14,7 +14,7 @@
   import { validateTemplateDraft } from '../lib/client/template-validation';
   import { buildTemplatePayload, createTemplateDraft, parseSamplePayload } from '../lib/client/template-model';
   import { templateErrorMessage } from '../lib/client/template-errors';
-  import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
+  import { readActiveWorkspaceId, resolveAndPersistWorkspaceId } from '../lib/client/workspace-preference';
 
   const queryClient = getSharedQueryClient();
 
@@ -108,8 +108,7 @@
       if (!result.workspaces.ok) { bootError = templateErrorMessage(result.workspaces.status, result.workspaces.code); loading = false; return; }
       workspaces = result.workspaces.data.data;
       const personal = result.me.ok ? result.me.data.personal_workspace_id : null;
-      workspaceId = resolveWorkspaceId(workspaces, [readActiveWorkspaceId(), personal]);
-      writeActiveWorkspaceId(workspaceId);
+      workspaceId = resolveAndPersistWorkspaceId(workspaces, [readActiveWorkspaceId(), personal]);
       if (!workspaceId) { loading = false; return; }
       await loadTemplates(null);
     } catch {

@@ -8,7 +8,7 @@
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import { getCachedSettingsResponse, getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../lib/client/settings-api';
-  import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
+  import { readActiveWorkspaceId, resolveAndPersistWorkspaceId } from '../lib/client/workspace-preference';
   import { formatDateTime } from '../lib/client/date-format';
   import SettingsSectionNavigation from './settings/SettingsSectionNavigation.svelte';
   import SettingsDestinationManager from './settings/SettingsDestinationManager.svelte';
@@ -90,10 +90,10 @@
       }
       const workspaceBody = bootstrap.workspaces.data;
       workspaces = Array.isArray(workspaceBody?.data) ? workspaceBody.data : [];
-      if (!selectedWorkspaceId || !workspaces.some((item) => item.id === selectedWorkspaceId)) {
-        selectedWorkspaceId = resolveWorkspaceId(workspaces, [readActiveWorkspaceId()]);
-      }
-      writeActiveWorkspaceId(selectedWorkspaceId);
+      selectedWorkspaceId = resolveAndPersistWorkspaceId(
+        workspaces,
+        [selectedWorkspaceId, readActiveWorkspaceId()],
+      );
 
       // Workspace settings do not depend on the accounts request completing.
       // Render the workspace controls once bootstrap resolves, then hydrate

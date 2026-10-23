@@ -16,7 +16,7 @@
   import { fetchWorkspaceTags, fetchMonitorTags, fetchWorkspaceChannels, fetchMonitorDetail, fetchMonitorChannelIds, monitorResourceQueryKeys, monitorListQueryOptions, type MonitorListQuery, type MonitorListResponse, type MonitorSort, type WorkspaceTag, type MonitorChannel, requireMonitorQueryResult, monitorQueryErrorMessage } from '../lib/client/monitor-queries';
   import { createEmptyMonitorDraft, createMonitorDraft, fieldPrimitiveFromValue, serializeMonitorChannelSelection } from '../lib/client/monitor-editor-state';
   import { createMonitorMutationOptions, editMonitorMutationOptions, lifecycleMonitorMutationOptions, tagMonitorMutationOptions } from '../lib/client/monitor-mutations';
-  import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
+  import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveAndPersistWorkspaceId } from '../lib/client/workspace-preference';
   import { getSharedQueryClient } from '../lib/client/query-client';
   import { ApiClientError } from '../lib/client/api-client';
   import { monitorSchema, parseApiBody } from '../lib/client/api-schemas';
@@ -605,8 +605,7 @@
       workspaces = result.workspaces.data.data;
       const personalId = result.me.ok ? result.me.data.personal_workspace_id : null;
       const requestedWorkspaceId = new URLSearchParams(window.location.search).get('workspace_id') ?? '';
-      selectedWorkspaceId = resolveWorkspaceId(workspaces, [requestedWorkspaceId, readActiveWorkspaceId(), personalId]);
-      writeActiveWorkspaceId(selectedWorkspaceId);
+      selectedWorkspaceId = resolveAndPersistWorkspaceId(workspaces, [requestedWorkspaceId, readActiveWorkspaceId(), personalId]);
       loadingWorkspaces = false;
       if (selectedWorkspaceId) void loadWorkspaceTags();
       if (selectedWorkspaceId && initialMode === 'inventory') await loadMonitors(null);

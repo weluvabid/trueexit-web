@@ -15,32 +15,53 @@ export function getInvestigationErrorMessage(status: number, code: string | null
 }
 
 export function buildInvestigationApiPath(workspaceId: string, path: string, extra: Record<string, string> = {}): string {
-  const params = new URLSearchParams({ workspace_id: workspaceId, ...extra });
+  // The selected workspace is authoritative; callers cannot override it via
+  // additional query parameters.
+  const params = new URLSearchParams({ ...extra, workspace_id: workspaceId });
   return `/api/backend/${path}?${params.toString()}`;
 }
 
-export async function readInvestigationResource<TSchema extends v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>>(
+export const investigationQueryKeys = {
+  all: ['investigation-resource'] as const,
+  resource: (requestPath: string) => ['investigation-resource', requestPath] as const,
+};
+
+function investigationResourceQueryOptionsForPath<
+  TSchema extends v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>,
+>(
+  requestPath: string,
+  schema: TSchema,
+  staleTime: number,
+) {
+  return {
+    queryKey: investigationQueryKeys.resource(requestPath),
+    staleTime,
+    retry: false,
+    queryFn: async ({ signal }: { signal: AbortSignal }): Promise<v.InferOutput<TSchema>> => {
+      const { response, body, code, requestId } = await requestApi(requestPath, { signal });
+      if (!response.ok) {
+        throw new InvestigationQueryError(
+          getInvestigationErrorMessage(response.status, code),
+          response.status,
+          code,
+          requestId,
+        );
+      }
+      return parseApiBody(schema, body, { status: response.status, requestId });
+    },
+  };
+}
+
+export async function readInvestigationResource<
+  TSchema extends v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>,
+>(
   path: string,
   schema: TSchema,
 ): Promise<Resource<v.InferOutput<TSchema>>> {
   try {
-    const data = await getSharedQueryClient().fetchQuery({
-      queryKey: ['investigation-resource', path] as const,
-      staleTime: 15_000,
-      retry: false,
-      queryFn: async ({ signal }): Promise<v.InferOutput<TSchema>> => {
-        const { response, body, code, requestId } = await requestApi(path, { signal });
-        if (!response.ok) {
-          throw new InvestigationQueryError(
-            getInvestigationErrorMessage(response.status, code),
-            response.status,
-            code,
-            requestId,
-          );
-        }
-        return parseApiBody(schema, body, { status: response.status, requestId });
-      },
-    });
+    const data = await getSharedQueryClient().fetchQuery(
+      investigationResourceQueryOptionsForPath(path, schema, 15_000),
+    );
     return { ok: true, data };
   } catch (error) {
     if (error instanceof InvestigationQueryError) {
@@ -53,7 +74,6 @@ export async function readInvestigationResource<TSchema extends v.BaseSchema<unk
     return { ok: false, status: 0, code: 'network_error', requestId: null };
   }
 }
-
 
 export class InvestigationQueryError extends ApiClientError {
   constructor(message: string, status: number, code: string | null, requestId: string | null = null) {
@@ -71,27 +91,13 @@ export function investigationQueryErrorMessage(error: unknown): string {
 export function investigationResourceQueryOptions<TSchema extends v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>>(
   workspaceId: string,
   monitorId: string,
-  resource: string,
   path: string,
   schema: TSchema,
   extra: Record<string, string> = {},
 ) {
   const queryPath = buildInvestigationApiPath(workspaceId, path, extra);
   return {
-    queryKey: ['investigation', workspaceId, monitorId, resource, path, extra] as const,
+    ...investigationResourceQueryOptionsForPath(queryPath, schema, 30_000),
     enabled: Boolean(workspaceId && monitorId),
-    staleTime: 30_000,
-    queryFn: async ({ signal }: { signal: AbortSignal }): Promise<v.InferOutput<TSchema>> => {
-      const { response, body, code, requestId } = await requestApi(queryPath, { signal });
-      if (!response.ok) {
-        throw new InvestigationQueryError(
-          getInvestigationErrorMessage(response.status, code),
-          response.status,
-          code,
-          requestId,
-        );
-      }
-      return parseApiBody(schema, body, { status: response.status, requestId });
-    },
   };
 }

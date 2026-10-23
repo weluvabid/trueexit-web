@@ -32,3 +32,17 @@ export function resolveWorkspaceId<T extends WorkspaceIdentity>(
   }
   return workspaces[0]?.id ?? '';
 }
+
+/**
+ * Resolve a selection against the currently available workspaces and persist
+ * only the validated result. Keeping this transition together prevents callers
+ * from persisting an unvalidated URL or stale workspace identifier.
+ */
+export function resolveAndPersistWorkspaceId<T extends WorkspaceIdentity>(
+  workspaces: readonly T[],
+  preferredIds: readonly (string | null | undefined)[],
+): string {
+  const workspaceId = resolveWorkspaceId(workspaces, preferredIds);
+  writeActiveWorkspaceId(workspaceId);
+  return workspaceId;
+}

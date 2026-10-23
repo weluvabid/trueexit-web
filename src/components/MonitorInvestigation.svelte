@@ -9,7 +9,7 @@
   import { buildInvestigationApiPath, getInvestigationErrorMessage, readInvestigationResource, investigationResourceQueryOptions, investigationQueryErrorMessage, type Resource } from '../lib/client/investigation-api';
   import { investigationDeliveryPageSchema, investigationDeliverySchema, investigationEvidencePageSchema, investigationEvidenceSchema, investigationHealthSchema, investigationHealthVersionSchema, investigationMonitorSchema, investigationRecordPageSchema, investigationRecordSchema } from '../lib/client/api-schemas';
   import type { InvestigationDeliveryContract, InvestigationEvidenceContract, InvestigationHealthVersionContract, InvestigationMonitorContract } from '../lib/client/api-schemas';
-  import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
+  import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveAndPersistWorkspaceId } from '../lib/client/workspace-preference';
 
   type Page<T> = { data: T[]; page?: { next_cursor: string | null } };
   type Monitor = InvestigationMonitorContract;
@@ -76,15 +76,15 @@
   const healthCounts = getHealthCounts;
   const queryClient = getSharedQueryClient();
   const monitorQuery = createQuery(
-    () => investigationResourceQueryOptions(workspaceId, monitorId, 'monitor', `monitors/${encodeURIComponent(monitorId)}`, investigationMonitorSchema),
+    () => investigationResourceQueryOptions(workspaceId, monitorId, `monitors/${encodeURIComponent(monitorId)}`, investigationMonitorSchema),
     () => queryClient,
   );
   const healthQuery = createQuery(
-    () => investigationResourceQueryOptions(workspaceId, monitorId, 'health', `monitors/${encodeURIComponent(monitorId)}/health`, investigationHealthSchema),
+    () => investigationResourceQueryOptions(workspaceId, monitorId, `monitors/${encodeURIComponent(monitorId)}/health`, investigationHealthSchema),
     () => queryClient,
   );
   const healthHistoryQuery = createQuery(
-    () => investigationResourceQueryOptions(workspaceId, monitorId, 'health-history', `monitors/${encodeURIComponent(monitorId)}/health/history`, investigationRecordPageSchema, { limit: '20' }),
+    () => investigationResourceQueryOptions(workspaceId, monitorId, `monitors/${encodeURIComponent(monitorId)}/health/history`, investigationRecordPageSchema, { limit: '20' }),
     () => queryClient,
   );
   const monitor = $derived(monitorQuery.data ?? null);
@@ -248,8 +248,7 @@
       workspaces = result.workspaces.data.data;
       const personalId = result.me.ok ? result.me.data.personal_workspace_id : null;
       const requestedWorkspaceId = new URLSearchParams(window.location.search).get('workspace_id');
-      workspaceId = resolveWorkspaceId(workspaces, [requestedWorkspaceId, readActiveWorkspaceId(), personalId]);
-      writeActiveWorkspaceId(workspaceId);
+      workspaceId = resolveAndPersistWorkspaceId(workspaces, [requestedWorkspaceId, readActiveWorkspaceId(), personalId]);
       workspaceGeneration += 1;
       bootLoading = false;
       if (!workspaceId) { bootError = 'No workspace is available to inspect this monitor.'; return; }

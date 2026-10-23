@@ -128,7 +128,7 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
       import { loadWorkspaceBootstrap } from '../lib/client/workspace-bootstrap';
       import { assertApiSuccess, ApiClientError, requestApi } from '../lib/client/api-client';
       import { clearPersistedQueryCache, getSharedQueryClient } from '../lib/client/query-client';
-      import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
+      import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveAndPersistWorkspaceId } from '../lib/client/workspace-preference';
       import { parseApiBody, workspaceSearchResponseSchema } from '../lib/client/api-schemas';
       import type { WorkspaceContext } from '../lib/client/workspace-bootstrap';
 
@@ -432,9 +432,8 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
             workspaces = availableWorkspaces;
             const requested = new URLSearchParams(window.location.search).get('workspace_id');
             const stored = readActiveWorkspaceId();
-            activeWorkspaceId = resolveWorkspaceId(workspaces, [requested, stored, me?.personal_workspace_id]);
+            activeWorkspaceId = resolveAndPersistWorkspaceId(workspaces, [requested, stored, me?.personal_workspace_id]);
             renderWorkspaces();
-            if (activeWorkspaceId && stored !== activeWorkspaceId) writeActiveWorkspaceId(activeWorkspaceId);
           } catch {
             workspaceName.textContent = 'Workspace unavailable';
             workspaceTrigger.disabled = true;

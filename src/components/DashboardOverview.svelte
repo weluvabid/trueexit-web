@@ -8,7 +8,7 @@
   import type { DashboardEvidenceItem, DashboardMonitorItem } from '../lib/client/api-schemas';
   import { dashboardErrorMessage, dashboardPageQueryOptions, dashboardQueryErrorMessage, dashboardQueryOptions, type DashboardResponse } from '../lib/client/dashboard-queries';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
-  import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
+  import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveAndPersistWorkspaceId } from '../lib/client/workspace-preference';
   import { formatDateTime } from '../lib/client/date-format';
   import { filterAttentionItems, formatRelativeDate, getDashboardSummaryMetrics, type AttentionFilter } from '../lib/client/dashboard-model';
   import type { AttentionItem } from '../lib/client/dashboard-queries';
@@ -124,8 +124,7 @@
       workspaces = result.workspaces.data.data;
       const personalId = result.me.ok ? result.me.data.personal_workspace_id : null;
       const requestedWorkspaceId = new URL(window.location.href).searchParams.get('workspace_id');
-      const initialWorkspaceId = resolveWorkspaceId(workspaces, [requestedWorkspaceId, readActiveWorkspaceId(), personalId]);
-      writeActiveWorkspaceId(initialWorkspaceId);
+      const initialWorkspaceId = resolveAndPersistWorkspaceId(workspaces, [requestedWorkspaceId, readActiveWorkspaceId(), personalId]);
       bootstrapping = false;
       if (initialWorkspaceId) await loadDashboard(initialWorkspaceId);
     } catch {
