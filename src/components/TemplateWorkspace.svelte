@@ -1,10 +1,9 @@
 <svelte:options runes={true} />
 <script lang="ts">
   import { getSharedQueryClient } from '../lib/client/query-client';
-  import { templateQueryKeys } from '../lib/client/template-queries';
-  import { monitorTemplateQueryKeys } from '../lib/client/monitor-queries';
   import { fetchTemplatePage, fetchTemplateDetail, TemplateQueryError } from '../lib/client/template-queries';
-  import { ApiClientError, assertApiSuccess, requestApi, type ApiResponse } from '../lib/client/api-client';
+  import { ApiClientError } from '../lib/client/api-client';
+  import { discoverTemplateFields, removeTemplate, writeTemplate } from '../lib/client/template-mutations';
   import { can } from '../lib/client/permissions';
   import { onMount } from 'svelte';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
@@ -14,7 +13,6 @@
   import { validateTemplateDraft } from '../lib/client/template-validation';
   import { buildTemplatePayload, createTemplateDraft, parseSamplePayload } from '../lib/client/template-model';
   import { templateErrorMessage } from '../lib/client/template-errors';
-  import { discoveredFieldsResponseSchema, parseApiBody } from '../lib/client/api-schemas';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
 
   const queryClient = getSharedQueryClient();
@@ -73,10 +71,6 @@
   const selectedWorkspace = $derived(workspaces.find((item) => item.id === workspaceId) ?? null);
   const canManage = $derived(can(selectedWorkspace, 'templates.create'));
 
-
-  function idempotencyHeaders(): HeadersInit {
-    return { Accept: 'application/json', 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() };
-  }
 
   async function loadTemplates(next: string | null = null) {
     const current = ++sequence;
@@ -174,13 +168,8 @@
     const payload = parsedPayload.value;
     discovering = true;
     try {
-      const result = await requestApi('/api/backend/templates/discover-fields', {
-        method: 'POST', headers: idempotencyHeaders(),
-        body: JSON.stringify({ workspace_id: targetWorkspaceId, payload }),
-      });
+      const discovery = await discoverTemplateFields(targetWorkspaceId, payload, crypto.randomUUID());
       if (current !== discoverySequence || !formOpen || workspaceId !== targetWorkspaceId || samplePayload !== targetSamplePayload) return;
-      assertApiSuccess(result);
-      const discovery = parseApiBody(discoveredFieldsResponseSchema, result.body, { status: result.response.status, requestId: result.requestId });
       discovered = discovery.fields;
       discoveryWarnings = (discovery.warnings ?? []).map((warning) => warning.code);
     } catch (error) {
@@ -227,30 +216,12 @@
     const payload = buildTemplatePayload(targetWorkspaceId, { name, description, fields });
     saving = true;
     try {
-      let result: ApiResponse;
-      if (targetMode === 'create') {
-        result = await requestApi('/api/backend/templates', {
-          method: 'POST',
-          headers: idempotencyHeaders(),
-          body: JSON.stringify(payload),
-        });
-      } else {
-        if (!targetTemplate) {
-          formError = 'The template being edited is no longer available. Close the editor and try again.';
-          return;
-        }
-        result = await requestApi(`/api/backend/templates/${encodeURIComponent(targetTemplate.id)}`, {
-          method: 'PATCH',
-          headers: idempotencyHeaders(),
-          body: JSON.stringify({ ...payload, expected_version: targetTemplate.version }),
-        });
-      }
-      if (operation !== mutationSequence) return;
-      assertApiSuccess(result);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: templateQueryKeys.all }),
-        queryClient.invalidateQueries({ queryKey: monitorTemplateQueryKeys.all }),
-      ]);
+      await writeTemplate(queryClient, {
+        mode: targetMode,
+        payload,
+        idempotencyKey: crypto.randomUUID(),
+        ...(targetTemplate ? { template: targetTemplate } : {}),
+      });
       if (operation !== mutationSequence) return;
       formOpen = false;
       notice = targetMode === 'create' ? 'Template created.' : 'Template updated.';
@@ -299,13 +270,7 @@
     saving = true;
     formError = '';
     try {
-      const result = await requestApi(`/api/backend/templates/${encodeURIComponent(target.id)}?workspace_id=${encodeURIComponent(targetWorkspaceId)}`, { method: 'DELETE', headers: { 'Idempotency-Key': crypto.randomUUID() } });
-      if (operation !== mutationSequence) return;
-      assertApiSuccess(result);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: templateQueryKeys.all }),
-        queryClient.invalidateQueries({ queryKey: monitorTemplateQueryKeys.all }),
-      ]);
+      await removeTemplate(queryClient, target.id, targetWorkspaceId, crypto.randomUUID());
       if (operation !== mutationSequence) return;
       pendingDelete = null;
       detail = null;

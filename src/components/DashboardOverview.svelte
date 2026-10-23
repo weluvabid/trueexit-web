@@ -4,10 +4,9 @@
   import { createQuery } from '@tanstack/svelte-query';
   import { getSharedQueryClient } from '../lib/client/query-client';
   import * as v from 'valibot';
-  import { assertApiSuccess, requestApi } from '../lib/client/api-client';
-  import { dashboardEvidenceItemSchema, dashboardMonitorItemSchema, parseApiBody } from '../lib/client/api-schemas';
+  import { dashboardEvidenceItemSchema, dashboardMonitorItemSchema } from '../lib/client/api-schemas';
   import type { DashboardEvidenceItem, DashboardMonitorItem } from '../lib/client/api-schemas';
-  import { dashboardQueryErrorMessage, dashboardQueryKeys, dashboardQueryOptions, type DashboardResponse } from '../lib/client/dashboard-queries';
+  import { dashboardErrorMessage, dashboardPageQueryOptions, dashboardQueryErrorMessage, dashboardQueryOptions, type DashboardResponse } from '../lib/client/dashboard-queries';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveWorkspaceId } from '../lib/client/workspace-preference';
   import { formatDateTime } from '../lib/client/date-format';
@@ -57,14 +56,6 @@
   const activityCopy: Record<string, string> = { accepted: 'Evidence accepted', evidence_accepted: 'Evidence accepted', rejected: 'Evidence rejected', evidence_rejected: 'Evidence rejected' };
   const filterLabels: Record<AttentionFilter, string> = { all: 'All', submission_rejected: 'Rejected', evidence_overdue: 'Missed / overdue', health_signal: 'Health signals' };
 
-  function messageForCode(code: string | null, status: number): string {
-    if (status === 401) return 'Your session needs attention. Sign in again to continue.';
-    if (status === 403) return 'You do not have permission to view this workspace.';
-    if (status === 404) return 'This workspace is no longer available.';
-    if (status === 0) return 'Could not reach TrueExit. Check your connection and try again.';
-    if (status >= 500) return 'TrueExit could not load this information right now. Try again shortly.';
-    return code ? `The request could not be completed (${code}).` : 'The request could not be completed. Please try again.';
-  }
   function formatDate(value: string | null | undefined): string {
     return formatDateTime(value);
   }
@@ -101,20 +92,7 @@
     resource: 'monitors' | 'evidence', params: URLSearchParams, itemSchema: TSchema,
   ): Promise<Page<v.InferOutput<TSchema>>> {
     const workspaceId = params.get('workspace_id') ?? '';
-    const queryIdentity = params.toString();
-    return queryClient.fetchQuery({
-      queryKey: dashboardQueryKeys.page(workspaceId, resource, queryIdentity),
-      staleTime: 15_000,
-      queryFn: async ({ signal }) => {
-        const result = await requestApi(`/api/backend/${resource}?${params.toString()}`, { signal });
-        assertApiSuccess(result);
-        const pageSchema = v.object({
-          data: v.array(itemSchema),
-          page: v.optional(v.object({ next_cursor: v.nullable(v.string()) })),
-        });
-        return parseApiBody(pageSchema, result.body, { status: result.response.status, requestId: result.requestId });
-      },
-    });
+    return queryClient.fetchQuery(dashboardPageQueryOptions(workspaceId, resource, params, itemSchema));
   }
 
   async function loadMonitorPage(append = false, workspaceId = selectedWorkspaceId, parentSequence = requestSequence) {
@@ -139,7 +117,7 @@
       const result = await loadWorkspaceBootstrap();
       if (disposed || sequence !== bootstrapSequence) return;
       if (!result.workspaces.ok) {
-        bootstrapError = messageForCode(result.workspaces.code, result.workspaces.status);
+        bootstrapError = dashboardErrorMessage(result.workspaces.status, result.workspaces.code);
         bootstrapping = false;
         return;
       }
@@ -152,7 +130,7 @@
       if (initialWorkspaceId) await loadDashboard(initialWorkspaceId);
     } catch {
       if (!disposed && sequence === bootstrapSequence) {
-        bootstrapError = messageForCode('network_error', 0);
+        bootstrapError = dashboardErrorMessage(0, 'network_error');
         bootstrapping = false;
       }
     }

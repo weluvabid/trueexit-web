@@ -33,6 +33,7 @@ declare global {
     /** Shared only by independently hydrated browser islands in this document. */
     __trueExitQueryClient?: QueryClient;
     __trueExitQueryPersistenceStarted?: boolean;
+    __trueExitQueryPersistenceUserId?: string;
   }
 }
 
@@ -75,51 +76,59 @@ function createUserPersister(userId: string): Persister {
 }
 
 function startBrowserPersistence(queryClient: QueryClient): void {
-  if (typeof window === 'undefined' || window.__trueExitQueryPersistenceStarted) return;
+  if (typeof window === 'undefined') return;
 
-  // Do not mark persistence as started until an authenticated identity exists.
-  // getSharedQueryClient() can be called on signed-out routes too; marking it
-  // started there would prevent persistence from starting after sign-in without
-  // a full document reload.
   const userId = getBrowserUserId();
   if (!userId) return;
+  if (window.__trueExitQueryPersistenceStarted && window.__trueExitQueryPersistenceUserId === userId) return;
 
-  window.__trueExitQueryPersistenceStarted = true;
-
-  const previousUserId = (() => {
+  const previousUserId = window.__trueExitQueryPersistenceUserId ?? (() => {
     try { return window.localStorage.getItem(PERSISTENCE_USER_MARKER); }
     catch { return null; }
   })();
 
-  const persister = createUserPersister(userId);
+  // Mark the target identity before starting asynchronous work so multiple
+  // islands cannot launch competing restore/subscription lifecycles.
+  window.__trueExitQueryPersistenceStarted = true;
+  window.__trueExitQueryPersistenceUserId = userId;
 
-  // A browser session that changes identity must not retain the previous
-  // account's in-memory cache. Its IndexedDB record is removed as well.
-  if (previousUserId && previousUserId !== userId) {
-    queryClient.clear();
-    void Promise.resolve(createUserPersister(previousUserId).removeClient()).catch(() => undefined);
-  }
-  try { window.localStorage.setItem(PERSISTENCE_USER_MARKER, userId); }
-  catch { /* Persistence can still work when localStorage is unavailable. */ }
+  const initialize = async (): Promise<void> => {
+    // A previous user's restore or subscription must finish before the shared
+    // in-memory client can be cleared and restored for a different identity.
+    await browserRestorePromise;
+    stopBrowserPersistence?.();
+    stopBrowserPersistence = null;
 
-  const persistenceOptions = {
-    queryClient,
-    persister,
-    maxAge: PERSISTENCE_MAX_AGE,
-    buster: PERSISTENCE_VERSION,
-    dehydrateOptions: {
-      shouldDehydrateQuery: (query: Query) =>
-        query.state.status === 'success' && isPersistableQuery(query.queryKey, query.state.data),
-    },
+    if (previousUserId && previousUserId !== userId) {
+      queryClient.clear();
+      await Promise.resolve(createUserPersister(previousUserId).removeClient()).catch(() => undefined);
+    }
+
+    try { window.localStorage.setItem(PERSISTENCE_USER_MARKER, userId); }
+    catch { /* Persistence can still work when localStorage is unavailable. */ }
+
+    const persister = createUserPersister(userId);
+    const persistenceOptions = {
+      queryClient,
+      persister,
+      maxAge: PERSISTENCE_MAX_AGE,
+      buster: PERSISTENCE_VERSION,
+      dehydrateOptions: {
+        shouldDehydrateQuery: (query: Query) =>
+          query.state.status === 'success' && isPersistableQuery(query.queryKey, query.state.data),
+      },
+    };
+
+    // Restore first, then subscribe to cache changes. Callers can await this
+    // promise before deciding whether a page has any usable data to render.
+    await persistQueryClientRestore(persistenceOptions).catch(() => undefined);
+    // The identity can change while IndexedDB restoration is in flight. Never
+    // attach a stale user's persister after a newer identity has taken over.
+    if (window.__trueExitQueryPersistenceUserId !== userId) return;
+    stopBrowserPersistence = persistQueryClientSubscribe(persistenceOptions);
   };
 
-  // Restore first, then subscribe to cache changes. Callers can await this
-  // promise before deciding whether a page has any usable data to render.
-  browserRestorePromise = persistQueryClientRestore(persistenceOptions)
-    .catch(() => undefined)
-    .then(() => {
-      stopBrowserPersistence = persistQueryClientSubscribe(persistenceOptions);
-    });
+  browserRestorePromise = initialize().catch(() => undefined);
 }
 
 /** Clear both in-memory and persisted server state when signing out. */
@@ -147,6 +156,7 @@ export async function clearPersistedQueryCache(): Promise<void> {
   browserRestorePromise = Promise.resolve();
   if (typeof window !== 'undefined') {
     window.__trueExitQueryPersistenceStarted = false;
+    delete window.__trueExitQueryPersistenceUserId;
   }
 }
 

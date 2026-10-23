@@ -54,38 +54,77 @@ function responseFromResult(result: CachedSettingsResponse): Response {
   });
 }
 
-function settingsReadKey(path: string) {
-  return ['settings-api', path] as const;
-}
+export const settingsQueryKeys = {
+  all: ['settings-api'] as const,
+  read: (path: string) => ['settings-api', path] as const,
+  accounts: () => ['settings-api', '/accounts'] as const,
+};
 
 /** Read a cached settings response without waiting for stale-data revalidation. */
 export function getCachedSettingsResponse(path: string): { response: Response; body: unknown } | null {
-  const cached = getSharedQueryClient().getQueryData<CachedSettingsResponse>(settingsReadKey(path));
+  const cached = getSharedQueryClient().getQueryData<CachedSettingsResponse>(settingsQueryKeys.read(path));
   if (!cached) return null;
   return { response: responseFromResult(cached), body: cached.body };
 }
 
+type SettingsMutationEffect =
+  | { kind: 'members'; workspaceId: string }
+  | { kind: 'invitations'; workspaceId: string }
+  | { kind: 'channels'; workspaceId: string }
+  | { kind: 'workspace-bootstrap' }
+  | { kind: 'none' };
+
+/** Match endpoint families without decoding/re-encoding path segments. */
+function settingsMutationEffect(path: string): SettingsMutationEffect {
+  const pathname = path.split('?', 1)[0];
+  const members = pathname.match(/^\/workspaces\/([^/]+)\/members(?:\/|$)/);
+  if (members) return { kind: 'members', workspaceId: members[1] };
+
+  const invitations = pathname.match(/^\/workspaces\/([^/]+)\/invitations(?:\/|$)/);
+  if (invitations) return { kind: 'invitations', workspaceId: invitations[1] };
+
+  const channels = pathname.match(/^\/workspaces\/([^/]+)\/channels(?:\/(.*))?$/);
+  if (channels && !channels[2]?.startsWith('validate')) {
+    return { kind: 'channels', workspaceId: channels[1] };
+  }
+
+  if (/^\/workspaces(?:\/[^/]+)?$/.test(pathname) || /^\/accounts(?:\/|$)/.test(pathname)) {
+    return { kind: 'workspace-bootstrap' };
+  }
+  return { kind: 'none' };
+}
+
 async function invalidateSettingsAfterMutation(path: string): Promise<void> {
   const client = getSharedQueryClient();
-  const segments = path.split('?')[0].split('/').filter(Boolean).map((segment) => decodeURIComponent(segment));
-  const [resource, id, child] = segments;
+  const effect = settingsMutationEffect(path);
   const invalidations: Promise<unknown>[] = [];
 
-  if (resource === 'workspaces' && id && child === 'members') {
-    invalidations.push(client.invalidateQueries({ queryKey: settingsReadKey(`/workspaces/${encodeURIComponent(id)}/members`) }));
-  } else if (resource === 'workspaces' && id && child === 'invitations') {
-    invalidations.push(client.invalidateQueries({ queryKey: settingsReadKey(`/workspaces/${encodeURIComponent(id)}/invitations`) }));
-  } else if (resource === 'workspaces' && id && child === 'channels' && segments[3] !== 'validate') {
-    invalidations.push(
-      client.invalidateQueries({ queryKey: settingsReadKey(`/workspaces/${encodeURIComponent(id)}/channels`) }),
-      // Destination edits also affect the monitor editor's cached channel inventory.
-      client.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceChannels(id) }),
-    );
-  } else if (resource === 'workspaces' || resource === 'accounts') {
-    invalidations.push(
-      client.invalidateQueries({ queryKey: settingsReadKey('/accounts') }),
-      client.invalidateQueries({ queryKey: workspaceBootstrapKeys.all }),
-    );
+  switch (effect.kind) {
+    case 'members':
+      invalidations.push(client.invalidateQueries({
+        queryKey: settingsQueryKeys.read(`/workspaces/${effect.workspaceId}/members`),
+      }));
+      break;
+    case 'invitations':
+      invalidations.push(client.invalidateQueries({
+        queryKey: settingsQueryKeys.read(`/workspaces/${effect.workspaceId}/invitations`),
+      }));
+      break;
+    case 'channels':
+      invalidations.push(
+        client.invalidateQueries({ queryKey: settingsQueryKeys.read(`/workspaces/${effect.workspaceId}/channels`) }),
+        // Destination edits also affect the monitor editor's cached channel inventory.
+        client.invalidateQueries({ queryKey: monitorResourceQueryKeys.workspaceChannels(effect.workspaceId) }),
+      );
+      break;
+    case 'workspace-bootstrap':
+      invalidations.push(
+        client.invalidateQueries({ queryKey: settingsQueryKeys.accounts() }),
+        client.invalidateQueries({ queryKey: workspaceBootstrapKeys.all }),
+      );
+      break;
+    case 'none':
+      break;
   }
 
   await Promise.all(invalidations);
@@ -102,13 +141,13 @@ export async function requestSettingsApi(
   if (!['GET', 'HEAD'].includes(method) && !headers.has('Idempotency-Key')) {
     headers.set('Idempotency-Key', crypto.randomUUID());
   }
-  const requestInit: RequestInit = { ...init, headers, credentials: 'same-origin', cache: 'no-store' };
+  const requestInit: RequestInit = { ...init, headers };
   const client = getSharedQueryClient();
 
   if (method === 'GET') {
     try {
       const result = await client.fetchQuery({
-        queryKey: settingsReadKey(path),
+        queryKey: settingsQueryKeys.read(path),
         staleTime: 30_000,
         queryFn: async ({ signal }): Promise<CachedSettingsResponse> => {
           const { response, body, code, requestId } = await requestApi(`/api/backend${path}`, { ...requestInit, signal });

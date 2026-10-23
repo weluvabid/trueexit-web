@@ -1,4 +1,5 @@
-import { ApiClientError, requestApi } from './api-client';
+import * as v from 'valibot';
+import { ApiClientError, assertApiSuccess, requestApi } from './api-client';
 import { dashboardResponseSchema, parseApiBody } from './api-schemas';
 
 import type { DashboardResponseContract } from './api-schemas';
@@ -37,6 +38,30 @@ export function dashboardQueryOptions(workspaceId: string) {
         throw new DashboardQueryError(dashboardErrorMessage(status, code), status, code, requestId);
       }
       return parseApiBody(dashboardResponseSchema, body, { status: response.status, requestId });
+    },
+  };
+}
+
+/** Canonical query options for paginated dashboard inventories. */
+export function dashboardPageQueryOptions<TSchema extends v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>>(
+  workspaceId: string,
+  resource: 'monitors' | 'evidence',
+  params: URLSearchParams,
+  itemSchema: TSchema,
+) {
+  const queryIdentity = params.toString();
+  const pageSchema = v.object({
+    data: v.array(itemSchema),
+    page: v.optional(v.object({ next_cursor: v.nullable(v.string()) })),
+  });
+
+  return {
+    queryKey: dashboardQueryKeys.page(workspaceId, resource, queryIdentity),
+    staleTime: 15_000,
+    queryFn: async ({ signal }: { signal: AbortSignal }) => {
+      const result = await requestApi(`/api/backend/${resource}?${queryIdentity}`, { signal });
+      assertApiSuccess(result);
+      return parseApiBody(pageSchema, result.body, { status: result.response.status, requestId: result.requestId });
     },
   };
 }
