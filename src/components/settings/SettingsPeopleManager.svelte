@@ -38,6 +38,13 @@
   let generation = 0;
   let mutationGeneration = 0;
 
+  function isMemberRole(value: string): value is 'admin' | 'member' {
+    return value === 'admin' || value === 'member';
+  }
+
+  function handleRoleChange(member: Member, value: string) {
+    if (isMemberRole(value)) void changeRole(member, value);
+  }
 
   $effect(() => {
     void loadPeople(workspaceId);
@@ -189,7 +196,7 @@
   {#if members.length}
     <div class="settings-table-wrap"><table class="settings-table"><thead><tr><th>Person</th><th>Access</th><th>Actions</th></tr></thead><tbody>
       {#each members as member (member.user_id)}
-        <tr><td><strong>{member.display_name || member.email}</strong><small>{member.email}</small></td><td>{#if member.account_owner}<span class="settings-pill">Account owner</span>{:else if canManageWorkspace}<select aria-label={`Role for ${member.email}`} value={member.role ?? 'member'} onchange={(event) => changeRole(member, (event.currentTarget as HTMLSelectElement).value as 'admin' | 'member')} disabled={!!busyKey}><option value="member">Member</option><option value="admin">Admin</option></select>{:else}<span class="settings-pill">{member.role ?? 'Member'}</span>{/if}</td><td>{#if canManageWorkspace && !member.account_owner}<button class="settings-text-button settings-text-button--danger" type="button" onclick={() => removeMember(member)} disabled={!!busyKey}>Remove</button>{:else}<span class="settings-note">Protected</span>{/if}</td></tr>
+        <tr><td><strong>{member.display_name || member.email}</strong><small>{member.email}</small></td><td>{#if member.account_owner}<span class="settings-pill">Account owner</span>{:else if canManageWorkspace}<select aria-label={`Role for ${member.email}`} value={member.role ?? 'member'} onchange={(event) => handleRoleChange(member, event.currentTarget.value)} disabled={!!busyKey}><option value="member">Member</option><option value="admin">Admin</option></select>{:else}<span class="settings-pill">{member.role ?? 'Member'}</span>{/if}</td><td>{#if canManageWorkspace && !member.account_owner}<button class="settings-text-button settings-text-button--danger" type="button" onclick={() => removeMember(member)} disabled={!!busyKey}>Remove</button>{:else}<span class="settings-note">Protected</span>{/if}</td></tr>
       {/each}
     </tbody></table></div>
   {:else if !loading}<p class="settings-empty">No member records are available for this workspace, or you don’t have permission to view them.</p>{/if}

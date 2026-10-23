@@ -227,8 +227,11 @@
   }
 
   function saveAppearance(event: Event) {
-    const target = event.currentTarget as HTMLSelectElement;
-    settingsUi.appearancePreference = target.value;
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLSelectElement)) return;
+    const preference = target.value;
+    if (preference !== 'system' && preference !== 'light' && preference !== 'dark') return;
+    settingsUi.appearancePreference = preference;
     const resolved = settingsUi.appearancePreference === 'system'
       ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
       : settingsUi.appearancePreference;

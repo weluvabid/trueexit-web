@@ -25,6 +25,16 @@
     if (cadence.ok) cadencePreview = cadence.preview;
   }
 
+  function isCadenceUnit(value: string): value is MonitorEditorDraft['cadenceUnit'] {
+    return value === 'seconds' || value === 'minutes' || value === 'hours';
+  }
+
+  function updateCadenceUnit(value: string) {
+    if (!isCadenceUnit(value)) return;
+    updateDraft('cadenceUnit', value);
+    resolveCadence();
+  }
+
   export function setCadenceSeconds(seconds: number) {
     if (seconds % 3600 === 0) {
       draft = { ...draft, cadenceValue: String(seconds / 3600), cadenceUnit: 'hours' };
@@ -48,7 +58,7 @@
   {#if draft.cadenceMode === 'interval'}
     <div class="monitor-cadence-input">
       <label class="monitor-form-field"><span class="sr-only">Interval amount</span><input type="number" min="1" step="1" value={draft.cadenceValue} oninput={(event) => { updateDraft('cadenceValue', event.currentTarget.value); resolveCadence(); }} /></label>
-      <label class="monitor-form-field"><span class="sr-only">Interval unit</span><select value={draft.cadenceUnit} onchange={(event) => { updateDraft('cadenceUnit', event.currentTarget.value as MonitorEditorDraft['cadenceUnit']); resolveCadence(); }}><option value="seconds">Seconds</option><option value="minutes">Minutes</option><option value="hours">Hours</option></select></label>
+      <label class="monitor-form-field"><span class="sr-only">Interval unit</span><select value={draft.cadenceUnit} onchange={(event) => updateCadenceUnit(event.currentTarget.value)}><option value="seconds">Seconds</option><option value="minutes">Minutes</option><option value="hours">Hours</option></select></label>
     </div>
     <small class="monitor-form-hint">Minimum interval: 15 seconds.</small>
   {:else}

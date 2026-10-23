@@ -29,6 +29,9 @@
   const templatesLoading = $derived(fieldMode === 'templates' && Boolean(workspaceId) && templatesQuery.isFetching);
   const templatesError = $derived(templateActionError || (templatesQuery.error ? monitorQueryErrorMessage(templatesQuery.error, messageFor) : ''));
 
+  const primitiveOptions: FieldPrimitive[] = [
+    'size', 'count', 'duration', 'timestamp', 'boolean', 'categorical', 'checksum', 'text',
+  ];
   const primitiveLabels: Record<FieldPrimitive, string> = {
     size: 'Size', count: 'Count', duration: 'Duration', timestamp: 'Timestamp',
     boolean: 'Boolean', categorical: 'Categorical', checksum: 'Checksum', text: 'Text',
@@ -168,7 +171,7 @@
                     <div class="monitor-form-grid monitor-form-grid--field">
                       <label class="monitor-form-field"><span>Field name <b>*</b></span><input bind:value={field.name} maxlength="100" required placeholder="processed_rows" /></label>
                       <label class="monitor-form-field"><span>JSON path <b>*</b></span><input bind:value={field.path} maxlength="200" required placeholder="backup.processed_rows" /><small>Dot-separated path in the submitted JSON.</small></label>
-                      <label class="monitor-form-field"><span>Value type</span><select bind:value={field.primitive}>{#each Object.keys(primitiveLabels) as primitive}<option value={primitive}>{primitiveLabels[primitive as FieldPrimitive]}</option>{/each}</select></label>
+                      <label class="monitor-form-field"><span>Value type</span><select bind:value={field.primitive}>{#each primitiveOptions as primitive}<option value={primitive}>{primitiveLabels[primitive]}</option>{/each}</select></label>
                     </div>
                     {#if field.primitive === 'checksum'}<p class="monitor-field-note">Checksum fields use SHA-256 with hexadecimal encoding.</p>{/if}
                   </div>

@@ -30,7 +30,8 @@
   }
 
   function handleInput(event: Event) {
-    updateSearch((event.currentTarget as HTMLInputElement).value);
+    const target = event.currentTarget;
+    if (target instanceof HTMLInputElement) updateSearch(target.value);
   }
 </script>
 
