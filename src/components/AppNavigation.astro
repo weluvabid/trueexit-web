@@ -15,7 +15,10 @@ const items = [
       <Fragment>
         {item.scope === 'global' && <span class="app-nav__separator" aria-hidden="true"></span>}
         <a
-          class:list={['app-nav__link', { 'is-active': active, 'app-nav__link--global': item.scope === 'global' }]}
+          class:list={[
+            'app-nav__link inline-flex min-h-9 items-center justify-center gap-2 rounded-md px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            { 'is-active bg-primary/10 text-primary': active, 'app-nav__link--global': item.scope === 'global' }
+          ]}
           href={item.href}
           aria-current={active ? 'page' : undefined}
           data-nav-scope={item.scope}
