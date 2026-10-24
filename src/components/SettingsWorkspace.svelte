@@ -232,7 +232,8 @@
     document.documentElement.dataset.theme = resolved;
     document.documentElement.dataset.themePreference = settingsUi.appearancePreference;
     document.documentElement.style.colorScheme = resolved;
-    document.querySelector('[data-theme-color]')?.setAttribute('content', resolved === 'dark' ? '#09090d' : '#f6f6f9');
+    const themeColor = document.querySelector<HTMLMetaElement>('[data-theme-color]');
+    if (themeColor) themeColor.content = resolved === 'dark' ? themeColor.dataset.darkColor ?? '#0a0a0a' : themeColor.dataset.lightColor ?? '#ffffff';
     try { localStorage.setItem('trueexit.appearance', settingsUi.appearancePreference); } catch { /* Preference still applies for this page. */ }
   }
 

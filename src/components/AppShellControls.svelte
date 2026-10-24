@@ -53,7 +53,8 @@
     document.documentElement.dataset.theme = resolved;
     document.documentElement.dataset.themePreference = preference;
     document.documentElement.style.colorScheme = resolved;
-    document.querySelector<HTMLMetaElement>('[data-theme-color]')?.setAttribute('content', resolved === 'dark' ? '#09090d' : '#f6f6f9');
+    const themeColor = document.querySelector<HTMLMetaElement>('[data-theme-color]');
+    if (themeColor) themeColor.content = resolved === 'dark' ? themeColor.dataset.darkColor ?? '#0a0a0a' : themeColor.dataset.lightColor ?? '#ffffff';
     appearance = preference;
     if (persist) {
       try { localStorage.setItem('trueexit.appearance', preference); } catch { /* Theme still applies for this page. */ }
