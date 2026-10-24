@@ -215,11 +215,20 @@
 <div class="app-shell-controls" style="display: contents">
   <div class="app-header__identity">
     <a class="brand" href="/" aria-label="TrueExit home">
-      <svg class="brand__mark" viewBox="0 0 36 36" fill="none" aria-hidden="true">
-        <path d="M25.7 8.3H13.4C8.8 8.3 5.1 12 5.1 16.6v5.1c0 3.3 2.7 6 6 6h8.4" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
-        <path d="M15.3 18h15.1m-6.2-6.2 6.2 6.2-6.2 6.2" stroke="url(#trueexit-shell-mark-gradient)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
-        <defs><linearGradient id="trueexit-shell-mark-gradient" x1="15.3" y1="18" x2="30.4" y2="18" gradientUnits="userSpaceOnUse"><stop stop-color="#6558E8" /><stop offset="1" stop-color="#9A78F5" /></linearGradient></defs>
-      </svg>
+      <img
+        class="brand__mark dark:hidden"
+        src="/brand/trueexit-symbol.svg"
+        alt=""
+        aria-hidden="true"
+        decoding="async"
+      />
+      <img
+        class="brand__mark hidden dark:block"
+        src="/brand/trueexit-symbol-inverse.svg"
+        alt=""
+        aria-hidden="true"
+        decoding="async"
+      />
     </a>
 
     <DropdownMenu.Root bind:open={workspaceMenuOpen}>
