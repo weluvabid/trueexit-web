@@ -12,6 +12,14 @@
   import { formatDateTime } from '../lib/client/date-format';
   import { filterAttentionItems, formatRelativeDate, getDashboardSummaryMetrics, type AttentionFilter } from '../lib/client/dashboard-model';
   import type { AttentionItem } from '../lib/client/dashboard-queries';
+  import * as Table from './ui/table/index.js';
+  import * as Tabs from './ui/tabs/index.js';
+  import { Button } from './ui/button/index.js';
+  import { Badge } from './ui/badge/index.js';
+  import { Alert, AlertDescription, AlertTitle } from './ui/alert/index.js';
+  import { Skeleton } from './ui/skeleton/index.js';
+  import { Separator } from './ui/separator/index.js';
+  import { Activity, ArrowRight, ArrowUpRight, CheckCircle2, CircleAlert, Clock3, LayoutDashboard, Monitor, RefreshCw, ShieldAlert } from '@lucide/svelte';
 
   type MonitorItem = DashboardMonitorItem;
   type Page<T> = { data: T[]; page?: { next_cursor: string | null } };
@@ -255,58 +263,197 @@
   });
 </script>
 
-<section class="dashboard-overview" aria-labelledby="dashboard-title">
-  <div class="dashboard-heading">
-    <div><p class="eyebrow">YOUR WORKSPACE, AT A GLANCE</p><h1 id="dashboard-title">The current picture</h1></div>
-  </div>
+<section class="mx-auto flex w-full min-w-0 flex-col gap-6" aria-labelledby="dashboard-title">
+  <header class="flex flex-wrap items-end justify-between gap-4">
+    <div class="space-y-1">
+      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Your workspace, at a glance</p>
+      <h1 id="dashboard-title" class="text-2xl font-semibold tracking-tight sm:text-3xl">The current picture</h1>
+    </div>
+    {#if workspaces.length > 0 && !bootstrapping}
+      <Button variant="outline" href="/monitors">Manage monitors <ArrowUpRight class="ml-1 size-4" /></Button>
+    {/if}
+  </header>
 
-  {#if bootstrapping}
-    <div class="dashboard-bento dashboard-skeleton" aria-label="Loading workspace overview" aria-live="polite">
-      <div class="dashboard-skeleton-card dashboard-skeleton-card--monitors"><i></i><b></b><span></span><span></span><span></span></div>
-      <div class="dashboard-skeleton-card dashboard-skeleton-card--evidence-summary"><i></i><b></b><span></span><span></span></div>
-      <div class="dashboard-skeleton-card dashboard-skeleton-card--pings"><i></i><b></b><span></span></div>
-      <div class="dashboard-skeleton-card dashboard-skeleton-card--attention"><i></i><b></b><span></span><span></span><span></span></div>
-      <div class="dashboard-skeleton-card dashboard-skeleton-card--signals"><i></i><b></b><span></span><span></span></div>
+  {#if bootstrapping || loadingDashboard}
+    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="Loading workspace overview" aria-live="polite">
+      {#each Array.from({ length: 6 }) as _, i (i)}
+        <div class="space-y-4 rounded-xl border bg-card p-5">
+          <Skeleton class="h-4 w-28" />
+          <Skeleton class="h-9 w-20" />
+          <Skeleton class="h-4 w-full" />
+          <Skeleton class="h-4 w-3/4" />
+        </div>
+      {/each}
     </div>
   {:else if bootstrapError}
-    <div class="dashboard-state dashboard-state--error" role="alert"><p>{bootstrapError}</p><button class="dashboard-retry" type="button" onclick={bootstrap}>Try again</button></div>
-  {:else if workspaces.length === 0}
-    <section class="dashboard-onboarding"><p class="eyebrow">A SIMPLE PLACE TO START</p><h2>Know what's real.<br/><span>Act with confidence.</span></h2><p>Connect your first monitor to see the evidence behind each result and understand service health without the noise.</p><a class="dashboard-primary-action" href="/monitors">Explore monitors <span aria-hidden="true">↗</span></a></section>
-  {:else if loadingDashboard}
-    <div class="dashboard-bento dashboard-skeleton" aria-label="Loading workspace overview" aria-live="polite"><div class="dashboard-skeleton-card dashboard-skeleton-card--monitors"><i></i><b></b><span></span><span></span><span></span></div><div class="dashboard-skeleton-card dashboard-skeleton-card--evidence-summary"><i></i><b></b><span></span><span></span></div><div class="dashboard-skeleton-card dashboard-skeleton-card--pings"><i></i><b></b><span></span></div><div class="dashboard-skeleton-card dashboard-skeleton-card--attention"><i></i><b></b><span></span><span></span><span></span></div><div class="dashboard-skeleton-card dashboard-skeleton-card--signals"><i></i><b></b><span></span><span></span></div></div>
+    <Alert variant="destructive">
+      <CircleAlert class="size-4" />
+      <AlertTitle>Workspace could not be loaded</AlertTitle>
+      <AlertDescription class="flex flex-wrap items-center justify-between gap-3">
+        <span>{bootstrapError}</span>
+        <Button variant="outline" size="sm" onclick={bootstrap}>Try again</Button>
+      </AlertDescription>
+    </Alert>
+  {:else if workspaces.length === 0 || (dashboard && emptyWorkspace)}
+    <section class="rounded-xl border border-dashed bg-card px-6 py-14 text-center">
+      <div class="mx-auto mb-4 grid size-12 place-items-center rounded-xl bg-muted text-muted-foreground"><Monitor class="size-6" /></div>
+      <p class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">A simple place to start</p>
+      <h2 class="mt-2 text-2xl font-semibold tracking-tight">Know what's real. Act with confidence.</h2>
+      <p class="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">Connect your first monitor to see the evidence behind each result and understand service health without the noise.</p>
+      <Button class="mt-5" href="/monitors">Explore monitors <ArrowUpRight class="ml-1 size-4" /></Button>
+    </section>
   {:else if dashboardError}
-    <div class="dashboard-state dashboard-state--error" role="alert"><p>{dashboardError}</p><button class="dashboard-retry" type="button" onclick={() => loadDashboard(selectedWorkspaceId)}>Try again</button></div>
-  {:else if dashboard && emptyWorkspace}
-    <section class="dashboard-onboarding"><p class="eyebrow">A SIMPLE PLACE TO START</p><h2>Know what's real.<br/><span>Act with confidence.</span></h2><p>Connect your first monitor to see the evidence behind each result and understand service health without the noise.</p><a class="dashboard-primary-action" href="/monitors">Explore monitors <span aria-hidden="true">↗</span></a></section>
+    <Alert variant="destructive">
+      <CircleAlert class="size-4" />
+      <AlertTitle>Dashboard data could not be loaded</AlertTitle>
+      <AlertDescription class="flex flex-wrap items-center justify-between gap-3">
+        <span>{dashboardError}</span>
+        <Button variant="outline" size="sm" onclick={() => loadDashboard(selectedWorkspaceId)}>Try again</Button>
+      </AlertDescription>
+    </Alert>
   {:else if dashboard}
+    <Tabs.Root value={view} onValueChange={(value) => openView(value as View)} class="w-full">
+      <Tabs.List class="h-auto flex-wrap justify-start">
+        <Tabs.Trigger value="overview"><LayoutDashboard class="mr-2 size-4" />Overview</Tabs.Trigger>
+        <Tabs.Trigger value="attention"><ShieldAlert class="mr-2 size-4" />Attention</Tabs.Trigger>
+        <Tabs.Trigger value="signals"><Activity class="mr-2 size-4" />Signals</Tabs.Trigger>
+        <Tabs.Trigger value="monitors"><Monitor class="mr-2 size-4" />Monitors</Tabs.Trigger>
+        <Tabs.Trigger value="evidence"><CheckCircle2 class="mr-2 size-4" />Evidence</Tabs.Trigger>
+      </Tabs.List>
+    </Tabs.Root>
+
     {#if view === 'overview'}
-      <div class="dashboard-bento">
-        <article class="dashboard-bento-card dashboard-monitors-card">
-          <div class="dashboard-bento-heading"><div><p class="eyebrow">INVENTORY</p><h2>Monitors</h2></div><a href="/monitors" class="dashboard-card-link">View all <span aria-hidden="true">↗</span></a></div>
-          <div class="dashboard-total"><strong>{monitorTotal}</strong><span>monitors in this workspace</span></div>
-          <div class="dashboard-monitor-breakdown">
-            <button type="button" onclick={() => openView('monitors')}><span class="dashboard-state-dot dashboard-state-dot--active"></span><strong>{dashboard.summary.active_monitors}</strong><span>Active</span></button>
-            <button type="button" onclick={() => openView('monitors')}><span class="dashboard-state-dot dashboard-state-dot--disabled"></span><strong>{dashboard.summary.disabled_monitors}</strong><span>Disabled</span></button>
-            <button type="button" onclick={() => { attentionFilter = 'all'; openView('attention'); }}><span class="dashboard-state-dot dashboard-state-dot--attention"></span><strong>{dashboard.summary.needs_attention}</strong><span>Attention</span></button>
+      <div class="grid min-w-0 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+        <section class="flex min-w-0 flex-col gap-5 rounded-xl border bg-card p-5">
+          <div class="flex items-start justify-between gap-3">
+            <div><p class="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Inventory</p><h2 class="mt-1 text-lg font-semibold">Monitors</h2></div>
+            <Button variant="ghost" size="sm" href="/monitors">View all <ArrowRight class="ml-1 size-4" /></Button>
           </div>
-          <div class="dashboard-segmented-bar" role="img" aria-label={`${dashboard.summary.active_monitors} enabled monitors, ${dashboard.summary.disabled_monitors} disabled monitors, ${dashboard.summary.needs_attention} monitors needing attention; attention can overlap enabled state`}><span class="dashboard-segment dashboard-segment--active" style={`--segment:${monitorCategoryTotal ? dashboard.summary.active_monitors / monitorCategoryTotal * 100 : 0}%`}></span><span class="dashboard-segment dashboard-segment--disabled" style={`--segment:${monitorCategoryTotal ? dashboard.summary.disabled_monitors / monitorCategoryTotal * 100 : 0}%`}></span><span class="dashboard-segment dashboard-segment--attention" style={`--segment:${monitorCategoryTotal ? dashboard.summary.needs_attention / monitorCategoryTotal * 100 : 0}%`}></span></div>
-        </article>
-<section class="dashboard-bento-card dashboard-evidence-card" aria-labelledby="evidence-title"><div class="dashboard-bento-heading"><div><p class="eyebrow">LAST 24 HOURS</p><h2 id="evidence-title">Evidence</h2></div><button class="dashboard-card-link" type="button" onclick={() => openView('evidence')}>View all <span aria-hidden="true">↗</span></button></div><div class="dashboard-evidence-summary"><div class="dashboard-total"><strong>{dashboard.summary.evidence_outcomes_24h.total}</strong><span>records received</span></div><div class="dashboard-evidence-breakdown"><button type="button" onclick={() => openView('evidence')}><span class="dashboard-evidence-key dashboard-evidence-key--accepted"></span><span>Accepted</span><strong>{dashboard.summary.evidence_outcomes_24h.accepted}</strong></button><button type="button" onclick={() => openView('evidence')}><span class="dashboard-evidence-key dashboard-evidence-key--rejected"></span><span>Rejected</span><strong>{dashboard.summary.evidence_outcomes_24h.rejected}</strong></button></div></div>{#if dashboard.summary.evidence_outcomes_24h.total > 0}<div class="dashboard-evidence-bar" role="img" aria-label={`${dashboard.summary.evidence_outcomes_24h.accepted} accepted and ${dashboard.summary.evidence_outcomes_24h.rejected} rejected evidence records`}><span class="dashboard-evidence-bar__accepted" style={`--segment:${dashboard.summary.evidence_outcomes_24h.accepted / dashboard.summary.evidence_outcomes_24h.total * 100}%`}></span><span class="dashboard-evidence-bar__rejected" style={`--segment:${dashboard.summary.evidence_outcomes_24h.rejected / dashboard.summary.evidence_outcomes_24h.total * 100}%`}></span></div>{/if}</section>
-        <section class="dashboard-bento-card dashboard-pings-card" aria-labelledby="pings-title"><div class="dashboard-bento-heading"><div><p class="eyebrow">WHAT'S NEXT</p><h2 id="pings-title">Upcoming pings</h2></div><span class="dashboard-future-mark" aria-hidden="true">↗</span></div><div class="dashboard-pings-empty"><span class="dashboard-pings-orbit" aria-hidden="true"></span><div><strong>Expected activity, at a glance.</strong><p>Upcoming ping schedules will appear here when the workspace scheduling feed is connected.</p></div></div></section>
-                        <section class="dashboard-bento-card dashboard-attention-card" aria-labelledby="attention-title"><div class="dashboard-bento-heading"><div><p class="eyebrow">WHAT MAY NEED YOU</p><h2 id="attention-title">Attention queue</h2></div><span class="dashboard-count">{dashboard.summary.needs_attention}</span></div><div class="dashboard-filter-chips" aria-label="Filter attention preview">{#each attentionFilters as filter}<button type="button" class:active={attentionFilter === filter} aria-pressed={attentionFilter === filter} onclick={() => changeFilter(filter)}>{filterLabels[filter]}</button>{/each}</div>
-          {#if filteredAttention.length}<ul class="dashboard-list">{#each filteredAttention as item (`${item.monitor_id}-${item.reason}-${item.occurred_at ?? ''}`)}<li class="dashboard-attention-item"><span class="dashboard-attention-mark" aria-hidden="true"></span><div class="dashboard-list__body"><strong>{item.monitor_name}</strong><span class="dashboard-list__title">{reasonCopy[item.reason]?.title ?? 'Monitor needs review'}</span><p>{reasonCopy[item.reason]?.detail ?? 'Review this monitor for more context.'}</p><span class="dashboard-list__meta">{formatRelativeDate(item.occurred_at ?? item.last_valid_evidence_at, Date.now(), formatDate)}</span></div><a class="dashboard-row-link" href={`/monitors/${encodeURIComponent(item.monitor_id)}`} aria-label={`Investigate ${item.monitor_name}`}>↗</a></li>{/each}</ul>{:else}<div class="dashboard-inline-empty"><span aria-hidden="true">✳</span><p>{attentionFilter === 'all' ? 'Nothing needs your attention right now.' : `No ${filterLabels[attentionFilter].toLowerCase()} items are currently reported.`}</p></div>{/if}
-          <button class="dashboard-view-all" type="button" onclick={() => openView('attention')}>View all attention <span aria-hidden="true">→</span></button>
+          <div><p class="text-4xl font-semibold tracking-tight">{monitorTotal}</p><p class="mt-1 text-sm text-muted-foreground">monitors in this workspace</p></div>
+          <Separator />
+          <div class="grid grid-cols-3 gap-3">
+            <button type="button" class="rounded-lg p-2 text-left transition-colors hover:bg-muted" onclick={() => openView('monitors')}>
+              <span class="mb-2 block size-2 rounded-full bg-primary"></span><strong class="block text-xl tabular-nums">{dashboard.summary.active_monitors}</strong><span class="text-xs text-muted-foreground">Active</span>
+            </button>
+            <button type="button" class="rounded-lg p-2 text-left transition-colors hover:bg-muted" onclick={() => openView('monitors')}>
+              <span class="mb-2 block size-2 rounded-full bg-muted-foreground"></span><strong class="block text-xl tabular-nums">{dashboard.summary.disabled_monitors}</strong><span class="text-xs text-muted-foreground">Disabled</span>
+            </button>
+            <button type="button" class="rounded-lg p-2 text-left transition-colors hover:bg-muted" onclick={() => { attentionFilter = 'all'; openView('attention'); }}>
+              <span class="mb-2 block size-2 rounded-full bg-destructive"></span><strong class="block text-xl tabular-nums">{dashboard.summary.needs_attention}</strong><span class="text-xs text-muted-foreground">Attention</span>
+            </button>
+          </div>
         </section>
-<section class="dashboard-bento-card dashboard-signals-card" aria-labelledby="signals-title"><div class="dashboard-bento-heading"><div><p class="eyebrow">RECENT SIGNALS</p><h2 id="signals-title">Evidence activity</h2></div><span class="dashboard-count">{dashboard.recent_evidence_activity.length}</span></div>{#if dashboard.recent_evidence_activity.length}<ul class="dashboard-list">{#each dashboard.recent_evidence_activity.slice(0,5) as item (item.event_id)}<li class="dashboard-activity-item"><span class="dashboard-activity-mark" aria-hidden="true"></span><div class="dashboard-list__body"><strong>{item.monitor_name}</strong><span class="dashboard-list__title">{activityCopy[item.event_type] ?? 'Evidence activity recorded'}</span><span class="dashboard-list__meta">{formatRelativeDate(item.occurred_at, Date.now(), formatDate)}</span></div></li>{/each}</ul>{:else}<div class="dashboard-inline-empty"><span aria-hidden="true">◌</span><p>No recent evidence activity has been recorded.</p></div>{/if}<button class="dashboard-view-all" type="button" onclick={() => openView('signals')}>View all signals <span aria-hidden="true">→</span></button></section>
+
+        <section class="flex min-w-0 flex-col gap-5 rounded-xl border bg-card p-5">
+          <div class="flex items-start justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Last 24 hours</p><h2 class="mt-1 text-lg font-semibold">Evidence</h2></div><Button variant="ghost" size="sm" onclick={() => openView('evidence')}>View all <ArrowRight class="ml-1 size-4" /></Button></div>
+          <div><p class="text-4xl font-semibold tracking-tight">{dashboard.summary.evidence_outcomes_24h.total}</p><p class="mt-1 text-sm text-muted-foreground">records received</p></div>
+          <Separator />
+          <div class="grid grid-cols-2 gap-3">
+            <button type="button" class="flex items-center justify-between gap-3 rounded-lg p-2 text-left hover:bg-muted" onclick={() => openView('evidence')}><span class="flex items-center gap-2 text-sm text-muted-foreground"><span class="size-2 rounded-full bg-primary"></span>Accepted</span><strong class="text-lg tabular-nums">{dashboard.summary.evidence_outcomes_24h.accepted}</strong></button>
+            <button type="button" class="flex items-center justify-between gap-3 rounded-lg p-2 text-left hover:bg-muted" onclick={() => openView('evidence')}><span class="flex items-center gap-2 text-sm text-muted-foreground"><span class="size-2 rounded-full bg-destructive"></span>Rejected</span><strong class="text-lg tabular-nums">{dashboard.summary.evidence_outcomes_24h.rejected}</strong></button>
+          </div>
+        </section>
+
+        <section class="flex min-w-0 flex-col gap-4 rounded-xl border bg-card p-5">
+          <div class="flex items-start justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">What's next</p><h2 class="mt-1 text-lg font-semibold">Upcoming pings</h2></div><Clock3 class="size-5 text-muted-foreground" /></div>
+          <div class="flex flex-1 items-start gap-3 rounded-lg bg-muted/50 p-4">
+            <Activity class="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+            <div><p class="text-sm font-medium">Expected activity, at a glance.</p><p class="mt-1 text-sm text-muted-foreground">Upcoming ping schedules will appear here when the workspace scheduling feed is connected.</p></div>
+          </div>
+        </section>
+
+        <section class="min-w-0 rounded-xl border bg-card p-5 lg:col-span-2 2xl:col-span-2">
+          <div class="mb-4 flex flex-wrap items-start justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">What may need you</p><h2 class="mt-1 text-lg font-semibold">Attention queue</h2></div><Badge variant={dashboard.summary.needs_attention > 0 ? 'destructive' : 'secondary'}>{dashboard.summary.needs_attention} items</Badge></div>
+          <div class="mb-4 flex flex-wrap gap-2" aria-label="Filter attention preview">
+            {#each attentionFilters as filter}
+              <Button size="sm" variant={attentionFilter === filter ? 'secondary' : 'outline'} aria-pressed={attentionFilter === filter} onclick={() => changeFilter(filter)}>{filterLabels[filter]}</Button>
+            {/each}
+          </div>
+          {#if filteredAttention.length}
+            <div class="divide-y">
+              {#each filteredAttention as item (`${item.monitor_id}-${item.reason}-${item.occurred_at ?? ''}`)}
+                <div class="flex items-start gap-3 py-4 first:pt-0 last:pb-0">
+                  <CircleAlert class="mt-1 size-4 shrink-0 text-destructive" />
+                  <div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-2"><strong class="text-sm">{item.monitor_name}</strong><Badge variant="outline">{reasonCopy[item.reason]?.title ?? 'Monitor needs review'}</Badge></div><p class="mt-1 text-sm text-muted-foreground">{reasonCopy[item.reason]?.detail ?? 'Review this monitor for more context.'}</p><p class="mt-2 text-xs text-muted-foreground">{formatRelativeDate(item.occurred_at ?? item.last_valid_evidence_at, Date.now(), formatDate)}</p></div>
+                  <Button variant="ghost" size="icon-sm" href={`/monitors/${encodeURIComponent(item.monitor_id)}`} aria-label={`Investigate ${item.monitor_name}`}><ArrowUpRight class="size-4" /></Button>
+                </div>
+              {/each}
+            </div>
+          {:else}
+            <div class="rounded-lg border border-dashed px-4 py-8 text-center"><p class="text-sm text-muted-foreground">{attentionFilter === 'all' ? 'Nothing needs your attention right now.' : `No ${filterLabels[attentionFilter].toLowerCase()} items are currently reported.`}</p></div>
+          {/if}
+          <div class="mt-4"><Button variant="outline" onclick={() => openView('attention')}>View all attention <ArrowRight class="ml-1 size-4" /></Button></div>
+        </section>
+
+        <section class="min-w-0 rounded-xl border bg-card p-5">
+          <div class="mb-4 flex items-start justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Recent signals</p><h2 class="mt-1 text-lg font-semibold">Evidence activity</h2></div><Badge variant="secondary">{dashboard.recent_evidence_activity.length}</Badge></div>
+          {#if dashboard.recent_evidence_activity.length}
+            <div class="divide-y">
+              {#each dashboard.recent_evidence_activity.slice(0, 5) as item (item.event_id)}
+                <div class="flex items-start gap-3 py-3 first:pt-0 last:pb-0"><Activity class="mt-1 size-4 shrink-0 text-muted-foreground" /><div class="min-w-0"><p class="text-sm font-medium">{item.monitor_name}</p><p class="mt-0.5 text-sm text-muted-foreground">{activityCopy[item.event_type] ?? 'Evidence activity recorded'}</p><p class="mt-1 text-xs text-muted-foreground">{formatRelativeDate(item.occurred_at, Date.now(), formatDate)}</p></div></div>
+              {/each}
+            </div>
+          {:else}
+            <div class="rounded-lg border border-dashed px-4 py-8 text-center"><p class="text-sm text-muted-foreground">No recent evidence activity has been recorded.</p></div>
+          {/if}
+          <div class="mt-4"><Button variant="outline" onclick={() => openView('signals')}>View all signals <ArrowRight class="ml-1 size-4" /></Button></div>
+        </section>
       </div>
-      <p class="dashboard-footnote">Summary generated {formatDate(dashboard.generated_at)}. Health counts are field-level signals, not a single monitor-wide health verdict.</p>
+      <p class="text-xs text-muted-foreground">Summary generated {formatDate(dashboard.generated_at)}. Health counts are field-level signals, not a single monitor-wide health verdict.</p>
     {:else}
-      <div class="dashboard-detail-view"><div class="dashboard-detail-breadcrumbs"><button type="button" onclick={() => openView('overview')}>Overview</button><span aria-hidden="true">/</span><span>{view === 'attention' ? 'Attention queue' : view === 'signals' ? 'Recent signals' : view === 'monitors' ? 'Monitors' : 'Evidence · 24 hours'}</span></div><div class="dashboard-detail-heading"><div><p class="eyebrow">WORKSPACE DETAIL</p><h2>{view === 'attention' ? 'Attention queue' : view === 'signals' ? 'Recent signals' : view === 'monitors' ? 'Monitors' : 'Evidence · last 24 hours'}</h2></div>{#if view === 'attention'}<span class="dashboard-count">{dashboard.summary.needs_attention}</span>{/if}</div>
-        {#if view === 'attention'}<div class="dashboard-filter-chips dashboard-filter-chips--detail">{#each attentionFilters as filter}<button type="button" class:active={attentionFilter === filter} aria-pressed={attentionFilter === filter} onclick={() => changeFilter(filter)}>{filterLabels[filter]}</button>{/each}</div><div class="dashboard-detail-table-wrap"><table class="dashboard-detail-table"><thead><tr><th>Monitor</th><th>Reason</th><th>Last observed</th><th></th></tr></thead><tbody>{#each (dashboard.attention_items.filter((x) => attentionFilter === 'all' || x.reason === attentionFilter)) as item (`${item.monitor_id}-${item.reason}-${item.occurred_at ?? ''}`)}<tr><td><strong>{item.monitor_name}</strong></td><td>{reasonCopy[item.reason]?.title ?? 'Monitor needs review'}</td><td>{formatDate(item.occurred_at ?? item.last_valid_evidence_at)}</td><td><a href={`/monitors/${encodeURIComponent(item.monitor_id)}`}>Investigate →</a></td></tr>{/each}</tbody></table></div>{#if dashboard.attention_items.length === 0}<p class="dashboard-detail-empty">No attention items are currently reported.</p>{/if}
-        {:else if loadingDetail}<div class="dashboard-detail-loading" aria-live="polite"><span class="dashboard-loader" aria-hidden="true"></span>Loading details…</div>{:else if detailError}<div class="dashboard-state dashboard-state--error" role="alert"><p>{detailError}</p><button class="dashboard-retry" type="button" onclick={() => view === 'monitors' ? loadMonitorDetail() : loadEvidenceDetail()}>Try again</button></div>
-        {:else if view === 'monitors'}<div class="dashboard-detail-table-wrap"><table class="dashboard-detail-table"><thead><tr><th>Monitor</th><th>Status</th><th>Updated</th><th></th></tr></thead><tbody>{#each detailMonitors as item (item.id)}<tr><td><strong>{item.name}</strong></td><td><span class={`dashboard-status dashboard-status--${item.status}`}>{item.status}</span></td><td>{formatDate(item.updated_at ?? '')}</td><td><a href={`/monitors/${encodeURIComponent(item.id)}`}>Open →</a></td></tr>{/each}</tbody></table></div>{#if detailHasMore}<button class="dashboard-view-all" type="button" disabled={loadingDetail} onclick={loadMoreMonitors}>Load more monitors →</button>{/if}
-        {:else}<div class="dashboard-detail-table-wrap"><table class="dashboard-detail-table"><thead><tr><th>Monitor</th><th>Outcome</th><th>Recorded</th><th>Evidence</th></tr></thead><tbody>{#each detailEvidence as item, i (`${item.id ?? item.event_id ?? item.evidence_id ?? i}`)}<tr><td><strong>{item.monitor_name ?? item.monitor?.name ?? 'Monitor'}</strong></td><td>{item.outcome ?? item.event_type ?? 'Evidence recorded'}</td><td>{formatDate(item.created_at ?? item.occurred_at ?? '')}</td><td>{item.id ?? item.evidence_id ?? '—'}</td></tr>{/each}</tbody></table></div>{#if detailEvidence.length === 0}<p class="dashboard-detail-empty">No evidence records are available in this view.</p>{/if}{#if detailHasMore}<button class="dashboard-view-all" type="button" disabled={loadingDetail} onclick={loadMoreEvidence}>Load more evidence →</button>{/if}{/if}
-      </div>
+      <section class="min-w-0 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div><Button variant="ghost" size="sm" class="-ml-2 mb-2" onclick={() => openView('overview')}><ArrowRight class="mr-1 size-4 rotate-180" />Overview</Button><p class="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Workspace detail</p><h2 class="text-xl font-semibold tracking-tight">{view === 'attention' ? 'Attention queue' : view === 'signals' ? 'Recent signals' : view === 'monitors' ? 'Monitors' : 'Evidence · last 24 hours'}</h2></div>
+          {#if view === 'attention'}<Badge variant="secondary">{dashboard.summary.needs_attention} items</Badge>{/if}
+        </div>
+        {#if view === 'attention'}
+          <div class="flex flex-wrap gap-2">{#each attentionFilters as filter}<Button size="sm" variant={attentionFilter === filter ? 'secondary' : 'outline'} aria-pressed={attentionFilter === filter} onclick={() => changeFilter(filter)}>{filterLabels[filter]}</Button>{/each}</div>
+          <div class="overflow-hidden rounded-lg border">
+            <Table.Root>
+              <Table.Caption>Items currently reported as needing review.</Table.Caption>
+              <Table.Header><Table.Row class="bg-muted/50 hover:bg-muted/50"><Table.Head>Monitor</Table.Head><Table.Head>Reason</Table.Head><Table.Head>Last observed</Table.Head><Table.Head class="text-right">Action</Table.Head></Table.Row></Table.Header>
+              <Table.Body>
+                {#each dashboard.attention_items.filter((x) => attentionFilter === 'all' || x.reason === attentionFilter) as item (`${item.monitor_id}-${item.reason}-${item.occurred_at ?? ''}`)}
+                  <Table.Row><Table.Cell class="font-medium">{item.monitor_name}</Table.Cell><Table.Cell>{reasonCopy[item.reason]?.title ?? 'Monitor needs review'}</Table.Cell><Table.Cell class="text-muted-foreground">{formatDate(item.occurred_at ?? item.last_valid_evidence_at)}</Table.Cell><Table.Cell class="text-right"><Button variant="ghost" size="sm" href={`/monitors/${encodeURIComponent(item.monitor_id)}`}>Investigate <ArrowUpRight class="ml-1 size-4" /></Button></Table.Cell></Table.Row>
+                {/each}
+              </Table.Body>
+            </Table.Root>
+          </div>
+          {#if dashboard.attention_items.length === 0}<p class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No attention items are currently reported.</p>{/if}
+        {:else if loadingDetail}
+          <div class="flex items-center gap-3 rounded-lg border p-6 text-sm text-muted-foreground" aria-live="polite"><span class="size-4 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true"></span>Loading details…</div>
+        {:else if detailError}
+          <Alert variant="destructive"><CircleAlert class="size-4" /><AlertTitle>Details could not be loaded</AlertTitle><AlertDescription class="flex flex-wrap items-center justify-between gap-3"><span>{detailError}</span><Button variant="outline" size="sm" onclick={() => view === 'monitors' ? loadMonitorDetail() : loadEvidenceDetail()}>Try again</Button></AlertDescription></Alert>
+        {:else if view === 'monitors'}
+          <div class="overflow-hidden rounded-lg border">
+            <Table.Root>
+              <Table.Caption>Monitor inventory.</Table.Caption>
+              <Table.Header><Table.Row class="bg-muted/50 hover:bg-muted/50"><Table.Head>Monitor</Table.Head><Table.Head>Status</Table.Head><Table.Head>Updated</Table.Head><Table.Head class="text-right">Action</Table.Head></Table.Row></Table.Header>
+              <Table.Body>
+                {#each detailMonitors as item (item.id)}
+                  <Table.Row><Table.Cell class="font-medium">{item.name}</Table.Cell><Table.Cell><Badge variant={item.status === 'enabled' ? 'default' : item.status === 'archived' ? 'destructive' : 'secondary'} class="capitalize">{item.status}</Badge></Table.Cell><Table.Cell class="text-muted-foreground">{formatDate(item.updated_at ?? '')}</Table.Cell><Table.Cell class="text-right"><Button variant="ghost" size="sm" href={`/monitors/${encodeURIComponent(item.id)}`}>Open <ArrowUpRight class="ml-1 size-4" /></Button></Table.Cell></Table.Row>
+                {/each}
+              </Table.Body>
+            </Table.Root>
+          </div>
+          {#if detailMonitors.length === 0}<p class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No monitors are available in this view.</p>{/if}
+          {#if detailHasMore}<Button variant="outline" disabled={loadingDetail} onclick={loadMoreMonitors}>Load more monitors <ArrowRight class="ml-1 size-4" /></Button>{/if}
+        {:else}
+          <div class="overflow-hidden rounded-lg border">
+            <Table.Root>
+              <Table.Caption>Evidence records returned for this view.</Table.Caption>
+              <Table.Header><Table.Row class="bg-muted/50 hover:bg-muted/50"><Table.Head>Monitor</Table.Head><Table.Head>Outcome</Table.Head><Table.Head>Recorded</Table.Head><Table.Head>Evidence</Table.Head></Table.Row></Table.Header>
+              <Table.Body>
+                {#each detailEvidence as item, i (`${item.id ?? item.event_id ?? item.evidence_id ?? i}`)}
+                  <Table.Row><Table.Cell class="font-medium">{item.monitor_name ?? item.monitor?.name ?? 'Monitor'}</Table.Cell><Table.Cell>{item.outcome ?? item.event_type ?? 'Evidence recorded'}</Table.Cell><Table.Cell class="text-muted-foreground">{formatDate(item.created_at ?? item.occurred_at ?? '')}</Table.Cell><Table.Cell class="font-mono text-xs">{item.id ?? item.evidence_id ?? '—'}</Table.Cell></Table.Row>
+                {/each}
+              </Table.Body>
+            </Table.Root>
+          </div>
+          {#if detailEvidence.length === 0}<p class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No evidence records are available in this view.</p>{/if}
+          {#if detailHasMore}<Button variant="outline" disabled={loadingDetail} onclick={loadMoreEvidence}>Load more evidence <ArrowRight class="ml-1 size-4" /></Button>{/if}
+        {/if}
+      </section>
     {/if}
   {/if}
 </section>
