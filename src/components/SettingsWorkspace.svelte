@@ -13,6 +13,7 @@
   import SettingsSectionNavigation from './settings/SettingsSectionNavigation.svelte';
   import SettingsDestinationManager from './settings/SettingsDestinationManager.svelte';
   import SettingsPeopleManager from './settings/SettingsPeopleManager.svelte';
+  import * as Select from './ui/select/index.js';
 
   let { mode = 'workspace' }: { mode?: 'workspace' | 'account' } = $props();
 
@@ -222,10 +223,7 @@
     return value ? formatDateTime(value, 'Date unavailable') : 'Not scheduled';
   }
 
-  function saveAppearance(event: Event) {
-    const target = event.currentTarget;
-    if (!(target instanceof HTMLSelectElement)) return;
-    const preference = target.value;
+  function saveAppearance(preference: string) {
     if (preference !== 'system' && preference !== 'light' && preference !== 'dark') return;
     settingsUi.appearancePreference = preference;
     const resolved = settingsUi.appearancePreference === 'system'
@@ -277,7 +275,20 @@
         {:else if mode === 'account' && section === 'preferences'}
           <section class="settings-card">
             <div class="settings-card__heading"><div><p class="settings-kicker">PREFERENCES</p><h2>Make TrueExit feel right.</h2><p>Choose how the interface appears on this device. Your preference is stored locally and does not change workspace data.</p></div><span class="settings-card__symbol">◐</span></div>
-            <label class="settings-field settings-preference-field"><span>Appearance</span><select bind:value={settingsUi.appearancePreference} onchange={saveAppearance}><option value="system">Use system setting</option><option value="light">Light</option><option value="dark">Dark</option></select><small>Applies immediately, including the application shell.</small></label>
+            <div class="settings-field settings-preference-field">
+              <span>Appearance</span>
+              <Select.Root type="single" value={settingsUi.appearancePreference} onValueChange={saveAppearance}>
+                <Select.Trigger aria-label="Appearance preference" class="w-full max-w-sm">
+                  <Select.Value placeholder="Use system setting" />
+                </Select.Trigger>
+                <Select.Content>
+                  <Select.Item value="system" label="Use system setting">Use system setting</Select.Item>
+                  <Select.Item value="light" label="Light">Light</Select.Item>
+                  <Select.Item value="dark" label="Dark">Dark</Select.Item>
+                </Select.Content>
+              </Select.Root>
+              <small>Applies immediately, including the application shell.</small>
+            </div>
           </section>
         {:else if mode === 'account' && section === 'security'}
           <section class="settings-card">
