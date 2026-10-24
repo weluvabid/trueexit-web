@@ -4,7 +4,14 @@
   import { createQuery } from '@tanstack/svelte-query';
   import { getSharedQueryClient } from '../lib/client/query-client';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
-  import '../styles/investigation.css';
+  import * as Table from './ui/table/index.js';
+  import * as Select from './ui/select/index.js';
+  import * as Tabs from './ui/tabs/index.js';
+  import { Button } from './ui/button/index.js';
+  import { Badge } from './ui/badge/index.js';
+  import { Alert, AlertDescription, AlertTitle } from './ui/alert/index.js';
+  import { Separator } from './ui/separator/index.js';
+  import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, RefreshCw, X, FileSearch, Activity, Clock3, Bell, Database, AlertTriangle } from '@lucide/svelte';
   import { formatInvestigationDate, formatInvestigationValue, formatInvestigationLabel, getHealthCounts } from '../lib/client/investigation-format';
   import { buildInvestigationApiPath, getInvestigationErrorMessage, readInvestigationResource, investigationResourceQueryOptions, investigationQueryErrorMessage, type Resource } from '../lib/client/investigation-api';
   import { investigationDeliveryPageSchema, investigationDeliverySchema, investigationEvidencePageSchema, investigationEvidenceSchema, investigationHealthSchema, investigationHealthVersionSchema, investigationMonitorSchema, investigationRecordPageSchema, investigationRecordSchema } from '../lib/client/api-schemas';
@@ -322,92 +329,195 @@
   <meta name="robots" content="noindex" />
 </svelte:head>
 
-<section class="investigation" aria-busy={bootLoading || monitorLoading}>
+<main class="mx-auto flex w-full min-w-0 flex-col gap-6" aria-busy={bootLoading || monitorLoading}>
   {#if bootLoading}
-    <div class="investigation-state" aria-live="polite">Loading workspace and investigation…</div>
+    <div class="flex items-center gap-3 rounded-lg border p-6 text-sm text-muted-foreground" aria-live="polite">
+      <span class="size-4 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true"></span>
+      Loading workspace and investigation…
+    </div>
   {:else if bootError}
-    <div class="investigation-state investigation-state--error" role="alert">{bootError}</div>
+    <Alert variant="destructive"><AlertTriangle class="size-4" /><AlertTitle>Could not load investigation</AlertTitle><AlertDescription>{bootError}</AlertDescription></Alert>
   {:else}
-    <div class="investigation-toolbar">
-      <a class="investigation-back" href="/monitors">← All monitors</a>
-      <label class="investigation-workspace">Workspace
-        <select bind:value={workspaceId} onchange={changeWorkspace} aria-label="Investigation workspace">
-          {#each workspaces as workspace (workspace.id)}<option value={workspace.id}>{workspace.name}</option>{/each}
-        </select>
-      </label>
+    <div class="flex flex-wrap items-end justify-between gap-4">
+      <div class="flex min-w-0 flex-col gap-3">
+        <Button variant="ghost" size="sm" href="/monitors" class="-ml-2 w-fit"><ArrowLeft class="size-4" /> All monitors</Button>
+        <div class="grid gap-2">
+          <label class="text-xs font-medium text-muted-foreground" for="investigation-workspace">Workspace</label>
+          <Select.Root type="single" value={workspaceId} onValueChange={(value) => { if (value && value !== workspaceId) { workspaceId = value; changeWorkspace(); } }}>
+            <Select.Trigger id="investigation-workspace" class="w-64 max-w-full"><Select.Value placeholder="Select workspace" /></Select.Trigger>
+            <Select.Content>
+              {#each workspaces as workspace (workspace.id)}
+                <Select.Item value={workspace.id} label={workspace.name}>{workspace.name}</Select.Item>
+              {/each}
+            </Select.Content>
+          </Select.Root>
+        </div>
+      </div>
     </div>
 
     {#if monitorError}
-      <div class="investigation-state investigation-state--error" role="alert">{monitorError}<a href="/monitors">Return to monitors</a></div>
+      <Alert variant="destructive"><AlertTriangle class="size-4" /><AlertTitle>Could not load monitor</AlertTitle><AlertDescription>{monitorError}</AlertDescription><Button variant="outline" href="/monitors" class="mt-2 w-fit">Return to monitors</Button></Alert>
     {:else if monitorLoading || !monitor}
-      <div class="investigation-state" aria-live="polite">Loading monitor details…</div>
+      <div class="flex items-center gap-3 rounded-lg border p-6 text-sm text-muted-foreground" aria-live="polite">
+        <span class="size-4 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true"></span>
+        Loading monitor details…
+      </div>
     {:else}
-      <header class="investigation-header">
-        <div>
-          <p class="investigation-eyebrow">MONITOR INVESTIGATION · CONFIGURATION V{monitor.current_config_version ?? '—'}</p>
-          <h1>{monitor.name}</h1>
-          <p class="investigation-description">{monitor.description || 'No description added.'}</p>
+      <header class="flex flex-wrap items-start justify-between gap-4 rounded-xl border bg-card p-5 sm:p-6">
+        <div class="min-w-0 space-y-2">
+          <p class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Monitor investigation · Configuration v{monitor.current_config_version ?? '—'}</p>
+          <h1 class="break-words text-2xl font-semibold tracking-tight">{monitor.name}</h1>
+          <p class="max-w-3xl text-sm text-muted-foreground">{monitor.description || 'No description added.'}</p>
         </div>
-        <div class="investigation-header__meta"><span class={`investigation-status investigation-status--${monitor.status}`}>{label(monitor.status)}</span><span>Cadence: {monitor.cadence_seconds ? `${monitor.cadence_seconds}s` : 'Unavailable'}</span><span>Updated {formatDate(monitor.updated_at)}</span></div>
+        <div class="flex flex-wrap items-center gap-2">
+          <Badge variant={monitor.status === 'enabled' ? 'default' : monitor.status === 'archived' ? 'destructive' : 'secondary'} class="capitalize">{label(monitor.status)}</Badge>
+          <Badge variant="outline">Cadence: {monitor.cadence_seconds ? `${monitor.cadence_seconds}s` : 'Unavailable'}</Badge>
+          <span class="text-xs text-muted-foreground">Updated {formatDate(monitor.updated_at)}</span>
+        </div>
       </header>
 
-      <section class="investigation-section" aria-labelledby="health-heading">
-        <div class="investigation-section__heading"><div><p class="investigation-eyebrow">PERSISTED REASONING STATE</p><h2 id="health-heading">Field health</h2></div><span class="investigation-note">Field-level signals, not a monitor-wide verdict</span></div>
-        {#if healthLoading}<p class="investigation-muted" aria-live="polite">Loading current health…</p>
-        {:else if healthError}<p class="investigation-error" role="alert">{healthError}</p>
+      <section class="space-y-4" aria-labelledby="health-heading">
+        <div class="flex flex-wrap items-end justify-between gap-2">
+          <div><p class="text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground">Persisted reasoning state</p><h2 id="health-heading" class="mt-1 text-lg font-semibold">Field health</h2></div>
+          <p class="text-xs text-muted-foreground">Field-level signals, not a monitor-wide verdict.</p>
+        </div>
+        {#if healthLoading}
+          <p class="rounded-lg border p-4 text-sm text-muted-foreground" aria-live="polite">Loading current health…</p>
+        {:else if healthError}
+          <Alert variant="destructive"><AlertDescription>{healthError}</AlertDescription></Alert>
         {:else if health && Object.keys(health.health?.fields ?? {}).length}
-          <div class="health-grid">
+          <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {#each Object.entries(health.health?.fields ?? {}) as [fieldName, fieldState] (fieldName)}
-              <article class="health-field"><div><h3>{fieldName}</h3><span class={`health-state health-state--${String(fieldState.state ?? 'unknown')}`}>{label(fieldState.state)}</span></div><dl><div><dt>Consecutive anomalies</dt><dd>{formatValue(fieldState.consecutive_anomalies)}</dd></div><div><dt>Consecutive healthy</dt><dd>{formatValue(fieldState.consecutive_healthy)}</dd></div></dl></article>
+              <article class="rounded-lg border bg-card p-4">
+                <div class="flex flex-wrap items-start justify-between gap-2"><h3 class="break-words font-medium">{fieldName}</h3><Badge variant={String(fieldState.state ?? 'unknown') === 'healthy' ? 'default' : String(fieldState.state ?? 'unknown') === 'unknown' ? 'secondary' : 'outline'} class="capitalize">{label(fieldState.state)}</Badge></div>
+                <Separator class="my-4" />
+                <dl class="grid grid-cols-2 gap-3 text-sm">
+                  <div><dt class="text-xs text-muted-foreground">Consecutive anomalies</dt><dd class="mt-1 font-medium">{formatValue(fieldState.consecutive_anomalies)}</dd></div>
+                  <div><dt class="text-xs text-muted-foreground">Consecutive healthy</dt><dd class="mt-1 font-medium">{formatValue(fieldState.consecutive_healthy)}</dd></div>
+                </dl>
+              </article>
             {/each}
           </div>
-        {:else if health}<p class="investigation-muted">No field-level health snapshot is currently available for this monitor.</p>{/if}
+        {:else if health}
+          <p class="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">No field-level health snapshot is currently available for this monitor.</p>
+        {/if}
         {#if health && (health.health?.checkpoints || health.health?.adopted_baselines)}
-          <details class="investigation-json"><summary>Checkpoint and adopted baseline state</summary><pre>{JSON.stringify({ checkpoints: health.health?.checkpoints ?? [], adopted_baselines: health.health?.adopted_baselines ?? {} }, null, 2)}</pre></details>
+          <details class="rounded-lg border p-4">
+            <summary class="cursor-pointer text-sm font-medium">Checkpoint and adopted baseline state</summary>
+            <pre class="mt-3 max-h-96 overflow-auto rounded-md bg-muted p-3 text-xs">{JSON.stringify({ checkpoints: health.health?.checkpoints ?? [], adopted_baselines: health.health?.adopted_baselines ?? {} }, null, 2)}</pre>
+          </details>
         {/if}
       </section>
 
-      <section class="investigation-section" aria-labelledby="history-heading">
-        <div class="investigation-section__heading"><div><p class="investigation-eyebrow">CONFIGURATION EPOCHS</p><h2 id="history-heading">Health history</h2></div><span class="investigation-note">Version history is not a timestamped transition log</span></div>
-        {#if healthHistoryError}<p class="investigation-error" role="alert">{healthHistoryError}</p>
-        {:else if healthHistoryLoading}<p class="investigation-muted">Loading health history…</p>
+      <section class="space-y-4" aria-labelledby="history-heading">
+        <div class="flex flex-wrap items-end justify-between gap-2">
+          <div><p class="text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground">Configuration epochs</p><h2 id="history-heading" class="mt-1 text-lg font-semibold">Health history</h2></div>
+          <p class="text-xs text-muted-foreground">Version history is not a timestamped transition log.</p>
+        </div>
+        {#if healthHistoryError}
+          <Alert variant="destructive"><AlertDescription>{healthHistoryError}</AlertDescription></Alert>
+        {:else if healthHistoryLoading}
+          <p class="rounded-lg border p-4 text-sm text-muted-foreground">Loading health history…</p>
         {:else if healthHistory?.data?.length}
-          <div class="history-list">{#each healthHistory.data as version (version.config_version)}<button class="history-row" type="button" onclick={() => openHealthVersion(version.config_version)}><span><strong>Configuration v{version.config_version}</strong><small>{version.is_current ? 'Current snapshot' : 'Historical snapshot'}</small></span><span class="history-counts">{#each healthCounts(version.health_summary) as [key, value]}<span>{label(key)} <b>{formatValue(value)}</b></span>{/each}</span><span aria-hidden="true">↗</span></button>{/each}</div>
-        {:else}<p class="investigation-muted">No persisted health history is available.</p>{/if}
-        {#if healthVersionLoading}<p class="investigation-muted">Loading selected health version…</p>{/if}
-        {#if healthVersionError}<p class="investigation-error" role="alert">{healthVersionError}</p>{/if}
-        {#if selectedHealthVersion}<div class="investigation-detail"><div class="investigation-detail__heading"><h3>Configuration v{selectedHealthVersion.config_version}</h3><button type="button" class="investigation-close" onclick={closeSelectedHealthVersion}>Close</button></div><p class="investigation-muted">{selectedHealthVersion.is_current ? 'Current persisted snapshot' : 'Historical persisted snapshot'} · Cadence {selectedHealthVersion.configuration?.cadence_seconds == null ? 'unavailable' : `${selectedHealthVersion.configuration.cadence_seconds}s`}</p><details open><summary>Configuration and health snapshot</summary><pre>{JSON.stringify({ configuration: selectedHealthVersion.configuration, health: selectedHealthVersion.health }, null, 2)}</pre></details></div>{/if}
+          <div class="overflow-hidden rounded-lg border">
+            <Table.Root>
+              <Table.Header><Table.Row><Table.Head>Configuration</Table.Head><Table.Head>Snapshot</Table.Head><Table.Head>Health summary</Table.Head><Table.Head class="text-right">Inspect</Table.Head></Table.Row></Table.Header>
+              <Table.Body>
+                {#each healthHistory.data as version (version.config_version)}
+                  <Table.Row>
+                    <Table.Cell class="font-medium">v{version.config_version}</Table.Cell>
+                    <Table.Cell><Badge variant={version.is_current ? 'default' : 'secondary'}>{version.is_current ? 'Current' : 'Historical'}</Badge></Table.Cell>
+                    <Table.Cell><div class="flex flex-wrap gap-2">{#each healthCounts(version.health_summary) as [key, value]}<span class="text-xs text-muted-foreground">{label(key)} <strong class="text-foreground">{formatValue(value)}</strong></span>{/each}</div></Table.Cell>
+                    <Table.Cell class="text-right"><Button variant="outline" size="sm" onclick={() => openHealthVersion(version.config_version)}>Inspect <ExternalLink class="size-3.5" /></Button></Table.Cell>
+                  </Table.Row>
+                {/each}
+              </Table.Body>
+            </Table.Root>
+          </div>
+        {:else}
+          <p class="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">No persisted health history is available.</p>
+        {/if}
+        {#if healthVersionLoading}<p class="text-sm text-muted-foreground">Loading selected health version…</p>{/if}
+        {#if healthVersionError}<Alert variant="destructive"><AlertDescription>{healthVersionError}</AlertDescription></Alert>{/if}
+        {#if selectedHealthVersion}
+          <article class="space-y-3 rounded-lg border bg-card p-4">
+            <div class="flex flex-wrap items-start justify-between gap-3"><div><h3 class="font-semibold">Configuration v{selectedHealthVersion.config_version}</h3><p class="mt-1 text-sm text-muted-foreground">{selectedHealthVersion.is_current ? 'Current persisted snapshot' : 'Historical persisted snapshot'} · Cadence {selectedHealthVersion.configuration?.cadence_seconds == null ? 'unavailable' : `${selectedHealthVersion.configuration.cadence_seconds}s`}</p></div><Button variant="ghost" size="sm" onclick={closeSelectedHealthVersion}><X class="size-4" /> Close</Button></div>
+            <details open><summary class="cursor-pointer text-sm font-medium">Configuration and health snapshot</summary><pre class="mt-3 max-h-[32rem] overflow-auto rounded-md bg-muted p-3 text-xs">{JSON.stringify({ configuration: selectedHealthVersion.configuration, health: selectedHealthVersion.health }, null, 2)}</pre></details>
+          </article>
+        {/if}
       </section>
 
-      <section class="investigation-section" aria-labelledby="activity-heading">
-        <div class="investigation-section__heading"><div><p class="investigation-eyebrow">OBSERVATIONS AND NOTIFICATIONS</p><h2 id="activity-heading">Evidence & delivery history</h2></div></div>
-        <div class="investigation-tabs" role="tablist" aria-label="Investigation records"><button type="button" role="tab" aria-selected={activeSection === 'evidence'} class:active={activeSection === 'evidence'} onclick={() => { activeSection = 'evidence'; clearSelectedRecords(); }}>Verified evidence</button><button type="button" role="tab" aria-selected={activeSection === 'rejected'} class:active={activeSection === 'rejected'} onclick={() => { activeSection = 'rejected'; clearSelectedRecords(); }}>Rejected evidence</button><button type="button" role="tab" aria-selected={activeSection === 'deliveries'} class:active={activeSection === 'deliveries'} onclick={() => { activeSection = 'deliveries'; clearSelectedRecords(); }}>Delivery history</button></div>
+      <section class="space-y-4" aria-labelledby="activity-heading">
+        <div><p class="text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground">Observations and notifications</p><h2 id="activity-heading" class="mt-1 text-lg font-semibold">Evidence & delivery history</h2></div>
+        <Tabs.Root bind:value={activeSection} class="w-full">
+          <Tabs.List class="grid h-auto w-full grid-cols-1 sm:grid-cols-3">
+            <Tabs.Trigger value="evidence"><FileSearch class="size-4" /> Verified evidence</Tabs.Trigger>
+            <Tabs.Trigger value="rejected"><AlertTriangle class="size-4" /> Rejected evidence</Tabs.Trigger>
+            <Tabs.Trigger value="deliveries"><Bell class="size-4" /> Delivery history</Tabs.Trigger>
+          </Tabs.List>
+          <Tabs.Content value="evidence" class="mt-4 space-y-3">
+            {#if evidenceLoading}<p class="text-sm text-muted-foreground" aria-live="polite">Loading verified evidence…</p>
+            {:else if evidenceError}<Alert variant="destructive"><AlertDescription>{evidenceError}</AlertDescription><Button variant="outline" size="sm" class="mt-2 w-fit" onclick={() => loadEvidencePage('verified')}><RefreshCw class="size-4" /> Retry</Button></Alert>
+            {:else if evidence?.data?.length}
+              <div class="overflow-hidden rounded-lg border"><Table.Root>
+                <Table.Header><Table.Row><Table.Head>Evidence</Table.Head><Table.Head>Observed</Table.Head><Table.Head>Configuration</Table.Head><Table.Head>Request</Table.Head><Table.Head class="text-right"> </Table.Head></Table.Row></Table.Header>
+                <Table.Body>{#each evidence.data as item (item.id)}<Table.Row><Table.Cell><div class="font-medium">{item.id.slice(0, 8)}…</div><Badge variant="secondary">Verified</Badge></Table.Cell><Table.Cell>{formatDate(item.observed_at ?? item.created_at)}</Table.Cell><Table.Cell>v{item.config_version}</Table.Cell><Table.Cell><code class="text-xs">{item.request_id.slice(0, 8)}…</code></Table.Cell><Table.Cell class="text-right"><Button variant="outline" size="sm" onclick={() => openEvidence('verified', item)}>Inspect</Button></Table.Cell></Table.Row>{/each}</Table.Body>
+              </Table.Root></div>
+              <div class="flex flex-wrap items-center justify-between gap-3"><p class="text-sm text-muted-foreground">Page {evidencePageIndex + 1}</p><div class="flex gap-2"><Button variant="outline" size="sm" onclick={() => previousEvidence('verified')} disabled={evidencePageIndex === 0 || evidenceLoading}><ChevronLeft class="size-4" /> Previous</Button><Button variant="outline" size="sm" onclick={() => nextEvidence('verified')} disabled={!evidenceCursor || evidenceLoading}>Next <ChevronRight class="size-4" /></Button></div></div>
+            {:else}<p class="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">No verified evidence records were returned for this monitor.</p>{/if}
+          </Tabs.Content>
+          <Tabs.Content value="rejected" class="mt-4 space-y-3">
+            {#if rejectedLoading}<p class="text-sm text-muted-foreground" aria-live="polite">Loading rejected evidence…</p>
+            {:else if rejectedError}<Alert variant="destructive"><AlertDescription>{rejectedError}</AlertDescription><Button variant="outline" size="sm" class="mt-2 w-fit" onclick={() => loadEvidencePage('rejected')}><RefreshCw class="size-4" /> Retry</Button></Alert>
+            {:else if badEvidence?.data?.length}
+              <div class="overflow-hidden rounded-lg border"><Table.Root>
+                <Table.Header><Table.Row><Table.Head>Evidence</Table.Head><Table.Head>Rejected at</Table.Head><Table.Head>Configuration</Table.Head><Table.Head>Reason</Table.Head><Table.Head class="text-right"></Table.Head></Table.Row></Table.Header>
+                <Table.Body>{#each badEvidence.data as item (item.id)}<Table.Row><Table.Cell><div class="font-medium">{item.id.slice(0, 8)}…</div><Badge variant="destructive">Rejected</Badge></Table.Cell><Table.Cell>{formatDate(item.created_at)}</Table.Cell><Table.Cell>v{item.config_version}</Table.Cell><Table.Cell><code class="text-xs">{item.reason?.code ?? 'Unknown reason'}</code></Table.Cell><Table.Cell class="text-right"><Button variant="outline" size="sm" onclick={() => openEvidence('rejected', item)}>Inspect</Button></Table.Cell></Table.Row>{/each}</Table.Body>
+              </Table.Root></div>
+              <div class="flex flex-wrap items-center justify-between gap-3"><p class="text-sm text-muted-foreground">Page {rejectedPageIndex + 1}</p><div class="flex gap-2"><Button variant="outline" size="sm" onclick={() => previousEvidence('rejected')} disabled={rejectedPageIndex === 0 || rejectedLoading}><ChevronLeft class="size-4" /> Previous</Button><Button variant="outline" size="sm" onclick={() => nextEvidence('rejected')} disabled={!rejectedCursor || rejectedLoading}>Next <ChevronRight class="size-4" /></Button></div></div>
+            {:else}<p class="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">No rejected evidence records were returned for this monitor.</p>{/if}
+          </Tabs.Content>
+          <Tabs.Content value="deliveries" class="mt-4 space-y-3">
+            {#if deliveriesLoading}<p class="text-sm text-muted-foreground" aria-live="polite">Loading delivery history…</p>
+            {:else if deliveriesError}<Alert variant="destructive"><AlertDescription>{deliveriesError}</AlertDescription><Button variant="outline" size="sm" class="mt-2 w-fit" onclick={() => loadDeliveryPage()}><RefreshCw class="size-4" /> Retry</Button></Alert>
+            {:else if deliveries?.data?.length}
+              <div class="overflow-hidden rounded-lg border"><Table.Root>
+                <Table.Header><Table.Row><Table.Head>Request</Table.Head><Table.Head>Evidence outcome</Table.Head><Table.Head>Delivery status</Table.Head><Table.Head>Recorded</Table.Head><Table.Head class="text-right"></Table.Head></Table.Row></Table.Header>
+                <Table.Body>{#each deliveries.data as item (item.request_id)}<Table.Row><Table.Cell><code class="text-xs">{item.request_id.slice(0, 8)}…</code></Table.Cell><Table.Cell>{label(item.evidence_outcome)}</Table.Cell><Table.Cell><Badge variant={String(item.status ?? item.summary?.status ?? 'unknown') === 'delivered' ? 'default' : 'secondary'} class="capitalize">{label(item.status ?? item.summary?.status)}</Badge></Table.Cell><Table.Cell>{formatDate(item.created_at ?? item.updated_at)}</Table.Cell><Table.Cell class="text-right"><Button variant="outline" size="sm" onclick={() => openDelivery(item)}>Inspect</Button></Table.Cell></Table.Row>{/each}</Table.Body>
+              </Table.Root></div>
+              <div class="flex flex-wrap items-center justify-between gap-3"><p class="text-sm text-muted-foreground">Page {deliveryPageIndex + 1}</p><div class="flex gap-2"><Button variant="outline" size="sm" onclick={previousDeliveries} disabled={deliveryPageIndex === 0 || deliveriesLoading}><ChevronLeft class="size-4" /> Previous</Button><Button variant="outline" size="sm" onclick={nextDeliveries} disabled={!deliveryCursor || deliveriesLoading}>Next <ChevronRight class="size-4" /></Button></div></div>
+            {:else}<p class="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">No persisted delivery records were returned. This does not imply provider delivery is enabled or disabled.</p>{/if}
+          </Tabs.Content>
+        </Tabs.Root>
 
-        {#if activeSection === 'evidence'}
-          {#if evidenceLoading}<p class="investigation-muted" aria-live="polite">Loading verified evidence…</p>{:else if evidenceError}<p class="investigation-error" role="alert">{evidenceError}<button type="button" onclick={() => loadEvidencePage('verified')}>Retry</button></p>{:else if evidence?.data?.length}
-            <div class="investigation-table-wrap"><table class="investigation-table"><thead><tr><th>Evidence</th><th>Observed</th><th>Configuration</th><th>Request</th><th></th></tr></thead><tbody>{#each evidence.data as item (item.id)}<tr><td><strong>{item.id.slice(0, 8)}…</strong><small>Verified</small></td><td>{formatDate(item.observed_at ?? item.created_at)}</td><td>v{item.config_version}</td><td><code>{item.request_id.slice(0, 8)}…</code></td><td><button type="button" class="investigation-link" onclick={() => openEvidence('verified', item)}>Inspect</button></td></tr>{/each}</tbody></table></div>
-            <div class="investigation-pagination"><button type="button" onclick={() => previousEvidence('verified')} disabled={evidencePageIndex === 0 || evidenceLoading}>Previous</button><span>Page {evidencePageIndex + 1}</span><button type="button" onclick={() => nextEvidence('verified')} disabled={!evidenceCursor || evidenceLoading}>Next</button></div>
-          {:else}<p class="investigation-muted">No verified evidence records were returned for this monitor.</p>{/if}
-        {:else if activeSection === 'rejected'}
-          {#if rejectedLoading}<p class="investigation-muted" aria-live="polite">Loading rejected evidence…</p>{:else if rejectedError}<p class="investigation-error" role="alert">{rejectedError}<button type="button" onclick={() => loadEvidencePage('rejected')}>Retry</button></p>{:else if badEvidence?.data?.length}
-            <div class="investigation-table-wrap"><table class="investigation-table"><thead><tr><th>Evidence</th><th>Rejected at</th><th>Configuration</th><th>Reason</th><th></th></tr></thead><tbody>{#each badEvidence.data as item (item.id)}<tr><td><strong>{item.id.slice(0, 8)}…</strong><small>Rejected</small></td><td>{formatDate(item.created_at)}</td><td>v{item.config_version}</td><td><code>{item.reason?.code ?? 'Unknown reason'}</code></td><td><button type="button" class="investigation-link" onclick={() => openEvidence('rejected', item)}>Inspect</button></td></tr>{/each}</tbody></table></div>
-            <div class="investigation-pagination"><button type="button" onclick={() => previousEvidence('rejected')} disabled={rejectedPageIndex === 0 || rejectedLoading}>Previous</button><span>Page {rejectedPageIndex + 1}</span><button type="button" onclick={() => nextEvidence('rejected')} disabled={!rejectedCursor || rejectedLoading}>Next</button></div>
-          {:else}<p class="investigation-muted">No rejected evidence records were returned for this monitor.</p>{/if}
-        {:else}
-          {#if deliveriesLoading}<p class="investigation-muted" aria-live="polite">Loading delivery history…</p>{:else if deliveriesError}<p class="investigation-error" role="alert">{deliveriesError}<button type="button" onclick={() => loadDeliveryPage()}>Retry</button></p>{:else if deliveries?.data?.length}
-            <div class="investigation-table-wrap"><table class="investigation-table"><thead><tr><th>Request</th><th>Evidence outcome</th><th>Delivery status</th><th>Recorded</th><th></th></tr></thead><tbody>{#each deliveries.data as item (item.request_id)}<tr><td><code>{item.request_id.slice(0, 8)}…</code></td><td>{label(item.evidence_outcome)}</td><td><span class={`delivery-state delivery-state--${String(item.status ?? item.summary?.status ?? 'unknown')}`}>{label(item.status ?? item.summary?.status)}</span></td><td>{formatDate(item.created_at ?? item.updated_at)}</td><td><button type="button" class="investigation-link" onclick={() => openDelivery(item)}>Inspect</button></td></tr>{/each}</tbody></table></div>
-            <div class="investigation-pagination"><button type="button" onclick={previousDeliveries} disabled={deliveryPageIndex === 0 || deliveriesLoading}>Previous</button><span>Page {deliveryPageIndex + 1}</span><button type="button" onclick={nextDeliveries} disabled={!deliveryCursor || deliveriesLoading}>Next</button></div>
-          {:else}<p class="investigation-muted">No persisted delivery records were returned. This does not imply provider delivery is enabled or disabled.</p>{/if}
-        {/if}
-
-        {#if detailLoading}<p class="investigation-muted" aria-live="polite">Loading selected record…</p>{/if}
-        {#if detailError}<p class="investigation-error" role="alert">{detailError}</p>{/if}
+        {#if detailLoading}<p class="text-sm text-muted-foreground" aria-live="polite">Loading selected record…</p>{/if}
+        {#if detailError}<Alert variant="destructive"><AlertDescription>{detailError}</AlertDescription></Alert>{/if}
         {#if selectedEvidence}
-          <div class="investigation-detail"><div class="investigation-detail__heading"><div><p class="investigation-eyebrow">{selectedEvidence.kind === 'rejected' ? 'REJECTED EVIDENCE' : 'VERIFIED EVIDENCE'}</p><h3>Evidence record</h3></div><button type="button" class="investigation-close" onclick={closeSelectedEvidence}>Close</button></div><dl class="detail-grid"><div><dt>Evidence ID</dt><dd><code>{selectedEvidence.detail.id ?? selectedEvidence.id}</code></dd></div><div><dt>Request ID</dt><dd><code>{formatValue(selectedEvidence.detail.request_id)}</code></dd></div><div><dt>Configuration</dt><dd>v{formatValue(selectedEvidence.detail.config_version)}</dd></div><div><dt>{selectedEvidence.kind === 'rejected' ? 'Recorded at' : 'Observed at'}</dt><dd>{formatDate(selectedEvidence.detail.observed_at ?? selectedEvidence.detail.created_at)}</dd></div>{#if selectedEvidence.kind === 'rejected'}<div><dt>Rejection reason</dt><dd><code>{formatValue(selectedEvidence.detail.reason?.code)}</code></dd></div><div><dt>Reason parameters</dt><dd><pre>{JSON.stringify(selectedEvidence.detail.reason?.params ?? null, null, 2)}</pre></dd></div>{:else}<div class="detail-grid__wide"><dt>Verified fields</dt><dd><pre>{JSON.stringify(selectedEvidence.detail.fields ?? {}, null, 2)}</pre></dd></div>{/if}</dl>{#if selectedEvidence.detail.trace_available === true}<button type="button" class="investigation-primary" onclick={openTrace} disabled={traceLoading}>{traceLoading ? 'Loading trace…' : selectedTrace ? 'Refresh trace' : 'Load submitted trace'}</button><p class="investigation-muted">The original payload is fetched only on request when the API reports that a trace is available.</p>{:else}<p class="investigation-muted">The API reports that a trace is unavailable for this record.</p>{/if}{#if traceError}<p class="investigation-error" role="alert">{traceError}</p>{/if}{#if selectedTrace}<details open class="investigation-json"><summary>Trace payload and metadata</summary><pre>{JSON.stringify(selectedTrace, null, 2)}</pre></details>{/if}</div>
+          <article class="space-y-4 rounded-lg border bg-card p-4 sm:p-5">
+            <div class="flex flex-wrap items-start justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground">{selectedEvidence.kind === 'rejected' ? 'Rejected evidence' : 'Verified evidence'}</p><h3 class="mt-1 font-semibold">Evidence record</h3></div><Button variant="ghost" size="sm" onclick={closeSelectedEvidence}><X class="size-4" /> Close</Button></div>
+            <dl class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <div><dt class="text-xs text-muted-foreground">Evidence ID</dt><dd class="mt-1 break-all text-sm"><code>{selectedEvidence.detail.id ?? selectedEvidence.id}</code></dd></div>
+              <div><dt class="text-xs text-muted-foreground">Request ID</dt><dd class="mt-1 break-all text-sm"><code>{formatValue(selectedEvidence.detail.request_id)}</code></dd></div>
+              <div><dt class="text-xs text-muted-foreground">Configuration</dt><dd class="mt-1 text-sm">v{formatValue(selectedEvidence.detail.config_version)}</dd></div>
+              <div><dt class="text-xs text-muted-foreground">{selectedEvidence.kind === 'rejected' ? 'Recorded at' : 'Observed at'}</dt><dd class="mt-1 text-sm">{formatDate(selectedEvidence.detail.observed_at ?? selectedEvidence.detail.created_at)}</dd></div>
+              {#if selectedEvidence.kind === 'rejected'}<div><dt class="text-xs text-muted-foreground">Rejection reason</dt><dd class="mt-1 text-sm"><code>{formatValue(selectedEvidence.detail.reason?.code)}</code></dd></div><div class="sm:col-span-2"><dt class="text-xs text-muted-foreground">Reason parameters</dt><dd class="mt-1"><pre class="max-h-64 overflow-auto rounded-md bg-muted p-3 text-xs">{JSON.stringify(selectedEvidence.detail.reason?.params ?? null, null, 2)}</pre></dd></div>{:else}<div class="sm:col-span-2 xl:col-span-3"><dt class="text-xs text-muted-foreground">Verified fields</dt><dd class="mt-1"><pre class="max-h-64 overflow-auto rounded-md bg-muted p-3 text-xs">{JSON.stringify(selectedEvidence.detail.fields ?? {}, null, 2)}</pre></dd></div>{/if}
+            </dl>
+            {#if selectedEvidence.detail.trace_available === true}
+              <div class="space-y-2"><Button onclick={openTrace} disabled={traceLoading}><Database class="size-4" />{traceLoading ? 'Loading trace…' : selectedTrace ? 'Refresh trace' : 'Load submitted trace'}</Button><p class="text-xs text-muted-foreground">The original payload is fetched only on request when the API reports that a trace is available.</p></div>
+            {:else}<p class="text-sm text-muted-foreground">The API reports that a trace is unavailable for this record.</p>{/if}
+            {#if traceError}<Alert variant="destructive"><AlertDescription>{traceError}</AlertDescription></Alert>{/if}
+            {#if selectedTrace}<details open><summary class="cursor-pointer text-sm font-medium">Trace payload and metadata</summary><pre class="mt-3 max-h-96 overflow-auto rounded-md bg-muted p-3 text-xs">{JSON.stringify(selectedTrace, null, 2)}</pre></details>{/if}
+          </article>
         {/if}
-        {#if deliveryDetailError}<p class="investigation-error" role="alert">{deliveryDetailError}</p>{/if}
-        {#if selectedDelivery}<div class="investigation-detail"><div class="investigation-detail__heading"><div><p class="investigation-eyebrow">READ-ONLY DELIVERY INSPECTION</p><h3>Delivery record</h3></div><button type="button" class="investigation-close" onclick={closeSelectedDelivery}>Close</button></div><p class="investigation-muted">Delivery status is derived from persisted per-channel state. Manual retry is not available here.</p><details open><summary>Delivery snapshot and bounded diagnostics</summary><pre>{JSON.stringify(selectedDelivery, null, 2)}</pre></details></div>{/if}
+        {#if deliveryDetailError}<Alert variant="destructive"><AlertDescription>{deliveryDetailError}</AlertDescription></Alert>{/if}
+        {#if selectedDelivery}
+          <article class="space-y-3 rounded-lg border bg-card p-4 sm:p-5">
+            <div class="flex flex-wrap items-start justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground">Read-only delivery inspection</p><h3 class="mt-1 font-semibold">Delivery record</h3></div><Button variant="ghost" size="sm" onclick={closeSelectedDelivery}><X class="size-4" /> Close</Button></div>
+            <p class="text-sm text-muted-foreground">Delivery status is derived from persisted per-channel state. Manual retry is not available here.</p>
+            <details open><summary class="cursor-pointer text-sm font-medium">Delivery snapshot and bounded diagnostics</summary><pre class="mt-3 max-h-96 overflow-auto rounded-md bg-muted p-3 text-xs">{JSON.stringify(selectedDelivery, null, 2)}</pre></details>
+          </article>
+        {/if}
       </section>
     {/if}
   {/if}
-</section>
+</main>
