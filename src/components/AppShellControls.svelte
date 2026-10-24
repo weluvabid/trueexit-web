@@ -296,8 +296,9 @@
   <Command.List class="max-h-[min(65vh,32rem)]">
     <Command.Group heading="Navigation">
       {#each navigationItems as item (item.href)}
+        {@const Icon = resultIcon(item.kind)}
         <Command.LinkItem href={item.href} value={`${item.label} ${item.detail}`} onSelect={() => { searchOpen = false; }}>
-          <svelte:component this={resultIcon(item.kind)} class="size-4 text-muted-foreground" />
+          <Icon class="size-4 text-muted-foreground" />
           <span>{item.label}</span><span class="ml-auto text-xs text-muted-foreground">{item.detail}</span>
         </Command.LinkItem>
       {/each}
@@ -309,8 +310,9 @@
           <div class="px-2 py-3 text-sm text-muted-foreground">Searching this workspace…</div>
         {:else if searchResults.length}
           {#each searchResults as item, index (`${item.kind}-${item.label}-${index}`)}
+            {@const Icon = resultIcon(item.kind)}
             <Command.LinkItem href={item.href} value={`${item.label} ${item.detail}`} onSelect={() => { searchOpen = false; }}>
-              <svelte:component this={resultIcon(item.kind)} class="size-4 text-muted-foreground" />
+              <Icon class="size-4 text-muted-foreground" />
               <span class="min-w-0 flex-1 truncate">{item.label}</span>
               <span class="max-w-[45%] truncate text-xs text-muted-foreground">{item.detail}</span>
             </Command.LinkItem>
