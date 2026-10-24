@@ -253,14 +253,30 @@
       </DropdownMenu.Content>
     </DropdownMenu.Root>
 
-    <Button variant="outline" size="sm" class="search-trigger gap-2" onclick={openSearch} aria-label="Quick navigation" title="Quick navigation (⌘K)">
-      <Search class="size-4" />
-      <span class="hidden text-xs sm:inline">Search</span>
-      <kbd class="rounded border px-1 py-0.5 text-[10px] text-muted-foreground">⌘ K</kbd>
-    </Button>
   </div>
 
+  <Button variant="ghost" size="icon" class="search-trigger" onclick={openSearch} aria-label="Quick navigation" title="Quick navigation (⌘K)">
+    <Search class="size-4" />
+  </Button>
+
   <div class="app-header__utilities" aria-label="Application utilities">
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger class="icon-button" aria-label={`Appearance: ${appearanceLabels[appearance]}`}>
+        {#if appearance === 'system'}<Monitor class="size-5" />{:else if appearance === 'light'}<Sun class="size-5" />{:else}<Moon class="size-5" />{/if}
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Content align="end">
+        <DropdownMenu.Label>Appearance</DropdownMenu.Label>
+        <DropdownMenu.Separator />
+        {#each appearanceOrder as option}
+          <DropdownMenu.Item onSelect={() => applyAppearance(option)}>
+            {#if option === 'system'}<Monitor class="size-4" />{:else if option === 'light'}<Sun class="size-4" />{:else}<Moon class="size-4" />{/if}
+            {appearanceLabels[option]}
+            {#if appearance === option}<Check class="ml-auto size-4" />{/if}
+          </DropdownMenu.Item>
+        {/each}
+      </DropdownMenu.Content>
+    </DropdownMenu.Root>
+
     <DropdownMenu.Root bind:open={accountMenuOpen}>
       <DropdownMenu.Trigger class="account-menu__trigger" aria-label="Open account menu">
         <span class="account-avatar" aria-hidden="true">{initials}</span>
@@ -279,23 +295,6 @@
         }}>
           <LogOut class="size-4" /> Sign out <ArrowUpRight class="ml-auto size-4" />
         </DropdownMenu.Item>
-      </DropdownMenu.Content>
-    </DropdownMenu.Root>
-
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger class="icon-button" aria-label={`Appearance: ${appearanceLabels[appearance]}`}>
-        {#if appearance === 'system'}<Monitor class="size-5" />{:else if appearance === 'light'}<Sun class="size-5" />{:else}<Moon class="size-5" />{/if}
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Content align="end">
-        <DropdownMenu.Label>Appearance</DropdownMenu.Label>
-        <DropdownMenu.Separator />
-        {#each appearanceOrder as option}
-          <DropdownMenu.Item onSelect={() => applyAppearance(option)}>
-            {#if option === 'system'}<Monitor class="size-4" />{:else if option === 'light'}<Sun class="size-4" />{:else}<Moon class="size-4" />{/if}
-            {appearanceLabels[option]}
-            {#if appearance === option}<Check class="ml-auto size-4" />{/if}
-          </DropdownMenu.Item>
-        {/each}
       </DropdownMenu.Content>
     </DropdownMenu.Root>
   </div>
