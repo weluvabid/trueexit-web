@@ -371,7 +371,7 @@
           <p class="max-w-3xl text-sm text-muted-foreground">{monitor.description || 'No description added.'}</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <Badge variant={monitor.status === 'enabled' ? 'default' : monitor.status === 'archived' ? 'destructive' : 'secondary'} class="capitalize">{label(monitor.status)}</Badge>
+          <Badge variant={monitor.status === 'enabled' ? 'default' : 'secondary'} class="capitalize">{label(monitor.status)}</Badge>
           <Badge variant="outline">Cadence: {monitor.cadence_seconds ? `${monitor.cadence_seconds}s` : 'Unavailable'}</Badge>
           <span class="text-xs text-muted-foreground">Updated {formatDate(monitor.updated_at)}</span>
         </div>

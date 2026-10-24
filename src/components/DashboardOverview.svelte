@@ -431,7 +431,7 @@
               <Table.Header><Table.Row class="bg-muted/50 hover:bg-muted/50"><Table.Head>Monitor</Table.Head><Table.Head>Status</Table.Head><Table.Head>Updated</Table.Head><Table.Head class="text-right">Action</Table.Head></Table.Row></Table.Header>
               <Table.Body>
                 {#each detailMonitors as item (item.id)}
-                  <Table.Row><Table.Cell class="font-medium">{item.name}</Table.Cell><Table.Cell><Badge variant={item.status === 'enabled' ? 'default' : item.status === 'archived' ? 'destructive' : 'secondary'} class="capitalize">{item.status}</Badge></Table.Cell><Table.Cell class="text-muted-foreground">{formatDate(item.updated_at ?? '')}</Table.Cell><Table.Cell class="text-right"><Button variant="ghost" size="sm" href={`/monitors/${encodeURIComponent(item.id)}`}>Open <ArrowUpRight class="ml-1 size-4" /></Button></Table.Cell></Table.Row>
+                  <Table.Row><Table.Cell class="font-medium">{item.name}</Table.Cell><Table.Cell><Badge variant={item.status === 'enabled' ? 'default' : 'secondary'} class="capitalize">{item.status}</Badge></Table.Cell><Table.Cell class="text-muted-foreground">{formatDate(item.updated_at ?? '')}</Table.Cell><Table.Cell class="text-right"><Button variant="ghost" size="sm" href={`/monitors/${encodeURIComponent(item.id)}`}>Open <ArrowUpRight class="ml-1 size-4" /></Button></Table.Cell></Table.Row>
                 {/each}
               </Table.Body>
             </Table.Root>

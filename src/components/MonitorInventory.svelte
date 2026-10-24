@@ -247,7 +247,7 @@
                     </div>
                   </Table.Cell>
                   <Table.Cell>
-                    <Badge variant={monitor.status === 'enabled' ? 'default' : monitor.status === 'archived' ? 'destructive' : 'secondary'} class="capitalize">{monitor.status}</Badge>
+                    <Badge variant={monitor.status === 'enabled' ? 'default' : 'secondary'} class="capitalize">{monitor.status}</Badge>
                   </Table.Cell>
                   <Table.Cell>{formatMonitorCadence(monitor.cadence_seconds)}</Table.Cell>
                   <Table.Cell>v{monitor.current_config_version}</Table.Cell>
