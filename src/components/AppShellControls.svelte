@@ -255,9 +255,9 @@
             placeholder="Search workspaces…"
             aria-label="Search workspaces"
           />
-          <Command.List class="mt-4 max-h-72">
+          <Command.List class="mt-3 w-full max-h-72">
             <Command.Empty>No matching workspaces.</Command.Empty>
-            <Command.Group>
+            <Command.Group class="w-full">
               {#each workspaces as workspace (workspace.id)}
                 <Command.Item
                   value={`${workspace.name} ${workspace.personal ? 'Personal' : ''}`}
@@ -265,10 +265,10 @@
                     workspaceSearchQuery = '';
                     chooseWorkspace(workspace.id);
                   }}
-                  class="relative w-full cursor-pointer gap-2 px-3 py-2.5"
+                  class="relative box-border w-full cursor-pointer gap-2 px-3 py-2.5"
                 >
-                  <span class="min-w-0 flex-1 truncate">{workspace.name}{workspace.personal ? ' · Personal' : ''}</span>
-                  {#if workspace.id === activeWorkspaceId}<Check class="ml-auto size-4 shrink-0" />{/if}
+                  <span class="min-w-0 flex-1 truncate pr-8">{workspace.name}{workspace.personal ? ' · Personal' : ''}</span>
+                  {#if workspace.id === activeWorkspaceId}<Check class="pointer-events-none absolute right-3 size-4 shrink-0" />{/if}
                 </Command.Item>
               {/each}
             </Command.Group>
