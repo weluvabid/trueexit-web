@@ -1,9 +1,17 @@
 <svelte:options runes={true} />
-
 <script lang="ts">
   import type { MonitorEditorDraft, ChannelKind } from '../lib/client/monitor-editor-state';
   import type { MonitorChannel } from '../lib/client/monitor-queries';
   import { buildNotificationChannelConfig } from '../lib/client/settings-channel-config';
+  import * as Select from './ui/select/index.js';
+  import * as Dialog from './ui/dialog/index.js';
+  import { Button } from './ui/button/index.js';
+  import { Input } from './ui/input/index.js';
+  import { Textarea } from './ui/textarea/index.js';
+  import { Label } from './ui/label/index.js';
+  import { Badge } from './ui/badge/index.js';
+  import { Alert, AlertDescription } from './ui/alert/index.js';
+  import { Plus, X, RadioTower, Trash2 } from '@lucide/svelte';
 
   let {
     draft = $bindable(),
@@ -55,19 +63,16 @@
       newChannelError = 'A monitor can select at most 25 destinations.';
       return;
     }
-
     const label = newChannelLabel.trim();
     if (!label || label.length > 80) {
       newChannelError = 'Enter a destination label between 1 and 80 characters.';
       return;
     }
-
     const result = buildNotificationChannelConfig(newChannelType, newChannelAddress, newChannelHeaders);
     if (!result.ok) {
       newChannelError = result.error;
       return;
     }
-
     draft = {
       ...draft,
       channelSelection: [...draft.channelSelection, {
@@ -92,41 +97,96 @@
   }
 </script>
 
-<div class="monitor-create-section">
-  <div class="monitor-create-section__heading"><span>03</span><div><h3>Notification destinations</h3><p>Optional. Select saved destinations or configure one inline.</p></div></div>
-  {#if channelsError}<p class="monitor-form-error" role="alert">{channelsError}</p>{/if}
+<section class="space-y-4">
+  <div class="flex items-center gap-2">
+    <div class="grid size-9 place-items-center rounded-lg bg-muted"><RadioTower class="size-4" /></div>
+    <div><h3 class="text-sm font-semibold">Notification destinations</h3><p class="text-xs text-muted-foreground">Optional. Select saved destinations or configure one inline.</p></div>
+  </div>
+
+  {#if channelsError}<Alert variant="destructive"><AlertDescription>{channelsError}</AlertDescription></Alert>{/if}
   {#if channelsLoading}
-    <p class="monitor-form-hint">Loading workspace destinations…</p>
+    <p class="text-sm text-muted-foreground">Loading workspace destinations…</p>
   {:else if availableChannels.length > 0}
-    <div class="monitor-channel-add"><label class="monitor-form-field"><span>Saved destination</span><select value={effectiveSelectedChannelId} onchange={(event) => { selectedExistingChannelId = event.currentTarget.value; }}><option value="">Choose a destination…</option>{#each availableChannels as channel (channel.id)}<option value={channel.id}>{channel.label} · {channel.type}</option>{/each}</select></label><button class="monitor-button monitor-button--quiet" type="button" onclick={addExistingChannel} disabled={!effectiveSelectedChannelId || draft.channelSelection.length >= 25}>Add destination</button></div>
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-end">
+      <div class="min-w-0 flex-1 space-y-1.5">
+        <Label for="saved-monitor-destination">Saved destination</Label>
+        <Select.Root type="single" value={effectiveSelectedChannelId} onValueChange={(value) => { if (value) selectedExistingChannelId = value; }}>
+          <Select.Trigger id="saved-monitor-destination" class="w-full"><Select.Value placeholder="Choose a destination…" /></Select.Trigger>
+          <Select.Content>
+            {#each availableChannels as channel (channel.id)}
+              <Select.Item value={channel.id} label={`${channel.label} · ${channel.type}`}>{channel.label} · {channel.type}</Select.Item>
+            {/each}
+          </Select.Content>
+        </Select.Root>
+      </div>
+      <Button type="button" variant="outline" onclick={addExistingChannel} disabled={!effectiveSelectedChannelId || draft.channelSelection.length >= 25}><Plus class="size-4" /> Add destination</Button>
+    </div>
   {:else}
-    <p class="monitor-form-hint">No saved destinations available to select.</p>
+    <p class="rounded-md border border-dashed p-3 text-sm text-muted-foreground">No saved destinations available to select.</p>
   {/if}
+
   {#if draft.channelSelection.length > 0}
-    <div class="monitor-selected-channels" aria-label="Selected notification destinations">
+    <div class="space-y-2" aria-label="Selected notification destinations">
       {#each draft.channelSelection as selection, index}
-        <div class="monitor-selected-channel"><span class="monitor-selected-channel__icon" aria-hidden="true">{selection.kind === 'existing' ? '↗' : '＋'}</span><span><strong>{selection.kind === 'existing' ? selection.label : selection.displayLabel}</strong><small>{selection.kind === 'existing' ? 'Saved destination' : `New ${selection.type} destination`}</small></span><button type="button" aria-label={`Remove ${selection.kind === 'existing' ? selection.label : selection.displayLabel}`} onclick={() => removeChannelSelection(index)}>×</button></div>
+        <div class="flex items-center gap-3 rounded-md border p-3">
+          <div class="grid size-8 shrink-0 place-items-center rounded-md bg-muted"><RadioTower class="size-4" /></div>
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-sm font-medium">{selection.kind === 'existing' ? selection.label : selection.displayLabel}</p>
+            <p class="text-xs text-muted-foreground">{selection.kind === 'existing' ? 'Saved destination' : `New ${selection.type} destination`}</p>
+          </div>
+          <Badge variant="secondary">{selection.kind === 'existing' ? 'Saved' : 'New'}</Badge>
+          <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove ${selection.kind === 'existing' ? selection.label : selection.displayLabel}`} onclick={() => removeChannelSelection(index)}><Trash2 class="size-4 text-muted-foreground" /></Button>
+        </div>
       {/each}
     </div>
   {/if}
+
   {#if canManageChannels}
-    <button class="monitor-inline-configure" type="button" onclick={() => { newChannelOpen = !newChannelOpen; newChannelError = ''; }}>{newChannelOpen ? '− Close channel setup' : '＋ Add a channel'}</button>
-    {#if newChannelOpen}
-      <div class="monitor-channel-modal-backdrop" role="presentation" onclick={(event) => { if (event.target === event.currentTarget) newChannelOpen = false; }}>
-        <section class="monitor-new-channel-panel" role="dialog" aria-modal="true" aria-labelledby="monitor-channel-modal-title">
-          <header class="monitor-channel-modal__header"><div><p class="eyebrow">NOTIFICATION DESTINATION</p><h3 id="monitor-channel-modal-title">Add a channel</h3><p>Configure a destination and add it to this monitor draft.</p></div><button class="monitor-modal-close" type="button" aria-label="Close channel setup" onclick={() => { newChannelOpen = false; newChannelError = ''; }}>×</button></header>
-          {#if newChannelError}<p class="monitor-form-error" role="alert">{newChannelError}</p>{/if}
-          <div class="monitor-form-grid">
-            <label class="monitor-form-field"><span>Provider</span><select bind:value={newChannelType}><option value="webhook">Custom webhook</option><option value="email">Email</option><option value="slack">Slack incoming webhook</option><option value="discord">Discord webhook</option></select></label>
-            <label class="monitor-form-field"><span>Destination label <b>*</b></span><input bind:value={newChannelLabel} maxlength="80" placeholder="Operations alerts" /></label>
-            <label class="monitor-form-field monitor-form-field--wide"><span>{newChannelType === 'email' ? 'Recipient email' : 'HTTPS webhook URL'} <b>*</b></span><input bind:value={newChannelAddress} type={newChannelType === 'email' ? 'email' : 'url'} autocomplete="off" placeholder={newChannelType === 'email' ? 'ops@example.com' : newChannelType === 'slack' ? 'https://hooks.slack.com/services/…' : newChannelType === 'discord' ? 'https://discord.com/api/webhooks/…' : 'https://hooks.example.com/trueexit'} /></label>
-            {#if newChannelType !== 'email'}<label class="monitor-form-field monitor-form-field--wide"><span>Custom headers <small>Optional JSON object</small></span><textarea bind:value={newChannelHeaders} rows="2" spellcheck="false" placeholder={'{ "Authorization": "Bearer …" }'}></textarea><small>Stored encrypted. Never sent back to the browser after saving.</small></label>{/if}
+    <Button type="button" variant="outline" onclick={() => { newChannelOpen = true; newChannelError = ''; }} disabled={draft.channelSelection.length >= 25}><Plus class="size-4" /> Add a channel</Button>
+    <Dialog.Root open={newChannelOpen} onOpenChange={(open) => { newChannelOpen = open; if (!open) newChannelError = ''; }}>
+      <Dialog.Content class="max-h-[min(85vh,48rem)] overflow-y-auto sm:max-w-xl">
+        <Dialog.Header>
+          <Dialog.Title>Add a channel</Dialog.Title>
+          <Dialog.Description>Configure a notification destination and stage it in this monitor draft.</Dialog.Description>
+        </Dialog.Header>
+        {#if newChannelError}<Alert variant="destructive"><AlertDescription>{newChannelError}</AlertDescription></Alert>{/if}
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div class="space-y-1.5">
+            <Label for="new-channel-provider">Provider</Label>
+            <Select.Root type="single" value={newChannelType} onValueChange={(value) => { if (value === 'webhook' || value === 'email' || value === 'slack' || value === 'discord') newChannelType = value; }}>
+              <Select.Trigger id="new-channel-provider" class="w-full"><Select.Value /></Select.Trigger>
+              <Select.Content>
+                <Select.Item value="webhook">Custom webhook</Select.Item>
+                <Select.Item value="email">Email</Select.Item>
+                <Select.Item value="slack">Slack incoming webhook</Select.Item>
+                <Select.Item value="discord">Discord webhook</Select.Item>
+              </Select.Content>
+            </Select.Root>
           </div>
-          <div class="monitor-new-channel-actions"><p>Channel settings are staged in this form and submitted with the monitor.</p><div><button class="monitor-button monitor-button--quiet" type="button" onclick={() => { newChannelOpen = false; newChannelError = ''; }}>Cancel</button><button class="monitor-button monitor-button--primary" type="button" onclick={addNewChannel}>Add to monitor</button></div></div>
-        </section>
-      </div>
-    {/if}
+          <div class="space-y-1.5">
+            <Label for="new-channel-label">Destination label *</Label>
+            <Input id="new-channel-label" bind:value={newChannelLabel} maxlength={80} placeholder="Operations alerts" />
+          </div>
+          <div class="space-y-1.5 sm:col-span-2">
+            <Label for="new-channel-address">{newChannelType === 'email' ? 'Recipient email' : 'HTTPS webhook URL'} *</Label>
+            <Input id="new-channel-address" bind:value={newChannelAddress} type={newChannelType === 'email' ? 'email' : 'url'} autocomplete="off" placeholder={newChannelType === 'email' ? 'ops@example.com' : newChannelType === 'slack' ? 'https://hooks.slack.com/services/…' : newChannelType === 'discord' ? 'https://discord.com/api/webhooks/…' : 'https://hooks.example.com/trueexit'} />
+          </div>
+          {#if newChannelType !== 'email'}
+            <div class="space-y-1.5 sm:col-span-2">
+              <Label for="new-channel-headers">Custom headers <span class="font-normal text-muted-foreground">Optional JSON object</span></Label>
+              <Textarea id="new-channel-headers" bind:value={newChannelHeaders} rows={3} spellcheck="false" placeholder={'{ "Authorization": "Bearer …" }'} />
+              <p class="text-xs text-muted-foreground">Stored encrypted. Never sent back to the browser after saving.</p>
+            </div>
+          {/if}
+        </div>
+        <Dialog.Footer>
+          <p class="mr-auto max-w-xs text-xs text-muted-foreground">Channel settings are staged in this form and submitted with the monitor.</p>
+          <Button type="button" variant="outline" onclick={() => { newChannelOpen = false; newChannelError = ''; }}>Cancel</Button>
+          <Button type="button" onclick={addNewChannel}>Add to monitor</Button>
+        </Dialog.Footer>
+      </Dialog.Content>
+    </Dialog.Root>
   {:else}
-    <p class="monitor-form-hint">You can select saved destinations. Configuring a new destination requires workspace owner or admin access.</p>
+    <p class="text-xs text-muted-foreground">You can select saved destinations. Configuring a new destination requires workspace owner or admin access.</p>
   {/if}
-</div>
+</section>
