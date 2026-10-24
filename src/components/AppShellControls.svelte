@@ -244,7 +244,7 @@
         <ChevronDown class="size-4 shrink-0" />
       </Popover.Trigger>
       <Popover.Content
-        class="w-80 max-w-[calc(100vw-1.5rem)] gap-0 p-0"
+        class="w-80 max-w-[calc(100vw-1.5rem)] gap-0 p-2"
         align="center"
         sideOffset={8}
         aria-label="Switch workspace"
@@ -255,7 +255,7 @@
             placeholder="Search workspaces…"
             aria-label="Search workspaces"
           />
-          <Command.List class="max-h-72">
+          <Command.List class="mt-3 max-h-72">
             <Command.Empty>No matching workspaces.</Command.Empty>
             <Command.Group>
               {#each workspaces as workspace (workspace.id)}
@@ -265,7 +265,7 @@
                     workspaceSearchQuery = '';
                     chooseWorkspace(workspace.id);
                   }}
-                  class="cursor-pointer"
+                  class="relative w-full cursor-pointer gap-2 px-3 py-2.5"
                 >
                   <span class="flex min-w-0 flex-1 items-center gap-2">
                     <span
@@ -273,9 +273,9 @@
                       class:bg-primary={workspace.id === activeWorkspaceId}
                       aria-hidden="true"
                     ></span>
-                    <span class="truncate">{workspace.name}{workspace.personal ? ' · Personal' : ''}</span>
+                    <span class="min-w-0 flex-1 truncate pr-7">{workspace.name}{workspace.personal ? ' · Personal' : ''}</span>
                   </span>
-                  {#if workspace.id === activeWorkspaceId}<Check class="size-4" />{/if}
+                  {#if workspace.id === activeWorkspaceId}<Check class="absolute right-3 top-1/2 size-4 -translate-y-1/2" />{/if}
                 </Command.Item>
               {/each}
             </Command.Group>
