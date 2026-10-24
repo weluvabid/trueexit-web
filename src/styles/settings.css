@@ -153,12 +153,12 @@ html[data-theme="dark"] .settings-danger-zone h3 { color:#ffc0c6; }
 .settings-workspace .settings-account-status span { color:var(--text-muted,#a7a1b6); }
 .settings-workspace .settings-account-status strong { color:var(--text-primary,#f2eff8); }
 .settings-workspace .settings-form__footer { border-color:var(--border-subtle,#34313f); }
-:global(html[data-theme='light']) .settings-workspace .settings-card { background:#fff; border-color:#e5e8ef; }
-:global(html[data-theme='light']) .settings-workspace .settings-danger-zone { background:linear-gradient(115deg,#fff5f6,#fff); border-color:#f0d9dc; }
-:global(html[data-theme='light']) .settings-workspace .settings-danger-zone h3 { color:#33313d; }
-:global(html[data-theme='light']) .settings-workspace .settings-danger-zone p { color:#828a99; }
-:global(html[data-theme='light']) .settings-workspace .settings-account-status > div { background:#fbfcfe; border-color:#e8ebf1; }
-:global(html[data-theme='light']) .settings-workspace .settings-account-status span { color:#89909e; }
-:global(html[data-theme='light']) .settings-workspace .settings-account-status strong { color:#343948; }
-:global(html[data-theme='light']) .settings-workspace .settings-field input,:global(html[data-theme='light']) .settings-workspace .settings-field textarea,:global(html[data-theme='light']) .settings-workspace .settings-field select { background:#fff; color:#202431; border-color:#dfe3eb; }
+html[data-theme='light'] .settings-workspace .settings-card { background:#fff; border-color:#e5e8ef; }
+html[data-theme='light'] .settings-workspace .settings-danger-zone { background:linear-gradient(115deg,#fff5f6,#fff); border-color:#f0d9dc; }
+html[data-theme='light'] .settings-workspace .settings-danger-zone h3 { color:#33313d; }
+html[data-theme='light'] .settings-workspace .settings-danger-zone p { color:#828a99; }
+html[data-theme='light'] .settings-workspace .settings-account-status > div { background:#fbfcfe; border-color:#e8ebf1; }
+html[data-theme='light'] .settings-workspace .settings-account-status span { color:#89909e; }
+html[data-theme='light'] .settings-workspace .settings-account-status strong { color:#343948; }
+html[data-theme='light'] .settings-workspace .settings-field input,html[data-theme='light'] .settings-workspace .settings-field textarea,html[data-theme='light'] .settings-workspace .settings-field select { background:#fff; color:#202431; border-color:#dfe3eb; }
 @media(max-width:640px){.settings-danger-zone--closure > .settings-button{flex:0 0 auto;align-self:stretch}.settings-account-create .settings-inline-form{grid-template-columns:1fr}}
