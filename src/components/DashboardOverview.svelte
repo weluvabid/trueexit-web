@@ -10,7 +10,7 @@
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveAndPersistWorkspaceId } from '../lib/client/workspace-preference';
   import { formatDateTime } from '../lib/client/date-format';
-  import { filterAttentionItems, formatRelativeDate, getDashboardSummaryMetrics, type AttentionFilter } from '../lib/client/dashboard-model';
+  import { filterAttentionItems, formatRelativeDate, getAttentionSeverityClasses, getAttentionSeverityTextClass, getDashboardSummaryMetrics, type AttentionFilter } from '../lib/client/dashboard-model';
   import type { AttentionItem } from '../lib/client/dashboard-queries';
   import * as Table from './ui/table/index.js';
   import * as Tabs from './ui/tabs/index.js';
@@ -339,7 +339,7 @@
               <span class="mb-2 block size-2 rounded-full bg-muted-foreground"></span><strong class="block text-xl tabular-nums">{dashboard.summary.disabled_monitors}</strong><span class="text-xs text-muted-foreground">Disabled</span>
             </button>
             <button type="button" class="rounded-lg p-2 text-left transition-colors hover:bg-muted" onclick={() => { attentionFilter = 'all'; openView('attention'); }}>
-              <span class="mb-2 block size-2 rounded-full bg-destructive"></span><strong class="block text-xl tabular-nums">{dashboard.summary.needs_attention}</strong><span class="text-xs text-muted-foreground">Attention</span>
+              <span class="mb-2 block size-2 rounded-full bg-status-warning"></span><strong class="block text-xl tabular-nums">{dashboard.summary.needs_attention}</strong><span class="text-xs text-muted-foreground">Attention</span>
             </button>
           </div>
         </section>
@@ -363,7 +363,7 @@
         </section>
 
         <section class="min-w-0 rounded-xl border bg-card p-5 lg:col-span-2 2xl:col-span-2">
-          <div class="mb-4 flex flex-wrap items-start justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">What may need you</p><h2 class="mt-1 text-lg font-semibold">Attention queue</h2></div><Badge variant={dashboard.summary.needs_attention > 0 ? 'destructive' : 'secondary'}>{dashboard.summary.needs_attention} items</Badge></div>
+          <div class="mb-4 flex flex-wrap items-start justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">What may need you</p><h2 class="mt-1 text-lg font-semibold">Attention queue</h2></div><Badge variant="outline" class={dashboard.summary.needs_attention > 0 ? 'border-status-warning-border bg-status-warning-background text-status-warning' : ''}>{dashboard.summary.needs_attention} items</Badge></div>
           <div class="mb-4 flex flex-wrap gap-2" aria-label="Filter attention preview">
             {#each attentionFilters as filter}
               <Button size="sm" variant={attentionFilter === filter ? 'secondary' : 'outline'} aria-pressed={attentionFilter === filter} onclick={() => changeFilter(filter)}>{filterLabels[filter]}</Button>
@@ -373,8 +373,8 @@
             <div class="divide-y">
               {#each filteredAttention as item (`${item.monitor_id}-${item.reason}-${item.occurred_at ?? ''}`)}
                 <div class="flex items-start gap-3 py-4 first:pt-0 last:pb-0">
-                  <CircleAlert class="mt-1 size-4 shrink-0 text-destructive" />
-                  <div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-2"><strong class="text-sm">{item.monitor_name}</strong><Badge variant="outline">{reasonCopy[item.reason]?.title ?? 'Monitor needs review'}</Badge></div><p class="mt-1 text-sm text-muted-foreground">{reasonCopy[item.reason]?.detail ?? 'Review this monitor for more context.'}</p><p class="mt-2 text-xs text-muted-foreground">{formatRelativeDate(item.occurred_at ?? item.last_valid_evidence_at, Date.now(), formatDate)}</p></div>
+                  <CircleAlert class={`mt-1 size-4 shrink-0 ${getAttentionSeverityTextClass(item.severity)}`} />
+                  <div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-2"><strong class="text-sm">{item.monitor_name}</strong><Badge variant="outline" class={getAttentionSeverityClasses(item.severity)}>{reasonCopy[item.reason]?.title ?? 'Monitor needs review'}</Badge></div><p class="mt-1 text-sm text-muted-foreground">{reasonCopy[item.reason]?.detail ?? 'Review this monitor for more context.'}</p><p class="mt-2 text-xs text-muted-foreground">{formatRelativeDate(item.occurred_at ?? item.last_valid_evidence_at, Date.now(), formatDate)}</p></div>
                   <Button variant="ghost" size="icon-sm" href={`/monitors/${encodeURIComponent(item.monitor_id)}`} aria-label={`Investigate ${item.monitor_name}`}><ArrowUpRight class="size-4" /></Button>
                 </div>
               {/each}
@@ -414,7 +414,7 @@
               <Table.Header><Table.Row class="bg-muted/50 hover:bg-muted/50"><Table.Head>Monitor</Table.Head><Table.Head>Reason</Table.Head><Table.Head>Last observed</Table.Head><Table.Head class="text-right">Action</Table.Head></Table.Row></Table.Header>
               <Table.Body>
                 {#each dashboard.attention_items.filter((x) => attentionFilter === 'all' || x.reason === attentionFilter) as item (`${item.monitor_id}-${item.reason}-${item.occurred_at ?? ''}`)}
-                  <Table.Row><Table.Cell class="font-medium">{item.monitor_name}</Table.Cell><Table.Cell>{reasonCopy[item.reason]?.title ?? 'Monitor needs review'}</Table.Cell><Table.Cell class="text-muted-foreground">{formatDate(item.occurred_at ?? item.last_valid_evidence_at)}</Table.Cell><Table.Cell class="text-right"><Button variant="ghost" size="sm" href={`/monitors/${encodeURIComponent(item.monitor_id)}`}>Investigate <ArrowUpRight class="ml-1 size-4" /></Button></Table.Cell></Table.Row>
+                  <Table.Row><Table.Cell class="font-medium">{item.monitor_name}</Table.Cell><Table.Cell><Badge variant="outline" class={getAttentionSeverityClasses(item.severity)}>{reasonCopy[item.reason]?.title ?? 'Monitor needs review'}</Badge></Table.Cell><Table.Cell class="text-muted-foreground">{formatDate(item.occurred_at ?? item.last_valid_evidence_at)}</Table.Cell><Table.Cell class="text-right"><Button variant="ghost" size="sm" href={`/monitors/${encodeURIComponent(item.monitor_id)}`}>Investigate <ArrowUpRight class="ml-1 size-4" /></Button></Table.Cell></Table.Row>
                 {/each}
               </Table.Body>
             </Table.Root>

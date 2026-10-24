@@ -51,3 +51,20 @@ export function formatRelativeDate(
   const hours = Math.round(minutes / 60);
   return minutes < 1440 ? `In ${hours}h` : formatFallback(value);
 }
+
+
+/**
+ * Dashboard attention items currently expose warning severity for every reason.
+ * Keep these distinct from confirmed field-health failures: attention means
+ * review is needed, not that an outage has been independently established.
+ */
+export function getAttentionSeverityClasses(value: unknown): string {
+  if (value === 'warning') {
+    return 'border-status-warning-border bg-status-warning-background text-status-warning';
+  }
+  return 'border-status-neutral-border bg-status-neutral-background text-status-neutral';
+}
+
+export function getAttentionSeverityTextClass(value: unknown): string {
+  return value === 'warning' ? 'text-status-warning' : 'text-status-neutral';
+}
