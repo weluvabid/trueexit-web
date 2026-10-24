@@ -13,6 +13,7 @@
   import { Separator } from './ui/separator/index.js';
   import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, RefreshCw, X, FileSearch, Activity, Clock3, Bell, Database, AlertTriangle } from '@lucide/svelte';
   import { formatInvestigationDate, formatInvestigationValue, formatInvestigationLabel, getHealthCounts } from '../lib/client/investigation-format';
+  import { getHealthStateClasses, getHealthStateLabel, getHealthStateTextClass } from '../lib/client/health-status';
   import { buildInvestigationApiPath, getInvestigationErrorMessage, readInvestigationResource, investigationResourceQueryOptions, investigationQueryErrorMessage, type Resource } from '../lib/client/investigation-api';
   import { investigationDeliveryPageSchema, investigationDeliverySchema, investigationEvidencePageSchema, investigationEvidenceSchema, investigationHealthSchema, investigationHealthVersionSchema, investigationMonitorSchema, investigationRecordPageSchema, investigationRecordSchema } from '../lib/client/api-schemas';
   import type { InvestigationDeliveryContract, InvestigationEvidenceContract, InvestigationHealthVersionContract, InvestigationMonitorContract } from '../lib/client/api-schemas';
@@ -389,7 +390,7 @@
           <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {#each Object.entries(health.health?.fields ?? {}) as [fieldName, fieldState] (fieldName)}
               <article class="rounded-lg border bg-card p-4">
-                <div class="flex flex-wrap items-start justify-between gap-2"><h3 class="break-words font-medium">{fieldName}</h3><Badge variant={String(fieldState.state ?? 'unknown') === 'healthy' ? 'default' : String(fieldState.state ?? 'unknown') === 'unknown' ? 'secondary' : 'outline'} class="capitalize">{label(fieldState.state)}</Badge></div>
+                <div class="flex flex-wrap items-start justify-between gap-2"><h3 class="break-words font-medium">{fieldName}</h3><Badge variant="outline" class={getHealthStateClasses(fieldState.state)}>{getHealthStateLabel(fieldState.state)}</Badge></div>
                 <Separator class="my-4" />
                 <dl class="grid grid-cols-2 gap-3 text-sm">
                   <div><dt class="text-xs text-muted-foreground">Consecutive anomalies</dt><dd class="mt-1 font-medium">{formatValue(fieldState.consecutive_anomalies)}</dd></div>
@@ -427,7 +428,7 @@
                   <Table.Row>
                     <Table.Cell class="font-medium">v{version.config_version}</Table.Cell>
                     <Table.Cell><Badge variant={version.is_current ? 'default' : 'secondary'}>{version.is_current ? 'Current' : 'Historical'}</Badge></Table.Cell>
-                    <Table.Cell><div class="flex flex-wrap gap-2">{#each healthCounts(version.health_summary) as [key, value]}<span class="text-xs text-muted-foreground">{label(key)} <strong class="text-foreground">{formatValue(value)}</strong></span>{/each}</div></Table.Cell>
+                    <Table.Cell><div class="flex flex-wrap gap-2">{#each healthCounts(version.health_summary) as [key, value]}<span class="text-xs text-muted-foreground">{label(key)} <strong class={key === 'field_count' ? 'text-foreground' : getHealthStateTextClass(key)}>{formatValue(value)}</strong></span>{/each}</div></Table.Cell>
                     <Table.Cell class="text-right"><Button variant="outline" size="sm" onclick={() => openHealthVersion(version.config_version)}>Inspect <ExternalLink class="size-3.5" /></Button></Table.Cell>
                   </Table.Row>
                 {/each}
