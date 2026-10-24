@@ -263,6 +263,8 @@ html[data-theme="dark"] {
     width: min(100%, var(--content-width-comfortable));
     min-height: 3.75rem;
     margin-inline: auto;
+    position: relative;
+    display: flex;
     padding: 0.5rem 0.75rem;
     border: 1px solid color-mix(in oklab, var(--border) 78%, transparent);
     border-radius: 1rem;
@@ -354,6 +356,9 @@ html[data-theme="dark"] {
   }
 
   .app-header__navigation {
+    position: absolute;
+    inset-inline-start: 50%;
+    transform: translateX(-50%);
     order: 2;
     flex: 0 1 auto;
   }
@@ -370,6 +375,10 @@ html[data-theme="dark"] {
     min-height: 2.25rem;
     padding-inline: 0.625rem;
     border-radius: 0.625rem;
+  }
+
+  .app-nav__link.is-active {
+    box-shadow: 0 0 1.125rem -0.75rem color-mix(in oklab, var(--primary) 48%, transparent);
   }
 
   .app-nav__icon {
@@ -461,6 +470,7 @@ html[data-theme="dark"] {
   }
 
   .app-header__inner {
+    display: flex;
     flex-wrap: wrap;
   }
 
@@ -469,6 +479,9 @@ html[data-theme="dark"] {
   }
 
   .app-header__navigation {
+    position: static;
+    inset-inline-start: auto;
+    transform: none;
     order: 5;
     flex-basis: 100%;
     overflow-x: auto;
