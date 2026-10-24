@@ -1,6 +1,6 @@
 <svelte:options runes={true} />
 <script lang="ts">
-  import StyledSelect from './ui/StyledSelect.svelte';
+  import * as Select from './ui/select/index.js';
   import type { Monitor, MonitorStatus } from '../lib/client/monitor-types';
   import type { MonitorSort } from '../lib/client/monitor-queries';
   import { formatMonitorCadence, formatMonitorDate } from '../lib/client/monitor-format';
@@ -102,9 +102,48 @@
       <input bind:value={search} oninput={onSearchInput} placeholder="Search monitors…" maxlength="200" />
       {#if search}<button type="button" class="monitor-search__clear" aria-label="Clear search" onclick={() => { search = ''; onApplyFilters(); }}>×</button>{/if}
     </label>
-    <div class="monitor-filter"><span>Status</span><StyledSelect label="Status" value={statusFilter} options={[{ value: 'all', label: 'All active' }, { value: 'enabled', label: 'Enabled' }, { value: 'disabled', label: 'Disabled' }, { value: 'archived', label: 'Archived' }]} onChange={(value) => { statusFilter = value; onApplyFilters(); }} /></div>
-    <div class="monitor-filter"><span>Tag</span><StyledSelect label="Tag" value={tagFilter} options={[{ value: '', label: 'All tags' }, ...workspaceTags.map((tag) => ({ value: tag.id, label: tag.name }))]} onChange={(value) => { tagFilter = value; onApplyFilters(); }} /></div>
-    <div class="monitor-filter"><span>Sort by</span><StyledSelect label="Sort by" value={sort} options={[{ value: 'updated_at', label: 'Recently updated' }, { value: 'created_at', label: 'Recently created' }, { value: 'name', label: 'Name' }, { value: 'id', label: 'Default order' }]} onChange={(value) => { if (isMonitorSort(value)) { sort = value; onApplyFilters(); } }} /></div>
+    <div class="monitor-filter">
+      <span>Status</span>
+      <Select.Root type="single" value={statusFilter} onValueChange={(value) => { if (value) { statusFilter = value as 'all' | MonitorStatus; onApplyFilters(); } }}>
+        <Select.Trigger aria-label="Status" class="h-[42px] w-full min-w-[132px] rounded-[11px] bg-secondary text-[11px] font-medium">
+          <Select.Value placeholder="All active" />
+        </Select.Trigger>
+        <Select.Content class="min-w-42.5 rounded-xl">
+          <Select.Item value="all" label="All active">All active</Select.Item>
+          <Select.Item value="enabled" label="Enabled">Enabled</Select.Item>
+          <Select.Item value="disabled" label="Disabled">Disabled</Select.Item>
+          <Select.Item value="archived" label="Archived">Archived</Select.Item>
+        </Select.Content>
+      </Select.Root>
+    </div>
+    <div class="monitor-filter">
+      <span>Tag</span>
+      <Select.Root type="single" value={tagFilter || '__trueexit_all_tags__'} onValueChange={(value) => { if (value) { tagFilter = value === '__trueexit_all_tags__' ? '' : value; onApplyFilters(); } }}>
+        <Select.Trigger aria-label="Tag" class="h-[42px] w-full min-w-[132px] rounded-[11px] bg-secondary text-[11px] font-medium">
+          <Select.Value placeholder="All tags" />
+        </Select.Trigger>
+        <Select.Content class="min-w-[170px] rounded-xl">
+          <Select.Item value="__trueexit_all_tags__" label="All tags">All tags</Select.Item>
+          {#each workspaceTags as tag (tag.id)}
+            <Select.Item value={tag.id} label={tag.name}>{tag.name}</Select.Item>
+          {/each}
+        </Select.Content>
+      </Select.Root>
+    </div>
+    <div class="monitor-filter">
+      <span>Sort by</span>
+      <Select.Root type="single" value={sort} onValueChange={(value) => { if (value && isMonitorSort(value)) { sort = value; onApplyFilters(); } }}>
+        <Select.Trigger aria-label="Sort by" class="h-[42px] w-full min-w-[132px] rounded-[11px] bg-secondary text-[11px] font-medium">
+          <Select.Value placeholder="Recently updated" />
+        </Select.Trigger>
+        <Select.Content class="min-w-[170px] rounded-xl">
+          <Select.Item value="updated_at" label="Recently updated">Recently updated</Select.Item>
+          <Select.Item value="created_at" label="Recently created">Recently created</Select.Item>
+          <Select.Item value="name" label="Name">Name</Select.Item>
+          <Select.Item value="id" label="Default order">Default order</Select.Item>
+        </Select.Content>
+      </Select.Root>
+    </div>
     <button class="monitor-sort-direction" type="button" onclick={() => { direction = direction === 'desc' ? 'asc' : 'desc'; onApplyFilters(); }} aria-label={`Sort ${direction === 'desc' ? 'ascending' : 'descending'}`} title={`Currently ${direction === 'desc' ? 'descending' : 'ascending'}`}>
       {direction === 'desc' ? '↓' : '↑'} <span>{direction === 'desc' ? 'Desc' : 'Asc'}</span>
     </button>
