@@ -146,6 +146,26 @@ html[data-theme="dark"] {
 }
 
 
+/* Keep the accessibility skip link available to keyboard users without
+   displaying it in the normal visual layout. */
+.skip-link {
+  position: absolute;
+  z-index: 100;
+  top: 0.5rem;
+  left: 0.5rem;
+  transform: translateY(calc(-100% - 0.75rem));
+  border-radius: 0.5rem;
+  background: var(--background);
+  padding: 0.625rem 0.875rem;
+  color: var(--foreground);
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
 /* Application layout foundations. Page-specific visual styling is intentionally
    kept out of this layer; these rules establish shared alignment and sizing. */
 :root {
@@ -206,8 +226,8 @@ html[data-theme="dark"] {
     display: flex;
     min-width: 0;
     align-items: center;
-    justify-content: space-between;
-    gap: 1.25rem;
+    justify-content: flex-start;
+    gap: 0.25rem;
   }
 
   .app-header__navigation {
@@ -402,7 +422,7 @@ html[data-theme="dark"] {
   .search-trigger {
     order: 3;
     flex: 0 0 auto;
-    margin-inline-end: -0.75rem;
+    margin-inline-end: 0;
     color: var(--muted-foreground);
   }
 
@@ -527,6 +547,10 @@ html[data-theme="dark"] {
   .mobile-nav-wrap .app-nav__icon {
     width: 1.125rem;
     height: 1.125rem;
+  }
+
+  .mobile-nav-wrap .app-nav__link.is-active {
+    box-shadow: 0 0 1.125rem -0.75rem color-mix(in oklab, var(--primary) 48%, transparent);
   }
 
   .app-main {

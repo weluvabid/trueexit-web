@@ -255,7 +255,7 @@
             placeholder="Search workspaces…"
             aria-label="Search workspaces"
           />
-          <Command.List class="mt-3 max-h-72">
+          <Command.List class="mt-4 max-h-72">
             <Command.Empty>No matching workspaces.</Command.Empty>
             <Command.Group>
               {#each workspaces as workspace (workspace.id)}
@@ -267,15 +267,8 @@
                   }}
                   class="relative w-full cursor-pointer gap-2 px-3 py-2.5"
                 >
-                  <span class="flex min-w-0 flex-1 items-center gap-2">
-                    <span
-                      class="size-2 shrink-0 rounded-full border"
-                      class:bg-primary={workspace.id === activeWorkspaceId}
-                      aria-hidden="true"
-                    ></span>
-                    <span class="min-w-0 flex-1 truncate pr-7">{workspace.name}{workspace.personal ? ' · Personal' : ''}</span>
-                  </span>
-                  {#if workspace.id === activeWorkspaceId}<Check class="absolute right-3 top-1/2 size-4 -translate-y-1/2" />{/if}
+                  <span class="min-w-0 flex-1 truncate">{workspace.name}{workspace.personal ? ' · Personal' : ''}</span>
+                  {#if workspace.id === activeWorkspaceId}<Check class="ml-auto size-4 shrink-0" />{/if}
                 </Command.Item>
               {/each}
             </Command.Group>
