@@ -237,7 +237,7 @@
         <span class="workspace-switcher__name">{#if workspaceLoading}Loading workspace…{:else if workspaceError}{workspaces.length ? 'Workspace unavailable' : 'No workspace'}{:else}{workspaces.find((workspace) => workspace.id === activeWorkspaceId)?.name || 'Choose workspace'}{/if}</span>
         <ChevronDown class="size-4 shrink-0" />
       </DropdownMenu.Trigger>
-      <DropdownMenu.Content class="w-80 max-w-[calc(100vw-1.5rem)]" align="start">
+      <DropdownMenu.Content class="w-80 max-w-[calc(100vw-1.5rem)]" align="center">
         <DropdownMenu.Label>Switch workspace</DropdownMenu.Label>
         <DropdownMenu.Separator />
         {#each workspaces as workspace (workspace.id)}

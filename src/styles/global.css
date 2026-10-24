@@ -402,6 +402,7 @@ html[data-theme="dark"] {
   .search-trigger {
     order: 3;
     flex: 0 0 auto;
+    margin-inline-end: -0.75rem;
     color: var(--muted-foreground);
   }
 
