@@ -2,12 +2,21 @@
 <script lang="ts">
   import * as v from 'valibot';
   import { ApiClientError } from '../../lib/client/api-client';
-  import './SettingsDestinationManager.css';
+
   import { getCachedSettingsResponse, getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../../lib/client/settings-api';
   import { settingsAcknowledgementSchema, settingsChannelSchema, settingsChannelValidationSchema } from '../../lib/client/api-schemas';
   import type { SettingsChannelContract } from '../../lib/client/api-schemas';
   import { parseApiBody } from '../../lib/client/api-schemas';
   import { buildNotificationChannelConfig, type NotificationChannelKind } from '../../lib/client/settings-channel-config';
+  import * as Select from '../ui/select/index.js';
+  import { Button } from '../ui/button/index.js';
+  import { Input } from '../ui/input/index.js';
+  import { Textarea } from '../ui/textarea/index.js';
+  import { Label } from '../ui/label/index.js';
+  import { Checkbox } from '../ui/checkbox/index.js';
+  import { Badge } from '../ui/badge/index.js';
+  import * as Alert from '../ui/alert/index.js';
+  import { Plus, X, Pencil, Trash2, Webhook, Mail, MessageSquare, CheckCircle2, Settings2 } from '@lucide/svelte';
 
   let { workspaceId = '', canManageWorkspace = false }: { workspaceId?: string; canManageWorkspace?: boolean } = $props();
 
@@ -168,39 +177,170 @@
   }
 </script>
 
-<section class="settings-card" aria-labelledby="settings-destinations-title">
-  <div class="settings-card__heading"><div><p class="settings-kicker">NOTIFICATION ROUTES</p><h2 id="settings-destinations-title">Choose where signals land.</h2><p>Secrets are never returned after saving. Destination setup is separate from provider delivery activation.</p></div><span class="settings-card__symbol">↗</span></div>
-  {#if error}<div class="settings-alert settings-alert--error" role="alert"><strong>Couldn’t complete that.</strong><span>{error}</span>{#if error.includes('verify your identity')}<a href="/login">Sign in again ↗</a>{/if}</div>{/if}
-  {#if notice}<div class="settings-alert settings-alert--success" role="status">{notice}</div>{/if}
-  {#if loading}<p class="settings-empty" aria-live="polite">Loading notification destinations…</p>{/if}
-  <div class="settings-destination-summary"><span><strong>{channels.length}</strong> saved destinations</span><span><strong>{channels.filter((item) => item.enabled).length}</strong> enabled</span><span>Maximum 25 per workspace</span></div>
+<section class="space-y-5 rounded-xl border bg-card p-5 sm:p-6" aria-labelledby="settings-destinations-title">
+  <header class="flex items-start gap-3">
+    <div class="grid size-10 shrink-0 place-items-center rounded-lg bg-muted"><Webhook class="size-5 text-muted-foreground" /></div>
+    <div class="min-w-0 flex-1 space-y-1">
+      <p class="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Notification routes</p>
+      <h2 id="settings-destinations-title" class="text-lg font-semibold tracking-tight">Notification destinations</h2>
+      <p class="text-sm text-muted-foreground">Secrets are never returned after saving. Destination setup is separate from provider delivery activation.</p>
+    </div>
+  </header>
+
+  {#if error}
+    <Alert.Root variant="destructive" role="alert">
+      <Alert.Title>Couldn’t complete that.</Alert.Title>
+      <Alert.Description>{error}{#if error.includes('verify your identity')} <a class="underline underline-offset-4" href="/login">Sign in again</a>{/if}</Alert.Description>
+    </Alert.Root>
+  {/if}
+  {#if notice}
+    <Alert.Root role="status">
+      <Alert.Title>Update complete</Alert.Title>
+      <Alert.Description>{notice}</Alert.Description>
+    </Alert.Root>
+  {/if}
+  {#if loading}
+    <p class="py-2 text-sm text-muted-foreground" aria-live="polite">Loading notification destinations…</p>
+  {/if}
+
+  <div class="grid gap-3 sm:grid-cols-3">
+    <div class="rounded-lg border p-3"><p class="text-xs text-muted-foreground">Saved destinations</p><p class="mt-1 text-2xl font-semibold">{channels.length}</p></div>
+    <div class="rounded-lg border p-3"><p class="text-xs text-muted-foreground">Enabled</p><p class="mt-1 text-2xl font-semibold">{channels.filter((item) => item.enabled).length}</p></div>
+    <div class="rounded-lg border p-3"><p class="text-xs text-muted-foreground">Workspace limit</p><p class="mt-1 text-2xl font-semibold">25</p></div>
+  </div>
+
   {#if channels.length}
-    <div class="settings-destination-list">{#each channels as channel (channel.id)}
-      <article class="settings-destination"><div class="settings-destination__mark">{channel.type === 'email' ? '@' : channel.type === 'slack' ? 'S' : channel.type === 'discord' ? 'D' : '↗'}</div>
-        <div class="settings-destination__body"><div class="settings-destination__title"><strong>{channel.label}</strong><span class:settings-pill--off={!channel.enabled} class="settings-pill">{channel.enabled ? 'Enabled' : 'Disabled'}</span></div><p>{channel.type.toUpperCase()} · Priority {channel.priority ?? 0} · {channel.configured ? 'Configured' : 'Needs configuration'}</p></div>
-        {#if canManageWorkspace}<div class="settings-destination__actions"><button class="settings-text-button" type="button" onclick={() => beginEditChannel(channel)} disabled={!!busyKey}>Edit</button><button class="settings-text-button settings-text-button--danger" type="button" onclick={() => deleteChannel(channel)} disabled={!!busyKey}>Delete</button></div>{/if}
-      </article>
-    {/each}</div>
-  {:else if !loading}<p class="settings-empty">No notification destinations saved yet.</p>{/if}
+    <div class="divide-y rounded-lg border">
+      {#each channels as channel (channel.id)}
+        <article class="flex flex-wrap items-start gap-3 p-4">
+          <div class="grid size-10 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+            {#if channel.type === 'email'}<Mail class="size-5" />
+            {:else if channel.type === 'slack'}<MessageSquare class="size-5" />
+            {:else if channel.type === 'discord'}<MessageSquare class="size-5" />
+            {:else}<Webhook class="size-5" />{/if}
+          </div>
+          <div class="min-w-0 flex-1 space-y-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <h3 class="font-medium">{channel.label}</h3>
+              <Badge variant={channel.enabled ? 'default' : 'secondary'}>{channel.enabled ? 'Enabled' : 'Disabled'}</Badge>
+              {#if !channel.configured}<Badge variant="outline">Needs configuration</Badge>{/if}
+            </div>
+            <p class="text-xs text-muted-foreground">{channel.type.toUpperCase()} · Priority {channel.priority ?? 0} · {channel.configured ? 'Configured' : 'Not configured'}</p>
+          </div>
+          {#if canManageWorkspace}
+            <div class="flex shrink-0 gap-1">
+              <Button variant="outline" size="sm" onclick={() => beginEditChannel(channel)} disabled={!!busyKey}><Pencil class="mr-1 size-3.5" />Edit</Button>
+              <Button variant="destructive" size="sm" onclick={() => deleteChannel(channel)} disabled={!!busyKey}><Trash2 class="mr-1 size-3.5" />Delete</Button>
+            </div>
+          {/if}
+        </article>
+      {/each}
+    </div>
+  {:else if !loading}
+    <div class="rounded-lg border border-dashed p-8 text-center">
+      <div class="mx-auto mb-3 grid size-10 place-items-center rounded-full bg-muted"><Webhook class="size-5 text-muted-foreground" /></div>
+      <p class="font-medium">No notification destinations yet</p>
+      <p class="mt-1 text-sm text-muted-foreground">Add a destination to configure where TrueExit can route signals.</p>
+    </div>
+  {/if}
+
   {#if canManageWorkspace}
-    <button class="settings-button settings-button--primary" type="button" onclick={() => { showCreateForm = !showCreateForm; editForm.id = ''; error = ''; }} disabled={channels.length >= 25 || !!busyKey}>{showCreateForm ? '− Close form' : '＋ Add destination'}</button>
+    <div>
+      <Button onclick={() => { showCreateForm = !showCreateForm; editForm.id = ''; error = ''; }} disabled={channels.length >= 25 || !!busyKey}>
+        {#if showCreateForm}<X class="mr-1 size-4" />Close form{:else}<Plus class="mr-1 size-4" />Add destination{/if}
+      </Button>
+    </div>
     {#if showCreateForm}
-      <form class="settings-channel-form" onsubmit={createChannel}><div class="settings-form-grid">
-        <label class="settings-field"><span>Provider</span><select bind:value={createForm.type}><option value="webhook">Custom webhook</option><option value="email">Email</option><option value="slack">Slack incoming webhook</option><option value="discord">Discord webhook</option></select></label>
-        <label class="settings-field"><span>Destination label</span><input bind:value={createForm.label} required maxlength="80" placeholder="Operations alerts" /></label>
-        <label class="settings-field settings-field--wide"><span>{createForm.type === 'email' ? 'Recipient email' : 'HTTPS webhook URL'}</span><input bind:value={createForm.address} required type={createForm.type === 'email' ? 'email' : 'url'} autocomplete="off" placeholder={createForm.type === 'email' ? 'ops@example.com' : 'https://hooks.example.com/…'} /></label>
-        {#if createForm.type !== 'email'}<label class="settings-field settings-field--wide"><span>Custom headers <small>Optional JSON object</small></span><textarea bind:value={createForm.headers} rows="3" spellcheck="false" placeholder={'{ "Authorization": "Bearer secret" }'}></textarea><small>Encrypted by the API and never returned after saving.</small></label>{/if}
-        <label class="settings-field"><span>Priority <small>Lower runs first</small></span><input bind:value={createForm.priority} type="number" min="0" max="1000" step="1" required /></label><label class="settings-check"><input bind:checked={createForm.enabled} type="checkbox" /><span>Destination enabled</span></label>
-      </div><div class="settings-form__footer"><span>Validation previews duplicates without contacting the destination.</span><button class="settings-button settings-button--primary" type="submit" disabled={!!busyKey}>{busyKey === 'create-channel' || busyKey === 'validate-channel' ? 'Validating…' : 'Validate & save'}</button></div></form>
+      <form class="space-y-5 rounded-lg border bg-muted/20 p-4 sm:p-5" onsubmit={createChannel}>
+        <div class="flex items-center gap-2"><Settings2 class="size-4 text-muted-foreground" /><h3 class="font-semibold">New destination</h3></div>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div class="grid gap-2">
+            <Label for="destination-provider">Provider</Label>
+            <Select.Root type="single" value={createForm.type} onValueChange={(value) => { if (value === 'webhook' || value === 'email' || value === 'slack' || value === 'discord') createForm.type = value; }}>
+              <Select.Trigger id="destination-provider"><Select.Value /></Select.Trigger>
+              <Select.Content>
+                <Select.Item value="webhook" label="Custom webhook">Custom webhook</Select.Item>
+                <Select.Item value="email" label="Email">Email</Select.Item>
+                <Select.Item value="slack" label="Slack incoming webhook">Slack incoming webhook</Select.Item>
+                <Select.Item value="discord" label="Discord webhook">Discord webhook</Select.Item>
+              </Select.Content>
+            </Select.Root>
+          </div>
+          <div class="grid gap-2">
+            <Label for="destination-label">Destination label</Label>
+            <Input id="destination-label" bind:value={createForm.label} required maxlength={80} placeholder="Operations alerts" />
+          </div>
+          <div class="grid gap-2 sm:col-span-2">
+            <Label for="destination-address">{createForm.type === 'email' ? 'Recipient email' : 'HTTPS webhook URL'}</Label>
+            <Input id="destination-address" bind:value={createForm.address} required type={createForm.type === 'email' ? 'email' : 'url'} autocomplete="off" placeholder={createForm.type === 'email' ? 'ops@example.com' : 'https://hooks.example.com/…'} />
+          </div>
+          {#if createForm.type !== 'email'}
+            <div class="grid gap-2 sm:col-span-2">
+              <Label for="destination-headers">Custom headers <span class="font-normal text-muted-foreground">Optional JSON object</span></Label>
+              <Textarea id="destination-headers" bind:value={createForm.headers} rows={3} spellcheck={false} placeholder={'{ "Authorization": "Bearer secret" }'} />
+              <p class="text-xs text-muted-foreground">Encrypted by the API and never returned after saving.</p>
+            </div>
+          {/if}
+          <div class="grid gap-2">
+            <Label for="destination-priority">Priority <span class="font-normal text-muted-foreground">Lower runs first</span></Label>
+            <Input id="destination-priority" bind:value={createForm.priority} type="number" min={0} max={1000} step={1} required />
+          </div>
+          <label class="flex min-h-9 items-center gap-2 text-sm">
+            <Checkbox bind:checked={createForm.enabled} />
+            Destination enabled
+          </label>
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+          <p class="text-xs text-muted-foreground">Validation previews duplicates without contacting the destination.</p>
+          <Button type="submit" disabled={!!busyKey}>
+            <CheckCircle2 class="mr-1 size-4" />
+            {busyKey === 'create-channel' || busyKey === 'validate-channel' ? 'Validating…' : 'Validate & save'}
+          </Button>
+        </div>
+      </form>
     {/if}
-  {:else}<p class="settings-note">You can view destinations, but only workspace owners and admins can change them.</p>{/if}
+  {:else}
+    <p class="text-sm text-muted-foreground">You can view destinations, but only workspace owners and admins can change them.</p>
+  {/if}
+
   {#if editForm.id}
-    <form class="settings-channel-form settings-channel-form--edit" onsubmit={saveChannelEdit}><div class="settings-card__heading"><div><p class="settings-kicker">EDIT DESTINATION</p><h2>{editForm.label || 'Destination settings'}</h2><p>Leave the secret fields blank to preserve the existing encrypted configuration.</p></div></div>
-      <div class="settings-form-grid"><label class="settings-field"><span>Label</span><input bind:value={editForm.label} required maxlength="80" /></label><label class="settings-field"><span>Priority</span><input bind:value={editForm.priority} type="number" min="0" max="1000" step="1" required /></label>
-        <label class="settings-field settings-field--wide"><span>{editForm.type === 'email' ? 'New recipient email (optional)' : 'New HTTPS webhook URL (optional)'}</span><input bind:value={editForm.address} type={editForm.type === 'email' ? 'email' : 'url'} autocomplete="off" placeholder="Leave blank to preserve current secret" oninput={() => editForm.configTouched = true} /></label>
-        {#if editForm.type !== 'email'}<label class="settings-field settings-field--wide"><span>Replace custom headers (optional JSON)</span><textarea bind:value={editForm.headers} rows="2" spellcheck="false" placeholder="Only used if replacing the destination config" oninput={() => editForm.configTouched = true}></textarea></label>{/if}
-        <label class="settings-check"><input bind:checked={editForm.enabled} type="checkbox" /><span>Destination enabled</span></label></div>
-      <div class="settings-form__footer"><span>Secret configuration is never prefilled.</span><div><button class="settings-button settings-button--quiet" type="button" onclick={() => editForm.id = ''}>Cancel</button><button class="settings-button settings-button--primary" type="submit" disabled={!!busyKey}>{busyKey === 'edit-channel' ? 'Saving…' : 'Save changes'}</button></div></div>
+    <form class="space-y-5 rounded-lg border p-4 sm:p-5" onsubmit={saveChannelEdit}>
+      <header class="space-y-1">
+        <p class="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Edit destination</p>
+        <h3 class="text-lg font-semibold">{editForm.label || 'Destination settings'}</h3>
+        <p class="text-sm text-muted-foreground">Leave secret fields blank to preserve the existing encrypted configuration.</p>
+      </header>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="grid gap-2">
+          <Label for="edit-destination-label">Label</Label>
+          <Input id="edit-destination-label" bind:value={editForm.label} required maxlength={80} />
+        </div>
+        <div class="grid gap-2">
+          <Label for="edit-destination-priority">Priority</Label>
+          <Input id="edit-destination-priority" bind:value={editForm.priority} type="number" min={0} max={1000} step={1} required />
+        </div>
+        <div class="grid gap-2 sm:col-span-2">
+          <Label for="edit-destination-address">{editForm.type === 'email' ? 'New recipient email (optional)' : 'New HTTPS webhook URL (optional)'}</Label>
+          <Input id="edit-destination-address" bind:value={editForm.address} type={editForm.type === 'email' ? 'email' : 'url'} autocomplete="off" placeholder="Leave blank to preserve current secret" oninput={() => editForm.configTouched = true} />
+        </div>
+        {#if editForm.type !== 'email'}
+          <div class="grid gap-2 sm:col-span-2">
+            <Label for="edit-destination-headers">Replace custom headers <span class="font-normal text-muted-foreground">(optional JSON)</span></Label>
+            <Textarea id="edit-destination-headers" bind:value={editForm.headers} rows={2} spellcheck={false} placeholder="Only used if replacing the destination config" oninput={() => editForm.configTouched = true} />
+          </div>
+        {/if}
+        <label class="flex min-h-9 items-center gap-2 text-sm">
+          <Checkbox bind:checked={editForm.enabled} />
+          Destination enabled
+        </label>
+      </div>
+      <div class="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+        <p class="text-xs text-muted-foreground">Secret configuration is never prefilled.</p>
+        <div class="flex gap-2">
+          <Button variant="outline" type="button" onclick={() => editForm.id = ''}>Cancel</Button>
+          <Button type="submit" disabled={!!busyKey}>{busyKey === 'edit-channel' ? 'Saving…' : 'Save changes'}</Button>
+        </div>
+      </div>
     </form>
   {/if}
 </section>

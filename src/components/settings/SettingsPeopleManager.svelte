@@ -7,6 +7,14 @@
   import { parseApiBody } from '../../lib/client/api-schemas';
   import { getCachedSettingsResponse, getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../../lib/client/settings-api';
   import { formatDateTime } from '../../lib/client/date-format';
+  import * as Table from '../ui/table/index.js';
+  import * as Select from '../ui/select/index.js';
+  import { Button } from '../ui/button/index.js';
+  import { Input } from '../ui/input/index.js';
+  import { Label } from '../ui/label/index.js';
+  import { Badge } from '../ui/badge/index.js';
+  import * as Alert from '../ui/alert/index.js';
+  import { UserPlus, ShieldCheck, Trash2, Mail, Clock, RefreshCw } from '@lucide/svelte';
 
   let { workspaceId = '', canManageWorkspace = false, refreshKey = 0 }: { workspaceId?: string; canManageWorkspace?: boolean; refreshKey?: number } = $props();
 
@@ -175,24 +183,136 @@
   }
 </script>
 
-<section class="settings-card" aria-labelledby="settings-people-title">
-  <div class="settings-card__heading"><div><p class="settings-kicker">TEAM DIRECTORY</p><h2 id="settings-people-title">The people behind the signals.</h2><p>Review access and adjust workspace roles. Account-owner safeguards are enforced by the API.</p></div><span class="settings-card__symbol">◎</span></div>
-  {#if error}<div class="settings-alert settings-alert--error" role="alert"><strong>Couldn’t complete that.</strong><span>{error}</span>{#if error.includes('verify your identity')}<a href="/login">Sign in again ↗</a>{/if}</div>{/if}
-  {#if notice}<div class="settings-alert settings-alert--success" role="status">{notice}</div>{/if}
-  {#if loading}<p class="settings-empty" aria-live="polite">Loading workspace members…</p>{/if}
-  {#if members.length}
-    <div class="settings-table-wrap"><table class="settings-table"><thead><tr><th>Person</th><th>Access</th><th>Actions</th></tr></thead><tbody>
-      {#each members as member (member.user_id)}
-        <tr><td><strong>{member.display_name || member.email}</strong><small>{member.email}</small></td><td>{#if member.account_owner}<span class="settings-pill">Account owner</span>{:else if canManageWorkspace}<select aria-label={`Role for ${member.email}`} value={member.role ?? 'member'} onchange={(event) => handleRoleChange(member, event.currentTarget.value)} disabled={!!busyKey}><option value="member">Member</option><option value="admin">Admin</option></select>{:else}<span class="settings-pill">{member.role ?? 'Member'}</span>{/if}</td><td>{#if canManageWorkspace && !member.account_owner}<button class="settings-text-button settings-text-button--danger" type="button" onclick={() => removeMember(member)} disabled={!!busyKey}>Remove</button>{:else}<span class="settings-note">Protected</span>{/if}</td></tr>
-      {/each}
-    </tbody></table></div>
-  {:else if !loading}<p class="settings-empty">No member records are available for this workspace, or you don’t have permission to view them.</p>{/if}
-</section>
+<div class="space-y-6">
+  <section class="space-y-4 rounded-xl border bg-card p-5 sm:p-6" aria-labelledby="settings-people-title">
+    <header class="flex items-start gap-3">
+      <div class="grid size-10 shrink-0 place-items-center rounded-lg bg-muted"><ShieldCheck class="size-5 text-muted-foreground" /></div>
+      <div class="min-w-0 space-y-1">
+        <p class="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Team directory</p>
+        <h2 id="settings-people-title" class="text-lg font-semibold tracking-tight">Workspace members</h2>
+        <p class="text-sm text-muted-foreground">Review access and adjust workspace roles. Account-owner safeguards are enforced by the API.</p>
+      </div>
+    </header>
 
-<section class="settings-card" aria-labelledby="settings-invitations-title">
-  <div class="settings-card__heading"><div><p class="settings-kicker">INVITATIONS</p><h2 id="settings-invitations-title">Bring the right people in.</h2><p>Invitations are recorded by the API. Email delivery is currently stubbed and is not sent automatically.</p></div><span class="settings-card__symbol">↗</span></div>
-  {#if canManageWorkspace}
-    <form class="settings-inline-form" onsubmit={sendInvitation}><label class="settings-field"><span>Email address</span><input bind:value={inviteEmail} type="email" maxlength="320" required placeholder="teammate@company.com" /></label><button class="settings-button settings-button--primary" type="submit" disabled={!!busyKey}>{busyKey === 'invite' ? 'Adding…' : 'Create invitation'}</button></form>
-  {:else}<p class="settings-note">Only workspace owners and admins can manage invitations.</p>{/if}
-  {#if invitations.length}<div class="settings-list">{#each invitations as invitation (invitation.id)}<div class="settings-list-row"><div><strong>{invitation.email}</strong><small>Expires {formatDate(invitation.expires_at)} · {invitation.role}</small></div>{#if canManageWorkspace}<button class="settings-text-button settings-text-button--danger" type="button" onclick={() => revokeInvitation(invitation)} disabled={!!busyKey}>Revoke</button>{/if}</div>{/each}</div>{:else if invitationsUnavailable}<p class="settings-empty">Invitations are currently unavailable for this workspace.</p>{:else if !loading}<p class="settings-empty">No pending invitations.</p>{/if}
-</section>
+    {#if error}
+      <Alert.Root variant="destructive" role="alert">
+        <Alert.Title>Couldn’t complete that.</Alert.Title>
+        <Alert.Description>{error}{#if error.includes('verify your identity')} <a class="underline underline-offset-4" href="/login">Sign in again</a>{/if}</Alert.Description>
+      </Alert.Root>
+    {/if}
+    {#if notice}
+      <Alert.Root role="status">
+        <Alert.Title>Update complete</Alert.Title>
+        <Alert.Description>{notice}</Alert.Description>
+      </Alert.Root>
+    {/if}
+    {#if loading}
+      <p class="py-3 text-sm text-muted-foreground" aria-live="polite">Loading workspace members…</p>
+    {/if}
+
+    {#if members.length}
+      <div class="overflow-hidden rounded-lg border">
+        <Table.Root class="min-w-[38rem]">
+          <Table.Header>
+            <Table.Row class="bg-muted/50 hover:bg-muted/50">
+              <Table.Head>Person</Table.Head>
+              <Table.Head>Access</Table.Head>
+              <Table.Head class="text-right">Actions</Table.Head>
+            </Table.Row>
+          </Table.Header>
+          <Table.Body>
+            {#each members as member (member.user_id)}
+              <Table.Row>
+                <Table.Cell class="whitespace-normal">
+                  <div class="min-w-0">
+                    <p class="font-medium">{member.display_name || member.email}</p>
+                    <p class="text-xs text-muted-foreground">{member.email}</p>
+                  </div>
+                </Table.Cell>
+                <Table.Cell>
+                  {#if member.account_owner}
+                    <Badge variant="outline"><ShieldCheck class="mr-1 size-3" />Account owner</Badge>
+                  {:else if canManageWorkspace}
+                    <Select.Root type="single" value={member.role ?? 'member'} onValueChange={(value) => handleRoleChange(member, value)} disabled={!!busyKey}>
+                      <Select.Trigger class="w-32" aria-label={`Role for ${member.email}`}>
+                        <Select.Value />
+                      </Select.Trigger>
+                      <Select.Content>
+                        <Select.Item value="member" label="Member">Member</Select.Item>
+                        <Select.Item value="admin" label="Admin">Admin</Select.Item>
+                      </Select.Content>
+                    </Select.Root>
+                  {:else}
+                    <Badge variant="secondary" class="capitalize">{member.role ?? 'member'}</Badge>
+                  {/if}
+                </Table.Cell>
+                <Table.Cell class="text-right">
+                  {#if canManageWorkspace && !member.account_owner}
+                    <Button variant="destructive" size="sm" onclick={() => removeMember(member)} disabled={!!busyKey}>
+                      <Trash2 class="mr-1 size-3.5" />Remove
+                    </Button>
+                  {:else}
+                    <span class="text-xs text-muted-foreground">Protected</span>
+                  {/if}
+                </Table.Cell>
+              </Table.Row>
+            {/each}
+          </Table.Body>
+        </Table.Root>
+      </div>
+    {:else if !loading}
+      <div class="rounded-lg border border-dashed p-8 text-center">
+        <p class="font-medium">No member records available</p>
+        <p class="mt-1 text-sm text-muted-foreground">The workspace may have no visible member records, or you may not have permission to view them.</p>
+      </div>
+    {/if}
+  </section>
+
+  <section class="space-y-4 rounded-xl border bg-card p-5 sm:p-6" aria-labelledby="settings-invitations-title">
+    <header class="flex items-start gap-3">
+      <div class="grid size-10 shrink-0 place-items-center rounded-lg bg-muted"><Mail class="size-5 text-muted-foreground" /></div>
+      <div class="min-w-0 space-y-1">
+        <p class="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Invitations</p>
+        <h2 id="settings-invitations-title" class="text-lg font-semibold tracking-tight">Invite teammates</h2>
+        <p class="text-sm text-muted-foreground">Invitations are recorded by the API. Email delivery is currently stubbed and is not sent automatically.</p>
+      </div>
+    </header>
+
+    {#if canManageWorkspace}
+      <form class="flex flex-col gap-3 sm:flex-row sm:items-end" onsubmit={sendInvitation}>
+        <div class="grid flex-1 gap-2">
+          <Label for="settings-invite-email">Email address</Label>
+          <Input id="settings-invite-email" bind:value={inviteEmail} type="email" maxlength={320} required placeholder="teammate@company.com" />
+        </div>
+        <Button type="submit" disabled={!!busyKey}>
+          <UserPlus class="mr-1 size-4" />
+          {busyKey === 'invite' ? 'Adding…' : 'Create invitation'}
+        </Button>
+      </form>
+    {:else}
+      <p class="text-sm text-muted-foreground">Only workspace owners and admins can manage invitations.</p>
+    {/if}
+
+    {#if invitations.length}
+      <div class="divide-y rounded-lg border">
+        {#each invitations as invitation (invitation.id)}
+          <div class="flex flex-wrap items-center justify-between gap-3 p-4">
+            <div class="min-w-0">
+              <p class="font-medium">{invitation.email}</p>
+              <p class="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"><Clock class="size-3.5" /> Expires {formatDate(invitation.expires_at)} · <span class="capitalize">{invitation.role}</span></p>
+            </div>
+            {#if canManageWorkspace}
+              <Button variant="destructive" size="sm" onclick={() => revokeInvitation(invitation)} disabled={!!busyKey}>
+                <Trash2 class="mr-1 size-3.5" />Revoke
+              </Button>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    {:else if invitationsUnavailable}
+      <p class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Invitations are currently unavailable for this workspace.</p>
+    {:else if !loading}
+      <p class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">No pending invitations.</p>
+    {/if}
+  </section>
+</div>
