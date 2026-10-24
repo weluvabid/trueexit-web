@@ -7,9 +7,10 @@ import '../styles/global.css';
 interface Props {
   title: string;
   description?: string;
+  layout?: 'compact' | 'standard' | 'comfortable';
 }
 
-const { title, description = 'Clear signals, fewer surprises.' } = Astro.props;
+const { title, description = 'Clear signals, fewer surprises.', layout = 'comfortable' } = Astro.props;
 const { auth } = Astro.locals;
 const email = auth.user?.email ?? 'Signed in';
 const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'TE';
@@ -50,7 +51,7 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
           <div class="app-header__navigation"><AppNavigation /></div>
         </div>
       </header>
-      <main id="main-content" class="app-main">
+      <main id="main-content" class="app-main" data-layout={layout}>
         <slot />
       </main>
       <footer class="app-footer">

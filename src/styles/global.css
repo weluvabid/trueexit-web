@@ -144,3 +144,108 @@ html[data-theme="dark"] {
     @apply font-sans;
   }
 }
+
+
+/* Application layout foundations. Page-specific visual styling is intentionally
+   kept out of this layer; these rules establish shared alignment and sizing. */
+:root {
+  --content-width-compact: 48rem;
+  --content-width-standard: 80rem;
+  --content-width-comfortable: 90rem;
+  --page-gutter: 1rem;
+  --shell-content-width: var(--content-width-comfortable);
+}
+
+@media (min-width: 30rem) {
+  :root {
+    --page-gutter: 1.25rem;
+  }
+}
+
+@media (min-width: 48rem) {
+  :root {
+    --page-gutter: 1.5rem;
+  }
+}
+
+@media (min-width: 64rem) {
+  :root {
+    --page-gutter: 2rem;
+  }
+}
+
+@layer base {
+  html {
+    min-height: 100%;
+    scroll-padding-top: 6rem;
+  }
+
+  body {
+    min-height: 100vh;
+    min-height: 100svh;
+    margin: 0;
+  }
+}
+
+@layer components {
+  .app-frame {
+    display: flex;
+    min-height: 100vh;
+    min-height: 100svh;
+    flex-direction: column;
+  }
+
+  .app-header__inner,
+  .app-main,
+  .app-footer {
+    width: min(calc(100% - (var(--page-gutter) * 2)), var(--shell-content-width));
+    margin-inline: auto;
+  }
+
+  .app-header__inner {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.25rem;
+  }
+
+  .app-header__navigation {
+    min-width: 0;
+  }
+
+  .app-main {
+    min-width: 0;
+    flex: 1 0 auto;
+    padding-block: clamp(1.5rem, 3vw, 2.5rem);
+  }
+
+  .app-main[data-layout='compact'] {
+    --shell-content-width: var(--content-width-compact);
+  }
+
+  .app-main[data-layout='standard'] {
+    --shell-content-width: var(--content-width-standard);
+  }
+
+  .app-main[data-layout='comfortable'] {
+    --shell-content-width: var(--content-width-comfortable);
+  }
+
+  .app-footer {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-block: 1.25rem;
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within {
+    scroll-behavior: auto;
+  }
+}
