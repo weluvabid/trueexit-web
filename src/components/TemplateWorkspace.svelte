@@ -9,8 +9,7 @@
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import type { FieldDefinition, Primitive, Template } from '../lib/client/template-types';
   import { PRIMITIVE_VALUES, PrimitiveCode } from '../lib/client/field-primitives';
-  import TemplateManualFieldEditor from '../features/templates/fields/template-manual-field-editor.svelte';
-  import TemplateJsonFieldDiscovery from '../features/templates/fields/template-json-field-discovery.svelte';
+  import TemplateEditorDialog from '../features/templates/editor/template-editor-dialog.svelte';
   import TemplateList from '../features/templates/list/template-list.svelte';
   import TemplateDetailDialog from '../features/templates/detail/template-detail-dialog.svelte';
   import { addTemplateField, removeTemplateField, updateTemplateField, discoveredFieldKey, mergeDiscoveredFields } from '../lib/client/template-field-model';
@@ -355,35 +354,32 @@
 </section>
 
 {#if formOpen}
-  <div class="template-overlay" role="presentation" onclick={(event) => { if (event.target === event.currentTarget) closeForm(); }}>
-    <section class="template-dialog" role="dialog" aria-modal="true" aria-labelledby="template-form-title">
-      <header class="template-dialog__header"><div><p class="template-eyebrow">{mode === 'create' ? 'NEW STARTING POINT' : 'CUSTOM TEMPLATE'}</p><h2 id="template-form-title">{mode === 'create' ? 'Create template' : 'Edit template'}</h2></div><button class="template-icon-button" type="button" aria-label="Close" onclick={closeForm} disabled={saving}>×</button></header>
-      {#if formError}<div class="template-alert" role="alert">{formError}</div>{/if}
-      <form onsubmit={saveTemplate}>
-        <label class="template-label">Name<input bind:value={name} maxlength="120" required placeholder="e.g. Database backup" /></label>
-        <label class="template-label">Description <span>Optional</span><textarea bind:value={description} maxlength="1000" rows="2" placeholder="What these fields are intended to verify" /></label>
-        <nav class="template-editor-tabs" aria-label="Template field editor"><button type="button" class:active={formTab === 'json'} onclick={() => formTab = 'json'}>Paste JSON</button><button type="button" class:active={formTab === 'fields'} onclick={() => formTab = 'fields'}>Add fields</button></nav>
-        {#if formTab === 'json'}
-        <TemplateJsonFieldDiscovery
-          bind:samplePayload
-          {discovering}
-          {workspaceId}
-          {discovered}
-          {selectedDiscovered}
-          {discoveryError}
-          {discoveryWarnings}
-          {primitiveNames}
-          onDiscover={() => void discoverFields()}
-          onAddSelected={addDiscoveredFields}
-          onToggleDiscovered={toggleDiscovered}
-        />
-        {:else}
-        <TemplateManualFieldEditor {fields} {primitiveOptions} onAddField={addField} onRemoveField={removeField} onUpdateField={updateField} />
-        {/if}
-        <footer class="template-dialog__footer"><button class="template-button" type="button" onclick={closeForm} disabled={saving}>Cancel</button><button class="template-button template-button--primary" type="submit" disabled={saving}>{saving ? 'Saving…' : mode === 'create' ? 'Create template' : 'Save changes'}</button></footer>
-      </form>
-    </section>
-  </div>
+  <TemplateEditorDialog
+    {mode}
+    bind:name
+    bind:description
+    bind:fields
+    bind:samplePayload
+    bind:formTab
+    {formError}
+    {saving}
+    {discovering}
+    {workspaceId}
+    {discovered}
+    {selectedDiscovered}
+    {discoveryError}
+    {discoveryWarnings}
+    {primitiveOptions}
+    {primitiveNames}
+    onClose={closeForm}
+    onSubmit={saveTemplate}
+    onDiscover={() => void discoverFields()}
+    onAddField={addField}
+    onRemoveField={removeField}
+    onUpdateField={updateField}
+    onAddSelected={addDiscoveredFields}
+    onToggleDiscovered={toggleDiscovered}
+  />
 {/if}
 
 {#if detail || detailLoading || detailError}
