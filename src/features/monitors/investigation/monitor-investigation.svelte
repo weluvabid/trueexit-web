@@ -15,6 +15,7 @@
   import { formatInvestigationDate, formatInvestigationValue, formatInvestigationLabel, getHealthCounts } from '@/lib/client/investigation-format';
   import { getHealthStateClasses, getHealthStateLabel, getHealthStateTextClass } from '@/lib/client/health-status';
   import { getDeliveryStatusClasses } from '@/lib/client/delivery-status';
+  import MonitorInvestigationHeader from '@/features/monitors/investigation/monitor-investigation-header.svelte';
   import { buildInvestigationApiPath, getInvestigationErrorMessage, readInvestigationResource, investigationResourceQueryOptions, investigationQueryErrorMessage, type Resource } from '@/lib/client/investigation-api';
   import { investigationDeliveryPageSchema, investigationDeliverySchema, investigationEvidencePageSchema, investigationEvidenceSchema, investigationHealthSchema, investigationHealthVersionSchema, investigationMonitorSchema, investigationRecordPageSchema, investigationRecordSchema } from '@/lib/client/api-schemas';
   import type { InvestigationDeliveryContract, InvestigationEvidenceContract, InvestigationHealthVersionContract, InvestigationMonitorContract } from '@/lib/client/api-schemas';
@@ -365,18 +366,7 @@
         Loading monitor details…
       </div>
     {:else}
-      <header class="flex flex-wrap items-start justify-between gap-4 rounded-xl border bg-card p-5 sm:p-6">
-        <div class="min-w-0 space-y-2">
-          <p class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Monitor investigation · Configuration v{monitor.current_config_version ?? '—'}</p>
-          <h1 class="break-words text-2xl font-semibold tracking-tight">{monitor.name}</h1>
-          <p class="max-w-3xl text-sm text-muted-foreground">{monitor.description || 'No description added.'}</p>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <Badge variant={monitor.status === 'enabled' ? 'default' : 'secondary'} class="capitalize">{label(monitor.status)}</Badge>
-          <Badge variant="outline">Cadence: {monitor.cadence_seconds ? `${monitor.cadence_seconds}s` : 'Unavailable'}</Badge>
-          <span class="text-xs text-muted-foreground">Updated {formatDate(monitor.updated_at)}</span>
-        </div>
-      </header>
+      <MonitorInvestigationHeader {monitor} />
 
       <section class="space-y-4" aria-labelledby="health-heading">
         <div class="flex flex-wrap items-end justify-between gap-2">
