@@ -3,6 +3,7 @@
   import TemplateCard from './template-card.svelte';
   import TemplateListToolbar from './template-list-toolbar.svelte';
   import TemplatePagination from './template-pagination.svelte';
+  import TemplateListStatus from './template-list-status.svelte';
 
   let {
     templates,
@@ -43,9 +44,8 @@
 
 <TemplateListToolbar bind:query {loading} templateCount={templates.length} {onSearchInput} />
 
-{#if listError}<div class="template-state template-state--error" role="alert"><p>{listError}</p><button class="template-button" type="button" onclick={onRetry}>Try again</button></div>
-{:else if loading && templates.length === 0}<div class="template-state" aria-live="polite">Loading templates…</div>
-{:else if templates.length === 0}<div class="template-state"><h2>{query ? 'No matching templates' : 'No templates yet'}</h2><p>{query ? 'Try a different search term.' : 'Create a reusable set of field definitions, or discover fields from a representative JSON payload.'}</p>{#if !query && canManage}<button class="template-button template-button--primary" type="button" onclick={onCreate}>Create a template</button>{/if}</div>
+{#if listError || (loading && templates.length === 0) || templates.length === 0}
+  <TemplateListStatus {listError} {loading} templateCount={templates.length} {query} {canManage} {onRetry} {onCreate} />
 {:else}
   <div class="template-list" aria-busy={loading}>{#each templates as template (template.id)}
     <TemplateCard {template} {canManage} {saving} {onInspect} {onEdit} {onDelete} />
