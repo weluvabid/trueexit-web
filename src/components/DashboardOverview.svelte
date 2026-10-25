@@ -13,13 +13,12 @@
   import { filterAttentionItems, formatRelativeDate, getAttentionSeverityClasses, getDashboardSummaryMetrics, type AttentionFilter } from '../lib/client/dashboard-model';
   import type { AttentionItem } from '../lib/client/dashboard-queries';
   import * as Table from './ui/table/index.js';
-  import * as Tabs from './ui/tabs/index.js';
   import { Button } from './ui/button/index.js';
   import { Badge } from './ui/badge/index.js';
   import { Alert, AlertDescription, AlertTitle } from './ui/alert/index.js';
   import { Skeleton } from './ui/skeleton/index.js';
   import { Separator } from './ui/separator/index.js';
-  import { Activity, ArrowRight, ArrowUpRight, CheckCircle2, CircleAlert, Info, LayoutDashboard, Monitor, RefreshCw, ShieldAlert, Send } from '@lucide/svelte';
+  import { Activity, ArrowRight, ArrowUpRight, CircleAlert, Info, Monitor, RefreshCw, Send } from '@lucide/svelte';
 
   type MonitorItem = DashboardMonitorItem;
   type Page<T> = { data: T[]; page?: { next_cursor: string | null } };
@@ -275,9 +274,6 @@
       <p class="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Your workspace, at a glance</p>
       <h1 id="dashboard-title" class="text-2xl font-semibold tracking-tight sm:text-3xl">The current picture</h1>
     </div>
-    {#if workspaces.length > 0 && !bootstrapping}
-      <Button variant="outline" href="/monitors">Manage monitors <ArrowUpRight class="ml-1 size-4" /></Button>
-    {/if}
   </header>
 
   {#if bootstrapping || loadingDashboard}
@@ -318,16 +314,6 @@
       </AlertDescription>
     </Alert>
   {:else if dashboard}
-    <Tabs.Root value={view} onValueChange={(value) => openView(value as View)} class="w-full">
-      <Tabs.List class="h-auto flex-wrap justify-start">
-        <Tabs.Trigger value="overview"><LayoutDashboard class="mr-2 size-4" />Overview</Tabs.Trigger>
-        <Tabs.Trigger value="attention"><ShieldAlert class="mr-2 size-4" />Attention</Tabs.Trigger>
-        <Tabs.Trigger value="signals"><Activity class="mr-2 size-4" />Signals</Tabs.Trigger>
-        <Tabs.Trigger value="monitors"><Monitor class="mr-2 size-4" />Monitors</Tabs.Trigger>
-        <Tabs.Trigger value="evidence"><CheckCircle2 class="mr-2 size-4" />Evidence</Tabs.Trigger>
-      </Tabs.List>
-    </Tabs.Root>
-
     {#if view === 'overview'}
       <div class="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3">
         <section class="flex min-w-0 flex-col gap-4 rounded-xl border bg-card p-5 lg:col-span-2">
