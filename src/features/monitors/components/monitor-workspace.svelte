@@ -4,9 +4,9 @@
   import { can } from '@/lib/client/permissions';
   import { onMount } from 'svelte';
   import MonitorInventory from '@/features/monitors/inventory/monitor-inventory.svelte';
-  import MonitorFieldConfiguration from '@/features/monitors/configuration/monitor-field-configuration.svelte';
   import MonitorTagManager from '@/features/monitors/tags/monitor-tag-manager.svelte';
   import MonitorDetailsFields from '@/features/monitors/configuration/monitor-details-fields.svelte';
+  import MonitorEditorForm from '@/features/monitors/editor/monitor-editor-form.svelte';
   import MonitorDestinationConfiguration from '@/features/monitors/configuration/monitor-destination-configuration.svelte';
   import type { Monitor, MonitorDetail, MonitorStatus } from '@/lib/client/monitor-types';
   import { addMonitorTagDraft, removeMonitorTagDraft, getCadenceDraftFromSeconds } from '@/lib/client/monitor-editor-model';
@@ -61,7 +61,7 @@
   let tagLoadSequence = 0;
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let createOpen = $state(initialMode !== 'inventory');
-  let fieldConfiguration = $state<InstanceType<typeof MonitorFieldConfiguration> | undefined>(undefined);
+  let editorForm = $state<InstanceType<typeof MonitorEditorForm> | undefined>(undefined);
   let cadenceError = $state('');
   let cadencePreview = $state('Every 5 minutes');
   let editingMonitor: MonitorDetail | null = $state(null);
@@ -93,7 +93,7 @@
   function resetEditorDraft() {
     editorDraft = createEmptyMonitorDraft();
     editorDraft.channelSelectionWorkspaceId = selectedWorkspaceId;
-    fieldConfiguration?.reset();
+    editorForm?.resetFieldConfiguration();
     channelsLoading = false;
     cadenceError = '';
     cadencePreview = 'Every 5 minutes';
@@ -426,7 +426,7 @@
     }
     createError = '';
     createMessage = '';
-    if (!fieldConfiguration?.applyPendingJson()) return;
+    if (!editorForm?.applyPendingFieldJson()) return;
     const validation = prepareMonitorSubmission(editorDraft);
     if (!validation.ok) {
       cadenceError = validation.field === 'cadence' ? validation.error : '';
@@ -490,7 +490,7 @@
     if (!original || creating || !workspaceId) return;
     createError = '';
     createMessage = '';
-    if (!fieldConfiguration?.applyPendingJson()) return;
+    if (!editorForm?.applyPendingFieldJson()) return;
     const validation = prepareMonitorSubmission(editorDraft);
     if (!validation.ok) {
       cadenceError = validation.field === 'cadence' ? validation.error : '';
@@ -712,37 +712,24 @@
   {/if}
 
   {#if createOpen}
-      <section class="monitor-create-modal monitor-create-page" aria-labelledby="monitor-create-title">
-        <header class="monitor-create-modal__header">
-          <div><p class="eyebrow">{editingMonitor ? 'EDIT CHECK' : 'NEW CHECK'}</p><h2 id="monitor-create-title">{editingMonitor ? 'Refine your signal.' : 'Give your signal a shape.'}</h2><p>{editingMonitor ? 'Update the fields, cadence, and notification destinations for this monitor.' : 'Define the fields TrueExit should observe. A monitor always needs at least one valid field.'}</p></div>
-          <button class="monitor-button monitor-button--quiet" type="button" onclick={closeCreate} disabled={creating}>← Back to monitors</button>
-        </header>
-        {#if createError}<div class="monitor-inline-alert" role="alert">{createError}</div>{/if}
-        {#if initialMode === 'edit' && creating}
-          <div class="monitor-form-loading" role="status"><span class="monitor-loader" aria-hidden="true"></span><div><strong>Loading monitor configuration</strong><p>Fetching the current fields and destinations before enabling edits.</p></div></div>
-        {:else}
-        <form class="monitor-create-form" onsubmit={createMonitor}>
-          <MonitorDetailsFields bind:draft={editorDraft} bind:cadenceError bind:cadencePreview />
-
-          <MonitorFieldConfiguration
-            bind:this={fieldConfiguration}
-            draft={editorDraft}
-            workspaceId={selectedWorkspaceId}
-            bind:fieldError
-          />
-
-          <MonitorDestinationConfiguration
-            bind:draft={editorDraft}
-            {channels}
-            {channelsLoading}
-            {channelsError}
-            {canManageChannels}
-          />
-
-          <footer class="monitor-create-footer"><p>Fields are required. Destinations are optional. You can review everything before saving.</p><div><button class="monitor-button monitor-button--quiet" type="button" onclick={closeCreate} disabled={creating}>Cancel</button><button class="monitor-button monitor-button--primary" type="submit" disabled={creating}>{creating ? (editingMonitor ? 'Saving changes…' : 'Creating monitor…') : (editingMonitor ? 'Save changes' : 'Create monitor')} <span aria-hidden="true">↗</span></button></div></footer>
-        </form>
-        {/if}
-      </section>
+      <MonitorEditorForm
+        bind:this={editorForm}
+        bind:draft={editorDraft}
+        workspaceId={selectedWorkspaceId}
+        bind:fieldError
+        bind:cadenceError
+        bind:cadencePreview
+        {channels}
+        {channelsLoading}
+        {channelsError}
+        {canManageChannels}
+        {creating}
+        {editingMonitor}
+        {createError}
+        loadingEdit={initialMode === 'edit' && creating}
+        onsubmit={createMonitor}
+        oncancel={closeCreate}
+      />
   {/if}
 
   {#if tagModalOpen && taggingMonitor}
