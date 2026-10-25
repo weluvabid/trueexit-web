@@ -12,6 +12,7 @@
   import TemplateEditorDialog from '../features/templates/editor/template-editor-dialog.svelte';
   import TemplateList from '../features/templates/list/template-list.svelte';
   import TemplateDetailDialog from '../features/templates/detail/template-detail-dialog.svelte';
+  import TemplateDeleteDialog from '../features/templates/delete/template-delete-dialog.svelte';
   import { addTemplateField, removeTemplateField, updateTemplateField, discoveredFieldKey, mergeDiscoveredFields } from '../lib/client/template-field-model';
   import { validateTemplateDraft } from '../lib/client/template-validation';
   import { buildTemplatePayload, createTemplateDraft, parseSamplePayload } from '../lib/client/template-model';
@@ -387,6 +388,12 @@
 {/if}
 
 {#if pendingDelete}
-  <div class="template-overlay" role="presentation"><section class="template-confirm" role="alertdialog" aria-modal="true" aria-labelledby="template-delete-title"><p class="template-eyebrow">DELETE TEMPLATE</p><h2 id="template-delete-title">Delete “{pendingDelete.name}”?</h2><p>Existing monitors will keep their copied field definitions. This cannot be undone.</p>{#if formError}<div class="template-alert" role="alert">{formError}</div>{/if}<footer class="template-dialog__footer"><button class="template-button" type="button" onclick={() => pendingDelete = null} disabled={saving}>Cancel</button><button class="template-button template-button--danger" type="button" onclick={() => void deleteTemplate()} disabled={saving}>{saving ? 'Deleting…' : 'Delete template'}</button></footer></section></div>
+  <TemplateDeleteDialog
+    template={pendingDelete}
+    {formError}
+    {saving}
+    onClose={() => (pendingDelete = null)}
+    onConfirm={() => void deleteTemplate()}
+  />
 {/if}
 
