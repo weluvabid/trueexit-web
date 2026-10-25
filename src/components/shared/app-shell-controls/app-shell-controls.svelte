@@ -13,7 +13,12 @@
   import { parseApiBody, workspaceSearchResponseSchema } from '../../../lib/client/api-schemas';
   import type { WorkspaceContext } from '../../../lib/client/workspace-bootstrap';
 
-  type AppearancePreference = 'system' | 'light' | 'dark';
+  import {
+    applyAppearancePreference,
+    readAppearancePreference,
+    type AppearancePreference
+  } from './appearance-preference';
+
   type SearchResult = { label: string; detail: string; href: string; kind: string };
 
   let {
@@ -38,32 +43,19 @@
 
   function effectiveTheme(): 'light' | 'dark' {
     if (appearance !== 'system') return appearance;
-
-    // This function is also evaluated while Astro renders the component on the server.
-    // Use a deterministic fallback there; onMount resolves the real system preference.
+    // Keep server rendering deterministic; the real system preference is applied on mount.
     if (typeof window === 'undefined') return 'light';
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   }
 
   function toggleAppearance() {
-    // When following the OS, toggle from the currently resolved theme and
-    // persist the resulting explicit preference. System remains available in Settings.
-    applyAppearance(effectiveTheme() === 'dark' ? 'light' : 'dark');
+    const next = effectiveTheme() === 'dark' ? 'light' : 'dark';
+    applyAppearance(next);
   }
 
   function applyAppearance(preference: AppearancePreference, persist = true) {
-    const resolved = preference === 'system'
-      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-      : preference;
-    document.documentElement.dataset.theme = resolved;
-    document.documentElement.dataset.themePreference = preference;
-    document.documentElement.style.colorScheme = resolved;
-    const themeColor = document.querySelector<HTMLMetaElement>('[data-theme-color]');
-    if (themeColor) themeColor.content = resolved === 'dark' ? themeColor.dataset.darkColor ?? '#0a0a0a' : themeColor.dataset.lightColor ?? '#ffffff';
+    applyAppearancePreference(preference, persist);
     appearance = preference;
-    if (persist) {
-      try { localStorage.setItem('trueexit.appearance', preference); } catch { /* Theme still applies for this page. */ }
-    }
   }
 
   function chooseWorkspace(id: string) {
@@ -154,12 +146,7 @@
   }
 
   onMount(() => {
-    const themeKey = 'trueexit.appearance';
-    const stored = (() => {
-      try { return localStorage.getItem(themeKey) || document.documentElement.dataset.themePreference || 'system'; }
-      catch { return document.documentElement.dataset.themePreference || 'system'; }
-    })();
-    applyAppearance(stored === 'light' || stored === 'dark' ? stored : 'system', false);
+    applyAppearance(readAppearancePreference(), false);
 
     const onSystemThemeChange = () => {
       if (appearance === 'system') applyAppearance('system', false);
