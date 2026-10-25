@@ -10,7 +10,7 @@
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveAndPersistWorkspaceId } from '../lib/client/workspace-preference';
   import { formatDateTime } from '../lib/client/date-format';
-  import { filterAttentionItems, formatRelativeDate, getAttentionSeverityClasses, getAttentionSeverityTextClass, getDashboardSummaryMetrics, type AttentionFilter } from '../lib/client/dashboard-model';
+  import { filterAttentionItems, formatRelativeDate, getAttentionSeverityClasses, getDashboardSummaryMetrics, type AttentionFilter } from '../lib/client/dashboard-model';
   import type { AttentionItem } from '../lib/client/dashboard-queries';
   import * as Table from './ui/table/index.js';
   import * as Tabs from './ui/tabs/index.js';
@@ -19,7 +19,7 @@
   import { Alert, AlertDescription, AlertTitle } from './ui/alert/index.js';
   import { Skeleton } from './ui/skeleton/index.js';
   import { Separator } from './ui/separator/index.js';
-  import { Activity, ArrowRight, ArrowUpRight, CheckCircle2, CircleAlert, LayoutDashboard, Monitor, RefreshCw, ShieldAlert, Send } from '@lucide/svelte';
+  import { Activity, ArrowRight, ArrowUpRight, CheckCircle2, CircleAlert, Info, LayoutDashboard, Monitor, RefreshCw, ShieldAlert, Send } from '@lucide/svelte';
 
   type MonitorItem = DashboardMonitorItem;
   type Page<T> = { data: T[]; page?: { next_cursor: string | null } };
@@ -63,6 +63,12 @@
   };
   const activityCopy: Record<string, string> = { accepted: 'Evidence accepted', evidence_accepted: 'Evidence accepted', rejected: 'Evidence rejected', evidence_rejected: 'Evidence rejected' };
   const filterLabels: Record<AttentionFilter, string> = { all: 'All', submission_rejected: 'Rejected', evidence_overdue: 'Missed / overdue', health_signal: 'Health signals' };
+  const attentionFilterDescriptions: Record<AttentionFilter, string> = {
+    all: 'Evidence and signals needing attention',
+    submission_rejected: 'Evidence that failed validation',
+    evidence_overdue: 'Expected evidence not received on time',
+    health_signal: 'Configured fields requiring review',
+  };
 
   function formatDate(value: string | null | undefined): string {
     return formatDateTime(value);
@@ -355,19 +361,23 @@
         </section>
 
         <section class="min-w-0 rounded-xl border bg-card p-5 lg:col-span-3">
-          <div class="mb-4 flex flex-wrap items-start justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">What may need you</p><h2 class="mt-1 text-lg font-semibold">Attention queue</h2></div><Badge variant="outline" class={dashboard.summary.needs_attention > 0 ? 'border-status-warning-border bg-status-warning-background text-status-warning' : ''}>{dashboard.summary.needs_attention} items</Badge></div>
-          <div class="mb-4 flex flex-wrap gap-2" aria-label="Filter attention preview">
+          <div class="mb-4 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-sm text-sky-700 dark:text-sky-300" aria-live="polite">
+            <p class="flex min-w-0 items-center gap-2"><Info class="size-4 shrink-0" /><span>{attentionFilterDescriptions[attentionFilter]}</span></p>
+          </div>
+          <div class="mb-4 flex flex-wrap items-start justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">What may need you</p><h2 class="mt-1 text-lg font-semibold">Attention queue</h2></div><Badge variant="outline" class={dashboard.summary.needs_attention > 0 ? 'border-destructive/40 bg-destructive/10 text-destructive' : ''}>{dashboard.summary.needs_attention} items</Badge></div>
+          <div class="mb-4 -mx-1 flex max-w-full gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="group" aria-label="Filter attention preview">
             {#each attentionFilters as filter}
-              <Button size="sm" variant={attentionFilter === filter ? 'secondary' : 'outline'} aria-pressed={attentionFilter === filter} onclick={() => changeFilter(filter)}>{filterLabels[filter]}</Button>
+              <Button class="shrink-0 whitespace-nowrap" size="sm" variant={attentionFilter === filter ? 'secondary' : 'outline'} aria-pressed={attentionFilter === filter} onclick={() => changeFilter(filter)}>{filterLabels[filter]}</Button>
             {/each}
           </div>
           {#if filteredAttention.length}
             <div class="divide-y">
-              {#each filteredAttention as item (`${item.monitor_id}-${item.reason}-${item.occurred_at ?? ''}`)}
-                <div class="flex items-start gap-3 py-4 first:pt-0 last:pb-0">
-                  <CircleAlert class={`mt-1 size-4 shrink-0 ${getAttentionSeverityTextClass(item.severity)}`} />
-                  <div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-2"><strong class="text-sm">{item.monitor_name}</strong><Badge variant="outline" class={getAttentionSeverityClasses(item.severity)}>{reasonCopy[item.reason]?.title ?? 'Monitor needs review'}</Badge></div><p class="mt-1 text-sm text-muted-foreground">{reasonCopy[item.reason]?.detail ?? 'Review this monitor for more context.'}</p><p class="mt-2 text-xs text-muted-foreground">{formatRelativeDate(item.occurred_at ?? item.last_valid_evidence_at, Date.now(), formatDate)}</p></div>
-                  <Button variant="ghost" size="icon-sm" href={`/monitors/${encodeURIComponent(item.monitor_id)}`} aria-label={`Investigate ${item.monitor_name}`}><ArrowUpRight class="size-4" /></Button>
+              {#each filteredAttention.slice(0, 5) as item (`${item.monitor_id}-${item.reason}-${item.occurred_at ?? ''}`)}
+                <div class="flex min-w-0 items-center gap-3 py-3 first:pt-0 last:pb-0">
+                  <CircleAlert class={`size-4 shrink-0 ${item.reason === 'health_signal' ? 'text-status-warning' : 'text-destructive'}`} />
+                  <strong class="min-w-0 flex-1 truncate text-sm" title={item.monitor_name}>{item.monitor_name}</strong>
+                  <span class="shrink-0 text-right text-xs text-muted-foreground">{formatRelativeDate(item.occurred_at ?? item.last_valid_evidence_at, Date.now(), formatDate) || (item.reason === 'evidence_overdue' ? 'Awaiting ping' : '—')}</span>
+                  <Button variant="ghost" size="icon-sm" class="shrink-0" href={`/monitors/${encodeURIComponent(item.monitor_id)}`} aria-label={`Investigate ${item.monitor_name}`}><ArrowUpRight class="size-4" /></Button>
                 </div>
               {/each}
             </div>
@@ -408,7 +418,8 @@
           {#if view === 'attention'}<Badge variant="secondary">{dashboard.summary.needs_attention} items</Badge>{/if}
         </div>
         {#if view === 'attention'}
-          <div class="flex flex-wrap gap-2">{#each attentionFilters as filter}<Button size="sm" variant={attentionFilter === filter ? 'secondary' : 'outline'} aria-pressed={attentionFilter === filter} onclick={() => changeFilter(filter)}>{filterLabels[filter]}</Button>{/each}</div>
+          <div class="rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-sm text-sky-700 dark:text-sky-300" aria-live="polite"><p class="flex min-w-0 items-center gap-2"><Info class="size-4 shrink-0" /><span>{attentionFilterDescriptions[attentionFilter]}</span></p></div>
+          <div class="-mx-1 flex max-w-full gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="group" aria-label="Filter attention items">{#each attentionFilters as filter}<Button class="shrink-0 whitespace-nowrap" size="sm" variant={attentionFilter === filter ? 'secondary' : 'outline'} aria-pressed={attentionFilter === filter} onclick={() => changeFilter(filter)}>{filterLabels[filter]}</Button>{/each}</div>
           <div class="overflow-hidden rounded-lg border">
             <Table.Root>
               <Table.Caption>Items currently reported as needing review.</Table.Caption>
