@@ -14,6 +14,7 @@
   import TemplateDetailDialog from '../features/templates/detail/template-detail-dialog.svelte';
   import TemplateDeleteDialog from '../features/templates/delete/template-delete-dialog.svelte';
   import TemplateWorkspaceHeader from '../features/templates/header/template-workspace-header.svelte';
+  import TemplateWorkspaceFeedback from '../features/templates/feedback/template-workspace-feedback.svelte';
   import { addTemplateField, removeTemplateField, updateTemplateField, discoveredFieldKey, mergeDiscoveredFields } from '../lib/client/template-field-model';
   import { validateTemplateDraft } from '../lib/client/template-validation';
   import { buildTemplatePayload, createTemplateDraft, parseSamplePayload } from '../lib/client/template-model';
@@ -327,9 +328,14 @@
 <section class="template-page" aria-labelledby="template-heading">
   <TemplateWorkspaceHeader {canManage} {saving} onCreate={openCreate} />
 
-  {#if bootError}<div class="template-alert" role="alert">{bootError} <button type="button" onclick={() => void bootstrap()}>Try again</button></div>{/if}
-  {#if notice}<div class="template-notice" role="status">{notice}<button type="button" aria-label="Dismiss message" onclick={() => notice = ''}>×</button></div>{/if}
-  {#if formError && !formOpen}<div class="template-alert" role="alert">{formError}</div>{/if}
+  <TemplateWorkspaceFeedback
+    {bootError}
+    {notice}
+    {formError}
+    {formOpen}
+    onRetryBootstrap={() => void bootstrap()}
+    onDismissNotice={() => (notice = '')}
+  />
 
   <TemplateList
     {templates}
