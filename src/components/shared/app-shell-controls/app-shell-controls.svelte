@@ -6,10 +6,11 @@
   import AppearanceToggle from './appearance-toggle.svelte';
   import AccountMenu from './account-menu.svelte';
   import QuickNavigation from './quick-navigation.svelte';
-  import { loadWorkspaceBootstrap } from '../../../lib/client/workspace-bootstrap';
+  import { loadWorkspaceSelection } from './workspace-bootstrap';
+  import { createWorkspaceSwitchUrl } from './workspace-selection';
   import { assertApiSuccess, ApiClientError, requestApi } from '../../../lib/client/api-client';
   import { getSharedQueryClient } from '../../../lib/client/query-client';
-  import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveAndPersistWorkspaceId } from '../../../lib/client/workspace-preference';
+  import { readActiveWorkspaceId, writeActiveWorkspaceId } from '../../../lib/client/workspace-preference';
   import { parseApiBody, workspaceSearchResponseSchema } from '../../../lib/client/api-schemas';
   import type { WorkspaceContext } from '../../../lib/client/workspace-bootstrap';
 
@@ -64,10 +65,7 @@
     const confirmed = window.confirm(`Switch to “${next.name}”? This reloads the current page, so any unsaved changes may be lost.`);
     if (!confirmed) return;
     writeActiveWorkspaceId(id);
-    const url = new URL(window.location.href);
-    if (url.pathname.startsWith('/monitors/')) url.searchParams.set('workspace_id', id);
-    else url.searchParams.delete('workspace_id');
-    window.location.assign(url.toString());
+    window.location.assign(createWorkspaceSwitchUrl(window.location.href, id));
   }
 
   function openSearch() {
@@ -170,22 +168,12 @@
     window.addEventListener('scroll', onScroll, { passive: true });
     onScroll();
 
-    void (async () => {
-      try {
-        const result = await loadWorkspaceBootstrap();
-        if (!result.workspaces.ok) throw new Error('workspace_load_failed');
-        workspaces = result.workspaces.data.data;
-        const me = result.me.ok ? result.me.data : null;
-        const requested = new URLSearchParams(window.location.search).get('workspace_id');
-        const storedWorkspace = readActiveWorkspaceId();
-        activeWorkspaceId = resolveAndPersistWorkspaceId(workspaces, [requested, storedWorkspace, me?.personal_workspace_id]);
-        if (!workspaces.length) workspaceError = 'No accessible workspace was returned for this account.';
-      } catch {
-        workspaceError = 'Could not load workspaces. Refresh to try again.';
-      } finally {
-        workspaceLoading = false;
-      }
-    })();
+    void loadWorkspaceSelection().then((selection) => {
+      workspaces = selection.workspaces;
+      activeWorkspaceId = selection.activeWorkspaceId;
+      workspaceError = selection.error;
+      workspaceLoading = false;
+    });
 
     return () => {
       media.removeEventListener?.('change', onSystemThemeChange);
