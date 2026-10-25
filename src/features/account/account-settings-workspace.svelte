@@ -11,6 +11,8 @@
   import { readActiveWorkspaceId, resolveAndPersistWorkspaceId } from '@/lib/client/workspace-preference';
   import * as Select from '@/components/ui/select/index.js';
   import AccountSettingsNavigation from '@/features/account/navigation/account-settings-navigation.svelte';
+  import ProfileSection from '@/features/account/profile/profile-section.svelte';
+  import BillingSection from '@/features/account/billing/billing-section.svelte';
 
 
 
@@ -229,10 +231,7 @@
       <AccountSettingsNavigation bind:section />
       <div class="settings-content">
         {#if section === 'profile'}
-          <section class="settings-card">
-            <div class="settings-card__heading"><div><p class="settings-kicker">PROFILE</p><h2>Your identity, without duplicate records.</h2><p>TrueExit uses your signed-in identity for account access. Profile editing is not exposed by the current account API, so this page does not offer fields that cannot be saved.</p></div><span class="settings-card__symbol">◎</span></div>
-            <div class="settings-profile-row"><span class="settings-profile-avatar">TE</span><div><strong>Signed-in identity</strong><p>Managed by your authentication provider</p></div><span class="settings-readonly-pill">READ ONLY</span></div>
-          </section>
+          <ProfileSection />
         {:else if section === 'preferences'}
           <section class="settings-card">
             <div class="settings-card__heading"><div><p class="settings-kicker">PREFERENCES</p><h2>Make TrueExit feel right.</h2><p>Choose how the interface appears on this device. Your preference is stored locally and does not change workspace data.</p></div><span class="settings-card__symbol">◐</span></div>
@@ -253,10 +252,7 @@
             <div class="settings-security-note"><strong>Timezone preference outstanding</strong><p>Timezone selection will be added here. Preference persistence and consistent timestamp display are tracked for the backend completion pass.</p></div>
           </section>
         {:else if section === 'billing'}
-          <section class="settings-card">
-            <div class="settings-card__heading"><div><p class="settings-kicker">BILLING</p><h2>Billing belongs here.</h2><p>Subscription and payment management will be connected here as the billing integration is completed.</p></div><span class="settings-card__symbol">⌁</span></div>
-            <div class="settings-security-note"><strong>Billing integration outstanding</strong><p>The billing section is intentionally visible while subscription, payment, and invoice integrations are completed.</p></div>
-          </section>
+          <BillingSection />
         {:else if section === 'account'}
           <section class="settings-card">
             <div class="settings-card__heading"><div><p class="settings-kicker">ACCOUNT STATUS</p><h2>Know where your account stands.</h2><p>Account actions are restricted to the account owner and may require recent identity verification.</p></div><span class="settings-card__symbol">◈</span></div>
