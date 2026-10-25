@@ -19,7 +19,7 @@
   import { Alert, AlertDescription, AlertTitle } from './ui/alert/index.js';
   import { Skeleton } from './ui/skeleton/index.js';
   import { Separator } from './ui/separator/index.js';
-  import { Activity, ArrowRight, ArrowUpRight, CheckCircle2, CircleAlert, Clock3, LayoutDashboard, Monitor, RefreshCw, ShieldAlert } from '@lucide/svelte';
+  import { Activity, ArrowRight, ArrowUpRight, CheckCircle2, CircleAlert, LayoutDashboard, Monitor, RefreshCw, ShieldAlert, Send } from '@lucide/svelte';
 
   type MonitorItem = DashboardMonitorItem;
   type Page<T> = { data: T[]; page?: { next_cursor: string | null } };
@@ -323,13 +323,13 @@
     </Tabs.Root>
 
     {#if view === 'overview'}
-      <div class="grid min-w-0 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-        <section class="flex min-w-0 flex-col gap-5 rounded-xl border bg-card p-5">
+      <div class="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3">
+        <section class="flex min-w-0 flex-col gap-4 rounded-xl border bg-card p-5 lg:col-span-2">
           <div class="flex items-start justify-between gap-3">
             <div><p class="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Inventory</p><h2 class="mt-1 text-lg font-semibold">Monitors</h2></div>
             <Button variant="ghost" size="sm" href="/monitors">View all <ArrowRight class="ml-1 size-4" /></Button>
           </div>
-          <div><p class="text-4xl font-semibold tracking-tight">{monitorTotal}</p><p class="mt-1 text-sm text-muted-foreground">monitors in this workspace</p></div>
+          <div class="flex flex-wrap items-end justify-between gap-4"><div><p class="text-4xl font-semibold tracking-tight tabular-nums">{monitorTotal}</p><p class="mt-1 text-sm text-muted-foreground">monitors in this workspace</p></div><div class="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex"><span class="size-2 rounded-full bg-primary"></span>{dashboard.summary.active_monitors} active</div></div>
           <Separator />
           <div class="grid grid-cols-3 gap-3">
             <button type="button" class="rounded-lg p-2 text-left transition-colors hover:bg-muted" onclick={() => openView('monitors')}>
@@ -344,7 +344,7 @@
           </div>
         </section>
 
-        <section class="flex min-w-0 flex-col gap-5 rounded-xl border bg-card p-5">
+        <section class="flex min-w-0 flex-col gap-4 rounded-xl border bg-card p-5">
           <div class="flex items-start justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Last 24 hours</p><h2 class="mt-1 text-lg font-semibold">Evidence</h2></div><Button variant="ghost" size="sm" onclick={() => openView('evidence')}>View all <ArrowRight class="ml-1 size-4" /></Button></div>
           <div><p class="text-4xl font-semibold tracking-tight">{dashboard.summary.evidence_outcomes_24h.total}</p><p class="mt-1 text-sm text-muted-foreground">records received</p></div>
           <Separator />
@@ -354,15 +354,7 @@
           </div>
         </section>
 
-        <section class="flex min-w-0 flex-col gap-4 rounded-xl border bg-card p-5">
-          <div class="flex items-start justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">What's next</p><h2 class="mt-1 text-lg font-semibold">Upcoming pings</h2></div><Clock3 class="size-5 text-muted-foreground" /></div>
-          <div class="flex flex-1 items-start gap-3 rounded-lg bg-muted/50 p-4">
-            <Activity class="mt-0.5 size-5 shrink-0 text-muted-foreground" />
-            <div><p class="text-sm font-medium">Expected activity, at a glance.</p><p class="mt-1 text-sm text-muted-foreground">Upcoming ping schedules will appear here when the workspace scheduling feed is connected.</p></div>
-          </div>
-        </section>
-
-        <section class="min-w-0 rounded-xl border bg-card p-5 lg:col-span-2 2xl:col-span-2">
+        <section class="min-w-0 rounded-xl border bg-card p-5 lg:col-span-3">
           <div class="mb-4 flex flex-wrap items-start justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">What may need you</p><h2 class="mt-1 text-lg font-semibold">Attention queue</h2></div><Badge variant="outline" class={dashboard.summary.needs_attention > 0 ? 'border-status-warning-border bg-status-warning-background text-status-warning' : ''}>{dashboard.summary.needs_attention} items</Badge></div>
           <div class="mb-4 flex flex-wrap gap-2" aria-label="Filter attention preview">
             {#each attentionFilters as filter}
@@ -385,8 +377,8 @@
           <div class="mt-4"><Button variant="outline" onclick={() => openView('attention')}>View all attention <ArrowRight class="ml-1 size-4" /></Button></div>
         </section>
 
-        <section class="min-w-0 rounded-xl border bg-card p-5">
-          <div class="mb-4 flex items-start justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Recent signals</p><h2 class="mt-1 text-lg font-semibold">Evidence activity</h2></div><Badge variant="secondary">{dashboard.recent_evidence_activity.length}</Badge></div>
+        <section class="min-w-0 rounded-xl border bg-card p-5 lg:col-span-2">
+          <div class="mb-4 flex items-start justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Recent signals</p><h2 class="mt-1 text-lg font-semibold">Recent activity</h2></div><Badge variant="secondary">{dashboard.recent_evidence_activity.length}</Badge></div>
           {#if dashboard.recent_evidence_activity.length}
             <div class="divide-y">
               {#each dashboard.recent_evidence_activity.slice(0, 5) as item (item.event_id)}
@@ -396,7 +388,16 @@
           {:else}
             <div class="rounded-lg border border-dashed px-4 py-8 text-center"><p class="text-sm text-muted-foreground">No recent evidence activity has been recorded.</p></div>
           {/if}
-          <div class="mt-4"><Button variant="outline" onclick={() => openView('signals')}>View all signals <ArrowRight class="ml-1 size-4" /></Button></div>
+          <div class="mt-4"><Button variant="outline" onclick={() => openView('signals')}>View all activity <ArrowRight class="ml-1 size-4" /></Button></div>
+        </section>
+
+        <section class="flex min-w-0 flex-col rounded-xl border bg-card p-5">
+          <div class="mb-4 flex items-start justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Notifications</p><h2 class="mt-1 text-lg font-semibold">Delivery</h2></div><Send class="size-5 text-muted-foreground" /></div>
+          <div class="flex flex-1 flex-col justify-center rounded-lg border border-dashed px-4 py-6">
+            <p class="text-sm font-medium">Delivery visibility is coming next</p>
+            <p class="mt-1 text-sm leading-relaxed text-muted-foreground">Notification attempts and outcomes will appear here when delivery events are available.</p>
+          </div>
+          <p class="mt-3 text-xs text-muted-foreground">No delivery status is inferred from evidence activity.</p>
         </section>
       </div>
       <p class="text-xs text-muted-foreground">Summary generated {formatDate(dashboard.generated_at)}. Health counts are field-level signals, not a single monitor-wide health verdict.</p>
