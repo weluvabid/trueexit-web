@@ -1,12 +1,13 @@
 <svelte:options runes={true} />
 <script lang="ts">
   import { Button } from '@/components/ui/button/index.js';
-  import { ArrowUpDown, Plus } from '@lucide/svelte';
+  import { Plus } from '@lucide/svelte';
   import type { Monitor, MonitorStatus } from '@/lib/client/monitor-types';
   import type { MonitorSort } from '@/lib/client/monitor-queries';
   import MonitorInventoryFilters from '@/features/monitors/inventory/monitor-inventory-filters.svelte';
   import MonitorInventoryTable from '@/features/monitors/inventory/monitor-inventory-table.svelte';
   import MonitorInventoryPagination from '@/features/monitors/inventory/monitor-inventory-pagination.svelte';
+  import MonitorInventoryEmptyState from '@/features/monitors/inventory/monitor-inventory-empty-state.svelte';
 
   let {
     workspaceId,
@@ -138,18 +139,16 @@
           Loading monitors…
         </div>
       {:else if monitors.length === 0}
-        <div class="rounded-lg border border-dashed px-6 py-14 text-center">
-          <div class="mx-auto mb-3 grid size-10 place-items-center rounded-full bg-muted text-muted-foreground"><ArrowUpDown class="size-5" /></div>
-          <h2 class="font-semibold">{search || statusFilter !== 'all' || tagFilter ? 'No monitors match these filters' : 'Nothing to monitor yet'}</h2>
-          <p class="mx-auto mt-1 max-w-lg text-sm text-muted-foreground">{search || statusFilter !== 'all' || tagFilter ? 'Try another search or broaden the status or tag filter.' : 'There are no monitors in this view yet. Create one by defining the fields TrueExit should observe.'}</p>
-          <div class="mt-4">
-            {#if search || statusFilter !== 'all' || tagFilter || includeArchived}
-              <Button variant="outline" onclick={onClearFilters}>Clear filters</Button>
-            {:else}
-              <Button onclick={onNewMonitor} disabled={loadingWorkspaces || !workspaceId}><Plus class="mr-1 size-4" /> Create your first monitor</Button>
-            {/if}
-          </div>
-        </div>
+        <MonitorInventoryEmptyState
+          {search}
+          {statusFilter}
+          {tagFilter}
+          {includeArchived}
+          {workspaceId}
+          {loadingWorkspaces}
+          onClearFilters={onClearFilters}
+          onNewMonitor={onNewMonitor}
+        />
       {:else}
         <div class="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
           <p aria-live="polite">{loadingMonitors ? 'Refreshing…' : `${monitors.length} monitor${monitors.length === 1 ? '' : 's'} on this page`}</p>
