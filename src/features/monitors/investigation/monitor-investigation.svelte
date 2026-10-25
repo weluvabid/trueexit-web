@@ -4,20 +4,20 @@
   import { createQuery } from '@tanstack/svelte-query';
   import { getSharedQueryClient } from '@/lib/client/query-client';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '@/lib/client/workspace-bootstrap';
-  import * as Table from '@/components/ui/table/index.js';
   import * as Select from '@/components/ui/select/index.js';
   import * as Tabs from '@/components/ui/tabs/index.js';
   import { Button } from '@/components/ui/button/index.js';
   import { Badge } from '@/components/ui/badge/index.js';
   import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert/index.js';
-  import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw, X, FileSearch, Activity, Clock3, Bell, Database, AlertTriangle } from '@lucide/svelte';
+  import { ArrowLeft, X, FileSearch, Activity, Clock3, Bell, Database, AlertTriangle } from '@lucide/svelte';
   import { formatInvestigationDate, formatInvestigationValue } from '@/lib/client/investigation-format';
-  import { getDeliveryStatusClasses } from '@/lib/client/delivery-status';
   import MonitorInvestigationHeader from '@/features/monitors/investigation/monitor-investigation-header.svelte';
   import MonitorFieldHealth from '@/features/monitors/investigation/monitor-field-health.svelte';
   import MonitorHealthHistory from '@/features/monitors/investigation/monitor-health-history.svelte';
+  import MonitorEvidenceList from '@/features/monitors/investigation/monitor-evidence-list.svelte';
+  import MonitorDeliveryHistory from '@/features/monitors/investigation/monitor-delivery-history.svelte';
   import { buildInvestigationApiPath, getInvestigationErrorMessage, readInvestigationResource, investigationResourceQueryOptions, investigationQueryErrorMessage, type Resource } from '@/lib/client/investigation-api';
-  import { investigationDeliveryPageSchema, investigationDeliverySchema, investigationEvidencePageSchema, investigationEvidenceSchema, investigationHealthSchema, investigationHealthVersionSchema, investigationMonitorSchema, investigationRecordPageSchema, investigationRecordSchema } from '@/lib/client/api-schemas';
+  import { investigationDeliveryPageSchema, investigationEvidencePageSchema, investigationEvidenceSchema, investigationHealthSchema, investigationHealthVersionSchema, investigationMonitorSchema, investigationRecordPageSchema, investigationRecordSchema } from '@/lib/client/api-schemas';
   import type { InvestigationDeliveryContract, InvestigationEvidenceContract, InvestigationHealthVersionContract, InvestigationMonitorContract } from '@/lib/client/api-schemas';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveAndPersistWorkspaceId } from '@/lib/client/workspace-preference';
 
@@ -388,37 +388,45 @@
             <Tabs.Trigger value="deliveries"><Bell class="size-4" /> Delivery history</Tabs.Trigger>
           </Tabs.List>
           <Tabs.Content value="evidence" class="mt-4 space-y-3">
-            {#if evidenceLoading}<p class="text-sm text-muted-foreground" aria-live="polite">Loading verified evidence…</p>
-            {:else if evidenceError}<Alert variant="destructive"><AlertDescription>{evidenceError}</AlertDescription><Button variant="outline" size="sm" class="mt-2 w-fit" onclick={() => loadEvidencePage('verified')}><RefreshCw class="size-4" /> Retry</Button></Alert>
-            {:else if evidence?.data?.length}
-              <div class="overflow-hidden rounded-lg border"><Table.Root>
-                <Table.Header><Table.Row><Table.Head>Evidence</Table.Head><Table.Head>Observed</Table.Head><Table.Head>Configuration</Table.Head><Table.Head>Request</Table.Head><Table.Head class="text-right"> </Table.Head></Table.Row></Table.Header>
-                <Table.Body>{#each evidence.data as item (item.id)}<Table.Row><Table.Cell><div class="font-medium">{item.id.slice(0, 8)}…</div><Badge variant="secondary">Verified</Badge></Table.Cell><Table.Cell>{formatDate(item.observed_at ?? item.created_at)}</Table.Cell><Table.Cell>v{item.config_version}</Table.Cell><Table.Cell><code class="text-xs">{item.request_id.slice(0, 8)}…</code></Table.Cell><Table.Cell class="text-right"><Button variant="outline" size="sm" onclick={() => openEvidence('verified', item)}>Inspect</Button></Table.Cell></Table.Row>{/each}</Table.Body>
-              </Table.Root></div>
-              <div class="flex flex-wrap items-center justify-between gap-3"><p class="text-sm text-muted-foreground">Page {evidencePageIndex + 1}</p><div class="flex gap-2"><Button variant="outline" size="sm" onclick={() => previousEvidence('verified')} disabled={evidencePageIndex === 0 || evidenceLoading}><ChevronLeft class="size-4" /> Previous</Button><Button variant="outline" size="sm" onclick={() => nextEvidence('verified')} disabled={!evidenceCursor || evidenceLoading}>Next <ChevronRight class="size-4" /></Button></div></div>
-            {:else}<p class="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">No verified evidence records were returned for this monitor.</p>{/if}
+            <MonitorEvidenceList
+              kind="verified"
+              items={evidence?.data ?? []}
+              loading={evidenceLoading}
+              error={evidenceError}
+              pageIndex={evidencePageIndex}
+              hasNext={Boolean(evidenceCursor)}
+              onRetry={() => loadEvidencePage('verified')}
+              onInspect={(item) => openEvidence('verified', item)}
+              onPrevious={() => previousEvidence('verified')}
+              onNext={() => nextEvidence('verified')}
+            />
           </Tabs.Content>
           <Tabs.Content value="rejected" class="mt-4 space-y-3">
-            {#if rejectedLoading}<p class="text-sm text-muted-foreground" aria-live="polite">Loading rejected evidence…</p>
-            {:else if rejectedError}<Alert variant="destructive"><AlertDescription>{rejectedError}</AlertDescription><Button variant="outline" size="sm" class="mt-2 w-fit" onclick={() => loadEvidencePage('rejected')}><RefreshCw class="size-4" /> Retry</Button></Alert>
-            {:else if badEvidence?.data?.length}
-              <div class="overflow-hidden rounded-lg border"><Table.Root>
-                <Table.Header><Table.Row><Table.Head>Evidence</Table.Head><Table.Head>Rejected at</Table.Head><Table.Head>Configuration</Table.Head><Table.Head>Reason</Table.Head><Table.Head class="text-right"></Table.Head></Table.Row></Table.Header>
-                <Table.Body>{#each badEvidence.data as item (item.id)}<Table.Row><Table.Cell><div class="font-medium">{item.id.slice(0, 8)}…</div><Badge variant="destructive">Rejected</Badge></Table.Cell><Table.Cell>{formatDate(item.created_at)}</Table.Cell><Table.Cell>v{item.config_version}</Table.Cell><Table.Cell><code class="text-xs">{item.reason?.code ?? 'Unknown reason'}</code></Table.Cell><Table.Cell class="text-right"><Button variant="outline" size="sm" onclick={() => openEvidence('rejected', item)}>Inspect</Button></Table.Cell></Table.Row>{/each}</Table.Body>
-              </Table.Root></div>
-              <div class="flex flex-wrap items-center justify-between gap-3"><p class="text-sm text-muted-foreground">Page {rejectedPageIndex + 1}</p><div class="flex gap-2"><Button variant="outline" size="sm" onclick={() => previousEvidence('rejected')} disabled={rejectedPageIndex === 0 || rejectedLoading}><ChevronLeft class="size-4" /> Previous</Button><Button variant="outline" size="sm" onclick={() => nextEvidence('rejected')} disabled={!rejectedCursor || rejectedLoading}>Next <ChevronRight class="size-4" /></Button></div></div>
-            {:else}<p class="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">No rejected evidence records were returned for this monitor.</p>{/if}
+            <MonitorEvidenceList
+              kind="rejected"
+              items={badEvidence?.data ?? []}
+              loading={rejectedLoading}
+              error={rejectedError}
+              pageIndex={rejectedPageIndex}
+              hasNext={Boolean(rejectedCursor)}
+              onRetry={() => loadEvidencePage('rejected')}
+              onInspect={(item) => openEvidence('rejected', item)}
+              onPrevious={() => previousEvidence('rejected')}
+              onNext={() => nextEvidence('rejected')}
+            />
           </Tabs.Content>
           <Tabs.Content value="deliveries" class="mt-4 space-y-3">
-            {#if deliveriesLoading}<p class="text-sm text-muted-foreground" aria-live="polite">Loading delivery history…</p>
-            {:else if deliveriesError}<Alert variant="destructive"><AlertDescription>{deliveriesError}</AlertDescription><Button variant="outline" size="sm" class="mt-2 w-fit" onclick={() => loadDeliveryPage()}><RefreshCw class="size-4" /> Retry</Button></Alert>
-            {:else if deliveries?.data?.length}
-              <div class="overflow-hidden rounded-lg border"><Table.Root>
-                <Table.Header><Table.Row><Table.Head>Request</Table.Head><Table.Head>Evidence outcome</Table.Head><Table.Head>Delivery status</Table.Head><Table.Head>Recorded</Table.Head><Table.Head class="text-right"></Table.Head></Table.Row></Table.Header>
-                <Table.Body>{#each deliveries.data as item (item.request_id)}<Table.Row><Table.Cell><code class="text-xs">{item.request_id.slice(0, 8)}…</code></Table.Cell><Table.Cell>{label(item.evidence_outcome)}</Table.Cell><Table.Cell><Badge variant="outline" class={getDeliveryStatusClasses(item.status ?? item.summary?.status)}>{label(item.status ?? item.summary?.status)}</Badge></Table.Cell><Table.Cell>{formatDate(item.created_at ?? item.updated_at)}</Table.Cell><Table.Cell class="text-right"><Button variant="outline" size="sm" onclick={() => openDelivery(item)}>Inspect</Button></Table.Cell></Table.Row>{/each}</Table.Body>
-              </Table.Root></div>
-              <div class="flex flex-wrap items-center justify-between gap-3"><p class="text-sm text-muted-foreground">Page {deliveryPageIndex + 1}</p><div class="flex gap-2"><Button variant="outline" size="sm" onclick={previousDeliveries} disabled={deliveryPageIndex === 0 || deliveriesLoading}><ChevronLeft class="size-4" /> Previous</Button><Button variant="outline" size="sm" onclick={nextDeliveries} disabled={!deliveryCursor || deliveriesLoading}>Next <ChevronRight class="size-4" /></Button></div></div>
-            {:else}<p class="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">No persisted delivery records were returned. This does not imply provider delivery is enabled or disabled.</p>{/if}
+            <MonitorDeliveryHistory
+              items={deliveries?.data ?? []}
+              loading={deliveriesLoading}
+              error={deliveriesError}
+              pageIndex={deliveryPageIndex}
+              hasNext={Boolean(deliveryCursor)}
+              onRetry={() => loadDeliveryPage()}
+              onInspect={openDelivery}
+              onPrevious={previousDeliveries}
+              onNext={nextDeliveries}
+            />
           </Tabs.Content>
         </Tabs.Root>
 
