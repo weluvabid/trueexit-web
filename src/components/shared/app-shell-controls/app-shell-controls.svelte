@@ -1,16 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import * as DropdownMenu from '../../ui/dropdown-menu/index.js';
-  import * as Popover from '../../ui/popover/index.js';
-  import * as Command from '../../ui/command/index.js';
   import { Button } from '../../ui/button/index.js';
-  import {
-    Search, ChevronDown, Check, Sun, Moon, UserRound, LogOut,
-    Settings, ArrowUpRight, LayoutDashboard, Activity, FileText, Tags, X
-  } from '@lucide/svelte';
+  import { Search } from '@lucide/svelte';
+  import WorkspaceSwitcher from './workspace-switcher.svelte';
+  import AppearanceToggle from './appearance-toggle.svelte';
+  import AccountMenu from './account-menu.svelte';
+  import QuickNavigation from './quick-navigation.svelte';
   import { loadWorkspaceBootstrap } from '../../../lib/client/workspace-bootstrap';
   import { assertApiSuccess, ApiClientError, requestApi } from '../../../lib/client/api-client';
-  import { clearPersistedQueryCache, getSharedQueryClient } from '../../../lib/client/query-client';
+  import { getSharedQueryClient } from '../../../lib/client/query-client';
   import { readActiveWorkspaceId, writeActiveWorkspaceId, resolveAndPersistWorkspaceId } from '../../../lib/client/workspace-preference';
   import { parseApiBody, workspaceSearchResponseSchema } from '../../../lib/client/api-schemas';
   import type { WorkspaceContext } from '../../../lib/client/workspace-bootstrap';
@@ -29,7 +27,6 @@
   let workspaceError = $state('');
   let workspaceMenuOpen = $state(false);
   let workspaceSearchQuery = $state('');
-  let accountMenuOpen = $state(false);
   let searchOpen = $state(false);
   let searchQuery = $state('');
   let searchResults: SearchResult[] = $state([]);
@@ -39,12 +36,6 @@
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let searchSequence = 0;
 
-  const navigationItems: SearchResult[] = [
-    { label: 'Overview', detail: 'Dashboard and recent activity', href: '/', kind: 'overview' },
-    { label: 'Monitors', detail: 'Monitor inventory and checks', href: '/monitors', kind: 'monitors' },
-    { label: 'Settings', detail: 'Workspace settings and members', href: '/settings', kind: 'settings' },
-    { label: 'Templates', detail: 'Global template library', href: '/templates', kind: 'templates' }
-  ];
   function effectiveTheme(): 'light' | 'dark' {
     if (appearance !== 'system') return appearance;
 
@@ -162,15 +153,6 @@
     }
   }
 
-  function resultIcon(kind: string) {
-    if (kind === 'overview') return LayoutDashboard;
-    if (kind === 'monitors') return Activity;
-    if (kind === 'settings') return Settings;
-    if (kind === 'templates') return FileText;
-    if (kind === 'tags') return Tags;
-    return FileText;
-  }
-
   onMount(() => {
     const themeKey = 'trueexit.appearance';
     const stored = (() => {
@@ -230,68 +212,18 @@
 <div class="app-shell-controls" style="display: contents">
   <div class="app-header__identity">
     <a class="brand" href="/" aria-label="TrueExit home">
-      <img
-        class="brand__mark dark:hidden"
-        src="/brand/trueexit-symbol.svg"
-        alt=""
-        aria-hidden="true"
-        decoding="async"
-      />
-      <img
-        class="brand__mark hidden dark:block"
-        src="/brand/trueexit-symbol-inverse.svg"
-        alt=""
-        aria-hidden="true"
-        decoding="async"
-      />
+      <img class="brand__mark dark:hidden" src="/brand/trueexit-symbol.svg" alt="" aria-hidden="true" decoding="async" />
+      <img class="brand__mark hidden dark:block" src="/brand/trueexit-symbol-inverse.svg" alt="" aria-hidden="true" decoding="async" />
     </a>
-
-    <Popover.Root bind:open={workspaceMenuOpen}>
-      <Popover.Trigger
-        class="workspace-switcher__trigger"
-        disabled={workspaceLoading || !!workspaceError || !workspaces.length}
-        aria-label="Switch workspace"
-      >
-        <span class="workspace-switcher__name">{#if workspaceLoading}Loading workspace…{:else if workspaceError}{workspaces.length ? 'Workspace unavailable' : 'No workspace'}{:else}{workspaces.find((workspace) => workspace.id === activeWorkspaceId)?.name || 'Choose workspace'}{/if}</span>
-        <ChevronDown class="size-4 shrink-0" />
-      </Popover.Trigger>
-      <Popover.Content
-        class="w-80 max-w-[calc(100vw-1.5rem)] gap-0 p-2"
-        align="center"
-        sideOffset={8}
-        aria-label="Switch workspace"
-      >
-        <Command.Root class="min-h-0">
-          <Command.Input
-            bind:value={workspaceSearchQuery}
-            placeholder="Search workspaces…"
-            aria-label="Search workspaces"
-          />
-          <Command.List class="mt-3 w-full max-h-72">
-            <Command.Empty>No matching workspaces.</Command.Empty>
-            <Command.Group class="w-full">
-              {#each workspaces as workspace (workspace.id)}
-                <Command.Item
-                  value={`${workspace.name} ${workspace.personal ? 'Personal' : ''}`}
-                  onSelect={() => {
-                    workspaceSearchQuery = '';
-                    chooseWorkspace(workspace.id);
-                  }}
-                  class="relative box-border w-full cursor-pointer gap-2 px-3 py-2.5"
-                >
-                  <span class="min-w-0 flex-1 truncate pr-8">{workspace.name}{workspace.personal ? ' · Personal' : ''}</span>
-                  {#if workspace.id === activeWorkspaceId}<Check class="pointer-events-none absolute right-3 size-4 shrink-0" />{/if}
-                </Command.Item>
-              {/each}
-            </Command.Group>
-            {#if workspaceError}
-              <div class="px-3 py-2 text-xs text-muted-foreground">{workspaceError}</div>
-            {/if}
-          </Command.List>
-        </Command.Root>
-      </Popover.Content>
-    </Popover.Root>
-
+    <WorkspaceSwitcher
+      {workspaces}
+      {activeWorkspaceId}
+      {workspaceLoading}
+      {workspaceError}
+      bind:workspaceMenuOpen
+      bind:workspaceSearchQuery
+      onChooseWorkspace={chooseWorkspace}
+    />
   </div>
 
   <Button variant="ghost" size="icon" class="search-trigger" onclick={openSearch} aria-label="Quick navigation" title="Quick navigation (⌘K)">
@@ -299,71 +231,16 @@
   </Button>
 
   <div class="app-header__utilities" aria-label="Application utilities">
-    <Button
-      variant="ghost"
-      size="icon"
-      class="icon-button theme-toggle"
-      onclick={toggleAppearance}
-      aria-label={`Switch to ${effectiveTheme() === 'dark' ? 'light' : 'dark'} mode`}
-      title={`Switch to ${effectiveTheme() === 'dark' ? 'light' : 'dark'} mode`}
-    >
-      {#if effectiveTheme() === 'dark'}<Sun class="size-5" />{:else}<Moon class="size-5" />{/if}
-    </Button>
-
-    <DropdownMenu.Root bind:open={accountMenuOpen}>
-      <DropdownMenu.Trigger class="account-menu__trigger" aria-label="Open account menu">
-        <span class="account-avatar" aria-hidden="true">{initials}</span>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Content class="w-64" align="end">
-        <div class="flex items-center gap-3 px-2 py-2">
-          <span class="account-avatar account-avatar--large" aria-hidden="true">{initials}</span>
-          <span class="min-w-0 truncate text-xs font-medium" title={email}>{email}</span>
-        </div>
-        <DropdownMenu.Separator />
-        <DropdownMenu.Item onSelect={() => navigateTo('/account')}>
-          <UserRound class="size-4" /> Account settings <ArrowUpRight class="ml-auto size-4" />
-        </DropdownMenu.Item>
-        <DropdownMenu.Item variant="destructive" onSelect={() => {
-          void clearPersistedQueryCache().finally(() => window.location.assign('/logout'));
-        }}>
-          <LogOut class="size-4" /> Sign out <ArrowUpRight class="ml-auto size-4" />
-        </DropdownMenu.Item>
-      </DropdownMenu.Content>
-    </DropdownMenu.Root>
+    <AppearanceToggle isDark={effectiveTheme() === 'dark'} onToggle={toggleAppearance} />
+    <AccountMenu {email} {initials} onNavigate={navigateTo} />
   </div>
 </div>
 
-<Command.Dialog bind:open={searchOpen} title="Quick navigation" description="Search navigation and workspace resources." class="top-[12%] translate-y-0 sm:top-[18%]">
-  <Command.Input value={searchQuery} oninput={(event) => updateSearch(event.currentTarget.value)} placeholder="Search destinations and workspace resources…" />
-  <Command.List class="max-h-[min(65vh,32rem)]">
-    <Command.Group heading="Navigation">
-      {#each navigationItems as item (item.href)}
-        {@const Icon = resultIcon(item.kind)}
-        <Command.LinkItem href={item.href} value={`${item.label} ${item.detail}`} onSelect={() => { searchOpen = false; }}>
-          <Icon class="size-4 text-muted-foreground" />
-          <span>{item.label}</span><span class="ml-auto text-xs text-muted-foreground">{item.detail}</span>
-        </Command.LinkItem>
-      {/each}
-    </Command.Group>
-    {#if searchQuery.trim().length >= 2}
-      <Command.Separator />
-      <Command.Group heading="Workspace results">
-        {#if searchLoading}
-          <div class="px-2 py-3 text-sm text-muted-foreground">Searching this workspace…</div>
-        {:else if searchResults.length}
-          {#each searchResults as item, index (`${item.kind}-${item.label}-${index}`)}
-            {@const Icon = resultIcon(item.kind)}
-            <Command.LinkItem href={item.href} value={`${item.label} ${item.detail}`} onSelect={() => { searchOpen = false; }}>
-              <Icon class="size-4 text-muted-foreground" />
-              <span class="min-w-0 flex-1 truncate">{item.label}</span>
-              <span class="max-w-[45%] truncate text-xs text-muted-foreground">{item.detail}</span>
-            </Command.LinkItem>
-          {/each}
-        {:else if searchStatus}
-          <div class="px-2 py-3 text-sm text-muted-foreground">{searchStatus}</div>
-        {/if}
-      </Command.Group>
-    {/if}
-    <Command.Empty>No matching navigation destinations.</Command.Empty>
-  </Command.List>
-</Command.Dialog>
+<QuickNavigation
+  bind:open={searchOpen}
+  bind:query={searchQuery}
+  results={searchResults}
+  status={searchStatus}
+  loading={searchLoading}
+  onQueryChange={updateSearch}
+/>
