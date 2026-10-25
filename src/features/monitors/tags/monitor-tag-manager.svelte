@@ -4,11 +4,9 @@
   import type { WorkspaceTag } from '@/lib/client/monitor-queries';
   import * as Dialog from '@/components/ui/dialog/index.js';
   import { Button } from '@/components/ui/button/index.js';
-  import { Input } from '@/components/ui/input/index.js';
-  import { Checkbox } from '@/components/ui/checkbox/index.js';
-  import { Badge } from '@/components/ui/badge/index.js';
-  import { Label } from '@/components/ui/label/index.js';
-  import { Plus, X, LoaderCircle, Tags } from '@lucide/svelte';
+  import { LoaderCircle, Tags } from '@lucide/svelte';
+  import MonitorAvailableTags from './monitor-available-tags.svelte';
+  import MonitorTagDrafts from './monitor-tag-drafts.svelte';
 
   let {
     taggingMonitor = null,
@@ -57,52 +55,19 @@
         <div class="flex items-center gap-2 py-8 text-sm text-muted-foreground" aria-live="polite"><LoaderCircle class="size-4 animate-spin" />Loading or saving tags…</div>
       {:else}
         <form class="space-y-6" onsubmit={onSubmit}>
-          <section class="space-y-3">
-            <div>
-              <h3 class="text-sm font-semibold">Available tags</h3>
-              <p class="text-sm text-muted-foreground">Select up to three labels for {taggingMonitor.name}.</p>
-            </div>
-            {#if workspaceTags.length > 0}
-              <div class="grid gap-2 sm:grid-cols-2">
-                {#each workspaceTags as tag (tag.id)}
-                  <label class="flex min-w-0 cursor-pointer items-center gap-3 rounded-md border p-3 transition-colors hover:bg-muted/50">
-                    <Checkbox value={tag.id} bind:group={monitorTagIds} disabled={!monitorTagIds.includes(tag.id) && monitorTagIds.length + newTagNames.length >= 3} />
-                    <span class="min-w-0 flex-1">
-                      <span class="block truncate text-sm font-medium">{tag.name}</span>
-                      <span class="block text-xs text-muted-foreground">{tag.monitor_count} monitor{tag.monitor_count === 1 ? '' : 's'}</span>
-                    </span>
-                  </label>
-                {/each}
-              </div>
-            {:else}
-              <p class="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No workspace tags yet. Create one below.</p>
-            {/if}
-          </section>
+          <MonitorAvailableTags
+            {workspaceTags}
+            bind:monitorTagIds
+            newTagCount={newTagNames.length}
+          />
 
-          <section class="space-y-3">
-            <div>
-              <h3 class="text-sm font-semibold">Create a tag</h3>
-              <p class="text-sm text-muted-foreground">New tags become reusable across this workspace.</p>
-            </div>
-            <div class="flex flex-col gap-2 sm:flex-row">
-              <div class="min-w-0 flex-1 space-y-1.5">
-                <Label for="new-monitor-tag">Tag name</Label>
-                <Input id="new-monitor-tag" bind:value={tagInput} maxlength={40} placeholder="e.g. Customer-facing" />
-              </div>
-              <Button class="sm:self-end" type="button" variant="outline" onclick={onAddTag} disabled={!tagInput.trim() || monitorTagIds.length + newTagNames.length >= 3}><Plus class="size-4" /> Add tag</Button>
-            </div>
-            {#if newTagNames.length > 0}
-              <div class="flex flex-wrap gap-2" aria-label="New tags to create">
-                {#each newTagNames as tag (tag)}
-                  <Badge variant="secondary" class="gap-1.5 py-1 pl-2.5 pr-1.5">
-                    {tag}
-                    <button type="button" aria-label={`Remove ${tag}`} class="rounded-full p-0.5 hover:bg-background" onclick={() => onRemoveTag(tag)}><X class="size-3" /></button>
-                  </Badge>
-                {/each}
-              </div>
-              <p class="text-xs text-muted-foreground">New tags will be created and assigned when saved.</p>
-            {/if}
-          </section>
+          <MonitorTagDrafts
+            bind:tagInput
+            monitorTagCount={monitorTagIds.length + newTagNames.length}
+            {newTagNames}
+            onAddTag={onAddTag}
+            onRemoveTag={onRemoveTag}
+          />
 
           <Dialog.Footer class="gap-2 sm:gap-2">
             <p class="mr-auto max-w-xs text-xs text-muted-foreground">Saving replaces this monitor’s complete tag assignment. Removing a tag here does not delete it from the workspace.</p>
