@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Template } from '@/lib/client/template-types';
   import TemplateCard from './template-card.svelte';
+  import TemplatePagination from './template-pagination.svelte';
 
   let {
     templates,
@@ -48,5 +49,5 @@
   <div class="template-list" aria-busy={loading}>{#each templates as template (template.id)}
     <TemplateCard {template} {canManage} {saving} {onInspect} {onEdit} {onDelete} />
   {/each}</div>
-  <nav class="template-pagination" aria-label="Template list pages"><button class="template-button" type="button" onclick={onPreviousPage} disabled={pageIndex === 0 || loading}>← Previous</button><span>Page {pageIndex + 1}</span><button class="template-button" type="button" onclick={onNextPage} disabled={!nextCursor || loading}>Next →</button></nav>
+  <TemplatePagination {pageIndex} {nextCursor} {loading} {onPreviousPage} {onNextPage} />
 {/if}
