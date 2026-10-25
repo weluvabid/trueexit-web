@@ -10,6 +10,7 @@
   import type { FieldDefinition, Primitive, Template } from '../lib/client/template-types';
   import { PRIMITIVE_VALUES, PrimitiveCode } from '../lib/client/field-primitives';
   import TemplateManualFieldEditor from '../features/templates/fields/template-manual-field-editor.svelte';
+  import TemplateJsonFieldDiscovery from '../features/templates/fields/template-json-field-discovery.svelte';
   import TemplateList from '../features/templates/list/template-list.svelte';
   import TemplateDetailDialog from '../features/templates/detail/template-detail-dialog.svelte';
   import { addTemplateField, removeTemplateField, updateTemplateField, discoveredFieldKey, mergeDiscoveredFields } from '../lib/client/template-field-model';
@@ -363,16 +364,19 @@
         <label class="template-label">Description <span>Optional</span><textarea bind:value={description} maxlength="1000" rows="2" placeholder="What these fields are intended to verify" /></label>
         <nav class="template-editor-tabs" aria-label="Template field editor"><button type="button" class:active={formTab === 'json'} onclick={() => formTab = 'json'}>Paste JSON</button><button type="button" class:active={formTab === 'fields'} onclick={() => formTab = 'fields'}>Add fields</button></nav>
         {#if formTab === 'json'}
-        <section class="template-discovery"><div class="template-section-heading"><div><h3>Discover fields from JSON</h3><p>Paste a representative JSON object. Choose discovered fields to add them to the template; sample values are never saved.</p></div></div><label class="template-label">Sample JSON<textarea class="template-json-input" bind:value={samplePayload} rows="8" spellcheck="false" placeholder={`{
-  "backup": {
-    "size": 1024,
-    "processed_rows": 42
-  }
-}`} /></label><div class="template-actions"><button class="template-button template-button--primary" type="button" onclick={() => void discoverFields()} disabled={discovering || !workspaceId}>{discovering ? 'Discovering…' : 'Discover fields'}</button>{#if discovered.length}<button class="template-button" type="button" onclick={addDiscoveredFields} disabled={!selectedDiscovered.length}>Add selected ({selectedDiscovered.length})</button>{/if}</div>
-          {#if discoveryError}<p class="template-inline-error" role="alert">{discoveryError}</p>{/if}
-          {#if discoveryWarnings.length}<p class="template-warning">Some values were skipped: {[...new Set(discoveryWarnings)].join(', ')}. Review the discovered fields before saving.</p>{/if}
-          {#if discovered.length}<div class="template-discovered">{#each discovered as field}<label class="template-discovered__row"><input type="checkbox" checked={selectedDiscovered.includes(`${field.name}\u0000${field.path}`)} onchange={(event) => toggleDiscovered(field, event.currentTarget.checked)} /><span><strong>{field.name}</strong><small>{field.path}</small></span><span>{primitiveNames[field.primitive] ?? 'Unknown'}</span></label>{/each}</div>{/if}
-        </section>
+        <TemplateJsonFieldDiscovery
+          bind:samplePayload
+          {discovering}
+          {workspaceId}
+          {discovered}
+          {selectedDiscovered}
+          {discoveryError}
+          {discoveryWarnings}
+          {primitiveNames}
+          onDiscover={() => void discoverFields()}
+          onAddSelected={addDiscoveredFields}
+          onToggleDiscovered={toggleDiscovered}
+        />
         {:else}
         <TemplateManualFieldEditor {fields} {primitiveOptions} onAddField={addField} onRemoveField={removeField} onUpdateField={updateField} />
         {/if}
