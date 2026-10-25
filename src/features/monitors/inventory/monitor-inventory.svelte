@@ -1,16 +1,13 @@
 <svelte:options runes={true} />
 <script lang="ts">
-  import * as Table from '@/components/ui/table/index.js';
   import { Button } from '@/components/ui/button/index.js';
-  import { Badge } from '@/components/ui/badge/index.js';
   import {
-    ArrowUpDown, ExternalLink, Tags,
-    Pencil, Pause, Play, RotateCcw, Archive, Plus, ChevronLeft, ChevronRight
+    ArrowUpDown, Plus, ChevronLeft, ChevronRight
   } from '@lucide/svelte';
   import type { Monitor, MonitorStatus } from '@/lib/client/monitor-types';
   import type { MonitorSort } from '@/lib/client/monitor-queries';
   import MonitorInventoryFilters from '@/features/monitors/inventory/monitor-inventory-filters.svelte';
-  import { formatMonitorCadence, formatMonitorDate } from '@/lib/client/monitor-format';
+  import MonitorInventoryTable from '@/features/monitors/inventory/monitor-inventory-table.svelte';
 
   let {
     workspaceId,
@@ -160,72 +157,17 @@
           <p>Page {pageIndex + 1}</p>
         </div>
 
-        <div class="overflow-hidden rounded-lg border" aria-busy={loadingMonitors}>
-          <Table.Root class="min-w-6xl">
-            <Table.Caption>Monitor inventory and lifecycle controls.</Table.Caption>
-            <Table.Header>
-              <Table.Row class="bg-muted/50 hover:bg-muted/50">
-                <Table.Head class="w-[28%]">Monitor</Table.Head>
-                <Table.Head>Status</Table.Head>
-                <Table.Head>Cadence</Table.Head>
-                <Table.Head>Configuration</Table.Head>
-                <Table.Head>Last updated</Table.Head>
-                <Table.Head class="text-right">Actions</Table.Head>
-              </Table.Row>
-            </Table.Header>
-            <Table.Body>
-              {#each monitors as monitor (monitor.id)}
-                <Table.Row>
-                  <Table.Cell class="max-w-[24rem] whitespace-normal">
-                    <div class="min-w-0 space-y-1">
-                      <a class="font-medium underline-offset-4 hover:underline" href={`/monitors/${encodeURIComponent(monitor.id)}?workspace_id=${encodeURIComponent(workspaceId)}`}>{monitor.name}</a>
-                      <p class="line-clamp-2 text-xs text-muted-foreground">{monitor.description || 'No description added yet.'}</p>
-                    </div>
-                  </Table.Cell>
-                  <Table.Cell>
-                    <Badge variant={monitor.status === 'enabled' ? 'default' : 'secondary'} class="capitalize">{monitor.status}</Badge>
-                  </Table.Cell>
-                  <Table.Cell>{formatMonitorCadence(monitor.cadence_seconds)}</Table.Cell>
-                  <Table.Cell>v{monitor.current_config_version}</Table.Cell>
-                  <Table.Cell>{formatMonitorDate(monitor.updated_at)}</Table.Cell>
-                  <Table.Cell>
-                    <div class="flex items-center justify-end gap-1">
-                      <Button variant="ghost" size="icon-sm" href={`/monitors/${encodeURIComponent(monitor.id)}?workspace_id=${encodeURIComponent(workspaceId)}`} aria-label={`Investigate ${monitor.name}`} title="Investigate">
-                        <ExternalLink class="size-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon-sm" aria-label={`Manage tags for ${monitor.name}`} title="Manage tags" disabled={tagBusy || creating || !!busyMonitorId} onclick={() => onManageTags(monitor)}>
-                        <Tags class="size-4" />
-                      </Button>
-                      {#if monitor.status !== 'archived'}
-                        <Button variant="ghost" size="icon-sm" aria-label={`Edit ${monitor.name}`} title="Edit monitor" disabled={!!busyMonitorId || creating} onclick={() => onEditMonitor(monitor)}>
-                          <Pencil class="size-4" />
-                        </Button>
-                      {/if}
-                      {#if monitor.status === 'enabled'}
-                        <Button variant="ghost" size="icon-sm" aria-label={`Pause ${monitor.name}`} title="Pause monitor" disabled={!!busyMonitorId} onclick={() => onLifecycleAction(monitor, 'pause')}>
-                          <Pause class="size-4" />
-                        </Button>
-                      {:else if monitor.status === 'disabled'}
-                        <Button variant="ghost" size="icon-sm" aria-label={`Resume ${monitor.name}`} title="Resume monitor" disabled={!!busyMonitorId} onclick={() => onLifecycleAction(monitor, 'resume')}>
-                          <Play class="size-4" />
-                        </Button>
-                      {:else}
-                        <Button variant="ghost" size="icon-sm" aria-label={`Restore ${monitor.name}`} title="Restore monitor" disabled={!!busyMonitorId} onclick={() => onLifecycleAction(monitor, 'restore')}>
-                          <RotateCcw class="size-4" />
-                        </Button>
-                      {/if}
-                      {#if monitor.status !== 'archived'}
-                        <Button variant="ghost" size="icon-sm" class="text-destructive hover:text-destructive" aria-label={`Archive ${monitor.name}`} title="Archive monitor" disabled={!!busyMonitorId} onclick={() => onLifecycleAction(monitor, 'archive')}>
-                          <Archive class="size-4" />
-                        </Button>
-                      {/if}
-                    </div>
-                  </Table.Cell>
-                </Table.Row>
-              {/each}
-            </Table.Body>
-          </Table.Root>
-        </div>
+        <MonitorInventoryTable
+          {monitors}
+          {workspaceId}
+          {loadingMonitors}
+          {tagBusy}
+          {creating}
+          {busyMonitorId}
+          {onManageTags}
+          {onEditMonitor}
+          {onLifecycleAction}
+        />
 
         <nav class="flex flex-wrap items-center justify-between gap-3" aria-label="Monitor list pages">
           <p class="text-sm text-muted-foreground">Page {pageIndex + 1}</p>
