@@ -1,13 +1,12 @@
 <svelte:options runes={true} />
 <script lang="ts">
   import { Button } from '@/components/ui/button/index.js';
-  import {
-    ArrowUpDown, Plus, ChevronLeft, ChevronRight
-  } from '@lucide/svelte';
+  import { ArrowUpDown, Plus } from '@lucide/svelte';
   import type { Monitor, MonitorStatus } from '@/lib/client/monitor-types';
   import type { MonitorSort } from '@/lib/client/monitor-queries';
   import MonitorInventoryFilters from '@/features/monitors/inventory/monitor-inventory-filters.svelte';
   import MonitorInventoryTable from '@/features/monitors/inventory/monitor-inventory-table.svelte';
+  import MonitorInventoryPagination from '@/features/monitors/inventory/monitor-inventory-pagination.svelte';
 
   let {
     workspaceId,
@@ -169,17 +168,13 @@
           {onLifecycleAction}
         />
 
-        <nav class="flex flex-wrap items-center justify-between gap-3" aria-label="Monitor list pages">
-          <p class="text-sm text-muted-foreground">Page {pageIndex + 1}</p>
-          <div class="flex items-center gap-2">
-            <Button variant="outline" onclick={onPreviousPage} disabled={pageIndex === 0 || loadingMonitors}>
-              <ChevronLeft class="size-4" /> Previous
-            </Button>
-            <Button variant="outline" onclick={onNextPage} disabled={!nextCursor || loadingMonitors}>
-              Next <ChevronRight class="size-4" />
-            </Button>
-          </div>
-        </nav>
+        <MonitorInventoryPagination
+          {pageIndex}
+          {nextCursor}
+          {loadingMonitors}
+          onPreviousPage={onPreviousPage}
+          onNextPage={onNextPage}
+        />
       {/if}
       <p class="text-xs text-muted-foreground">Monitor IDs and Ping capabilities are intentionally not displayed. Archived monitors retain evidence and health history; restoring returns them to disabled.</p>
     </section>
