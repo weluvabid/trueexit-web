@@ -32,6 +32,32 @@
   let accountForm = $state({ newOwnerUserId: '', closureConfirm: false, createAccountName: '' });
   let settingsUi = $state({ appearancePreference: 'system', showCreateAccount: false });
   let loadGeneration = 0;
+  let sectionUrlReady = $state(false);
+  let suppressSectionUrlWrite = false;
+
+  const accountSections = ['profile', 'preferences', 'account', 'billing'] as const;
+
+  function sectionFromUrl(): typeof section {
+    const value = new URL(window.location.href).searchParams.get('section');
+    return accountSections.includes(value as typeof accountSections[number])
+      ? value as typeof section
+      : 'profile';
+  }
+
+  function handleSectionPopState() {
+    suppressSectionUrlWrite = true;
+    section = sectionFromUrl();
+    queueMicrotask(() => { suppressSectionUrlWrite = false; });
+  }
+
+  $effect(() => {
+    const selectedSection = section;
+    if (!sectionUrlReady || suppressSectionUrlWrite || typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('section') === selectedSection) return;
+    url.searchParams.set('section', selectedSection);
+    window.history.pushState({}, '', url);
+  });
 
   const selectedWorkspace = $derived(workspaces.find((item) => item.id === selectedWorkspaceId) ?? null);
   const selectedAccount = $derived(accounts.find((item) => item.account_id === selectedWorkspace?.account_id) ?? null);
@@ -197,8 +223,11 @@
 
   onMount(() => {
     settingsUi.appearancePreference = document.documentElement.dataset.themePreference || 'system';
-    section = 'profile';
+    section = sectionFromUrl();
+    sectionUrlReady = true;
+    window.addEventListener('popstate', handleSectionPopState);
     void loadAll();
+    return () => window.removeEventListener('popstate', handleSectionPopState);
   });
 </script>
 
