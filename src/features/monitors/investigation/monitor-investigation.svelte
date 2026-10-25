@@ -10,12 +10,12 @@
   import { Button } from '@/components/ui/button/index.js';
   import { Badge } from '@/components/ui/badge/index.js';
   import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert/index.js';
-  import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, RefreshCw, X, FileSearch, Activity, Clock3, Bell, Database, AlertTriangle } from '@lucide/svelte';
-  import { formatInvestigationDate, formatInvestigationValue, formatInvestigationLabel, getHealthCounts } from '@/lib/client/investigation-format';
-  import { getHealthStateTextClass } from '@/lib/client/health-status';
+  import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw, X, FileSearch, Activity, Clock3, Bell, Database, AlertTriangle } from '@lucide/svelte';
+  import { formatInvestigationDate, formatInvestigationValue } from '@/lib/client/investigation-format';
   import { getDeliveryStatusClasses } from '@/lib/client/delivery-status';
   import MonitorInvestigationHeader from '@/features/monitors/investigation/monitor-investigation-header.svelte';
   import MonitorFieldHealth from '@/features/monitors/investigation/monitor-field-health.svelte';
+  import MonitorHealthHistory from '@/features/monitors/investigation/monitor-health-history.svelte';
   import { buildInvestigationApiPath, getInvestigationErrorMessage, readInvestigationResource, investigationResourceQueryOptions, investigationQueryErrorMessage, type Resource } from '@/lib/client/investigation-api';
   import { investigationDeliveryPageSchema, investigationDeliverySchema, investigationEvidencePageSchema, investigationEvidenceSchema, investigationHealthSchema, investigationHealthVersionSchema, investigationMonitorSchema, investigationRecordPageSchema, investigationRecordSchema } from '@/lib/client/api-schemas';
   import type { InvestigationDeliveryContract, InvestigationEvidenceContract, InvestigationHealthVersionContract, InvestigationMonitorContract } from '@/lib/client/api-schemas';
@@ -82,8 +82,6 @@
 
   const formatDate = formatInvestigationDate;
   const formatValue = formatInvestigationValue;
-  const label = formatInvestigationLabel;
-  const healthCounts = getHealthCounts;
   const queryClient = getSharedQueryClient();
   const monitorQuery = createQuery(
     () => investigationResourceQueryOptions(workspaceId, monitorId, `monitors/${encodeURIComponent(monitorId)}`, investigationMonitorSchema),
@@ -370,43 +368,16 @@
 
       <MonitorFieldHealth {health} loading={healthLoading} error={healthError} />
 
-      <section class="space-y-4" aria-labelledby="history-heading">
-        <div class="flex flex-wrap items-end justify-between gap-2">
-          <div><p class="text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground">Configuration epochs</p><h2 id="history-heading" class="mt-1 text-lg font-semibold">Health history</h2></div>
-          <p class="text-xs text-muted-foreground">Version history is not a timestamped transition log.</p>
-        </div>
-        {#if healthHistoryError}
-          <Alert variant="destructive"><AlertDescription>{healthHistoryError}</AlertDescription></Alert>
-        {:else if healthHistoryLoading}
-          <p class="rounded-lg border p-4 text-sm text-muted-foreground">Loading health history…</p>
-        {:else if healthHistory?.data?.length}
-          <div class="overflow-hidden rounded-lg border">
-            <Table.Root>
-              <Table.Header><Table.Row><Table.Head>Configuration</Table.Head><Table.Head>Snapshot</Table.Head><Table.Head>Health summary</Table.Head><Table.Head class="text-right">Inspect</Table.Head></Table.Row></Table.Header>
-              <Table.Body>
-                {#each healthHistory.data as version (version.config_version)}
-                  <Table.Row>
-                    <Table.Cell class="font-medium">v{version.config_version}</Table.Cell>
-                    <Table.Cell><Badge variant={version.is_current ? 'default' : 'secondary'}>{version.is_current ? 'Current' : 'Historical'}</Badge></Table.Cell>
-                    <Table.Cell><div class="flex flex-wrap gap-2">{#each healthCounts(version.health_summary) as [key, value]}<span class="text-xs text-muted-foreground">{label(key)} <strong class={key === 'field_count' ? 'text-foreground' : getHealthStateTextClass(key)}>{formatValue(value)}</strong></span>{/each}</div></Table.Cell>
-                    <Table.Cell class="text-right"><Button variant="outline" size="sm" onclick={() => openHealthVersion(version.config_version)}>Inspect <ExternalLink class="size-3.5" /></Button></Table.Cell>
-                  </Table.Row>
-                {/each}
-              </Table.Body>
-            </Table.Root>
-          </div>
-        {:else}
-          <p class="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">No persisted health history is available.</p>
-        {/if}
-        {#if healthVersionLoading}<p class="text-sm text-muted-foreground">Loading selected health version…</p>{/if}
-        {#if healthVersionError}<Alert variant="destructive"><AlertDescription>{healthVersionError}</AlertDescription></Alert>{/if}
-        {#if selectedHealthVersion}
-          <article class="space-y-3 rounded-lg border bg-card p-4">
-            <div class="flex flex-wrap items-start justify-between gap-3"><div><h3 class="font-semibold">Configuration v{selectedHealthVersion.config_version}</h3><p class="mt-1 text-sm text-muted-foreground">{selectedHealthVersion.is_current ? 'Current persisted snapshot' : 'Historical persisted snapshot'} · Cadence {selectedHealthVersion.configuration?.cadence_seconds == null ? 'unavailable' : `${selectedHealthVersion.configuration.cadence_seconds}s`}</p></div><Button variant="ghost" size="sm" onclick={closeSelectedHealthVersion}><X class="size-4" /> Close</Button></div>
-            <details open><summary class="cursor-pointer text-sm font-medium">Configuration and health snapshot</summary><pre class="mt-3 max-h-[32rem] overflow-auto rounded-md bg-muted p-3 text-xs">{JSON.stringify({ configuration: selectedHealthVersion.configuration, health: selectedHealthVersion.health }, null, 2)}</pre></details>
-          </article>
-        {/if}
-      </section>
+      <MonitorHealthHistory
+        {healthHistory}
+        loading={healthHistoryLoading}
+        error={healthHistoryError}
+        selectedVersion={selectedHealthVersion}
+        versionLoading={healthVersionLoading}
+        versionError={healthVersionError}
+        onInspect={openHealthVersion}
+        onCloseVersion={closeSelectedHealthVersion}
+      />
 
       <section class="space-y-4" aria-labelledby="activity-heading">
         <div><p class="text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground">Observations and notifications</p><h2 id="activity-heading" class="mt-1 text-lg font-semibold">Evidence & delivery history</h2></div>
