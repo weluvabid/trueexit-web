@@ -10,9 +10,10 @@
   import { getCachedSettingsResponse, getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../lib/client/settings-api';
   import { readActiveWorkspaceId, resolveAndPersistWorkspaceId } from '../lib/client/workspace-preference';
   import { formatDateTime } from '../lib/client/date-format';
-  import SettingsSectionNavigation from './settings/SettingsSectionNavigation.svelte';
-  import SettingsDestinationManager from './settings/SettingsDestinationManager.svelte';
-  import SettingsPeopleManager from './settings/SettingsPeopleManager.svelte';
+  import WorkspaceSettingsNavigation from '../features/workspace-settings/navigation/workspace-settings-navigation.svelte';
+  import AccountSettingsNavigation from '../features/account/navigation/account-settings-navigation.svelte';
+  import SettingsDestinationManager from '../features/workspace-settings/destinations/settings-destination-manager.svelte';
+  import SettingsPeopleManager from '../features/workspace-settings/members/settings-people-manager.svelte';
   import * as Select from './ui/select/index.js';
 
   let { mode = 'workspace' }: { mode?: 'workspace' | 'account' } = $props();
@@ -26,7 +27,7 @@
   let loading = $state(true);
   let error = $state('');
   let notice = $state('');
-  let section = $state<'workspace' | 'people' | 'destinations' | 'profile' | 'preferences' | 'security' | 'account'>('workspace');
+  let section = $state<'workspace' | 'people' | 'destinations' | 'profile' | 'preferences' | 'account' | 'billing'>('workspace');
   let busyKey = $state('');
   // Form state is grouped by workflow so unrelated fields do not share one flat namespace.
   let workspaceForm = $state({ name: '', newName: '', accountId: '' });
@@ -265,7 +266,11 @@
     <div class="settings-loading" aria-live="polite"><span class="settings-spinner" aria-hidden="true"></span>{mode === 'account' ? 'Loading account settings…' : 'Loading workspace settings…'}</div>
   {:else}
     <div class="settings-layout">
-      <SettingsSectionNavigation {mode} bind:section />
+      {#if mode === 'account'}
+        <AccountSettingsNavigation bind:section />
+      {:else}
+        <WorkspaceSettingsNavigation bind:section />
+      {/if}
 
       <div class="settings-content">
         {#if mode === 'account' && section === 'profile'}
@@ -291,10 +296,10 @@
               <small>Applies immediately, including the application shell.</small>
             </div>
           </section>
-        {:else if mode === 'account' && section === 'security'}
+        {:else if mode === 'account' && section === 'billing'}
           <section class="settings-card">
-            <div class="settings-card__heading"><div><p class="settings-kicker">SECURITY</p><h2>Account access stays deliberate.</h2><p>Authentication credentials and session management are handled by the sign-in provider. TrueExit does not currently expose password, session, or MFA management APIs here.</p></div><span class="settings-card__symbol">⌁</span></div>
-            <div class="settings-security-note"><strong>Protected account actions</strong><p>Ownership transfer and account closure may require recent identity verification. If verification is required, TrueExit will stop the action and ask you to sign in again.</p></div>
+            <div class="settings-card__heading"><div><p class="settings-kicker">BILLING</p><h2>Billing belongs here.</h2><p>Subscription and payment management will be connected here as the billing integration is completed.</p></div><span class="settings-card__symbol">⌁</span></div>
+            <div class="settings-security-note"><strong>Billing integration outstanding</strong><p>The billing section is intentionally visible while subscription, payment, and invoice integrations are completed.</p></div>
           </section>
         {:else if section === 'workspace'}
           <section class="settings-card">

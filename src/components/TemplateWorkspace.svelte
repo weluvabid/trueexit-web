@@ -9,7 +9,7 @@
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
   import type { FieldDefinition, Primitive, Template } from '../lib/client/template-types';
   import { PRIMITIVE_VALUES, PrimitiveCode } from '../lib/client/field-primitives';
-  import TemplateManualFieldEditor from './templates/TemplateManualFieldEditor.svelte';
+  import TemplateManualFieldEditor from '../features/templates/fields/template-manual-field-editor.svelte';
   import { addTemplateField, removeTemplateField, updateTemplateField, discoveredFieldKey, mergeDiscoveredFields } from '../lib/client/template-field-model';
   import { validateTemplateDraft } from '../lib/client/template-validation';
   import { buildTemplatePayload, createTemplateDraft, parseSamplePayload } from '../lib/client/template-model';
