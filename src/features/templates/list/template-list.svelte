@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Template } from '@/lib/client/template-types';
   import TemplateCard from './template-card.svelte';
+  import TemplateListToolbar from './template-list-toolbar.svelte';
   import TemplatePagination from './template-pagination.svelte';
 
   let {
@@ -40,7 +41,7 @@
   } = $props();
 </script>
 
-<div class="template-toolbar"><label class="template-search"><span class="sr-only">Search templates</span><span aria-hidden="true">⌕</span><input bind:value={query} oninput={onSearchInput} placeholder="Search names, descriptions, fields…" /></label><span class="template-count">{loading ? 'Loading…' : `${templates.length} template${templates.length === 1 ? '' : 's'} on this page`}</span></div>
+<TemplateListToolbar bind:query {loading} templateCount={templates.length} {onSearchInput} />
 
 {#if listError}<div class="template-state template-state--error" role="alert"><p>{listError}</p><button class="template-button" type="button" onclick={onRetry}>Try again</button></div>
 {:else if loading && templates.length === 0}<div class="template-state" aria-live="polite">Loading templates…</div>
