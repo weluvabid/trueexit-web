@@ -13,6 +13,7 @@
   import TemplateList from '../features/templates/list/template-list.svelte';
   import TemplateDetailDialog from '../features/templates/detail/template-detail-dialog.svelte';
   import TemplateDeleteDialog from '../features/templates/delete/template-delete-dialog.svelte';
+  import TemplateWorkspaceHeader from '../features/templates/header/template-workspace-header.svelte';
   import { addTemplateField, removeTemplateField, updateTemplateField, discoveredFieldKey, mergeDiscoveredFields } from '../lib/client/template-field-model';
   import { validateTemplateDraft } from '../lib/client/template-validation';
   import { buildTemplatePayload, createTemplateDraft, parseSamplePayload } from '../lib/client/template-model';
@@ -324,10 +325,7 @@
 </script>
 
 <section class="template-page" aria-labelledby="template-heading">
-  <header class="template-page__header">
-    <div><p class="template-eyebrow">REUSABLE FIELD DEFINITIONS</p><h1 id="template-heading">Templates</h1><p class="template-muted">Start monitors with reusable fields. Templates never remain linked to monitors after creation.</p></div>
-    {#if canManage}<button class="template-button template-button--primary" type="button" onclick={openCreate} disabled={saving}>New template <span aria-hidden="true">＋</span></button>{/if}
-  </header>
+  <TemplateWorkspaceHeader {canManage} {saving} onCreate={openCreate} />
 
   {#if bootError}<div class="template-alert" role="alert">{bootError} <button type="button" onclick={() => void bootstrap()}>Try again</button></div>{/if}
   {#if notice}<div class="template-notice" role="status">{notice}<button type="button" aria-label="Dismiss message" onclick={() => notice = ''}>×</button></div>{/if}
