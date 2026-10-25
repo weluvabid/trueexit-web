@@ -5,7 +5,7 @@
   import * as Command from './ui/command/index.js';
   import { Button } from './ui/button/index.js';
   import {
-    Search, ChevronDown, Check, Monitor, Sun, Moon, UserRound, LogOut,
+    Search, ChevronDown, Check, Sun, Moon, UserRound, LogOut,
     Settings, ArrowUpRight, LayoutDashboard, Activity, FileText, Tags, X
   } from '@lucide/svelte';
   import { loadWorkspaceBootstrap } from '../lib/client/workspace-bootstrap';
@@ -45,8 +45,20 @@
     { label: 'Settings', detail: 'Workspace settings and members', href: '/settings', kind: 'settings' },
     { label: 'Templates', detail: 'Global template library', href: '/templates', kind: 'templates' }
   ];
-  const appearanceOrder: readonly AppearancePreference[] = ['light', 'dark', 'system'];
-  const appearanceLabels: Record<AppearancePreference, string> = { system: 'System', light: 'Light', dark: 'Dark' };
+  function effectiveTheme(): 'light' | 'dark' {
+    if (appearance !== 'system') return appearance;
+
+    // This function is also evaluated while Astro renders the component on the server.
+    // Use a deterministic fallback there; onMount resolves the real system preference.
+    if (typeof window === 'undefined') return 'light';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+
+  function toggleAppearance() {
+    // When following the OS, toggle from the currently resolved theme and
+    // persist the resulting explicit preference. System remains available in Settings.
+    applyAppearance(effectiveTheme() === 'dark' ? 'light' : 'dark');
+  }
 
   function applyAppearance(preference: AppearancePreference, persist = true) {
     const resolved = preference === 'system'
@@ -287,22 +299,16 @@
   </Button>
 
   <div class="app-header__utilities" aria-label="Application utilities">
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger class="icon-button" aria-label={`Appearance: ${appearanceLabels[appearance]}`}>
-        {#if appearance === 'system'}<Monitor class="size-5" />{:else if appearance === 'light'}<Sun class="size-5" />{:else}<Moon class="size-5" />{/if}
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Content align="end">
-        <DropdownMenu.Label>Appearance</DropdownMenu.Label>
-        <DropdownMenu.Separator />
-        {#each appearanceOrder as option}
-          <DropdownMenu.Item onSelect={() => applyAppearance(option)}>
-            {#if option === 'system'}<Monitor class="size-4" />{:else if option === 'light'}<Sun class="size-4" />{:else}<Moon class="size-4" />{/if}
-            {appearanceLabels[option]}
-            {#if appearance === option}<Check class="ml-auto size-4" />{/if}
-          </DropdownMenu.Item>
-        {/each}
-      </DropdownMenu.Content>
-    </DropdownMenu.Root>
+    <Button
+      variant="ghost"
+      size="icon"
+      class="icon-button theme-toggle"
+      onclick={toggleAppearance}
+      aria-label={`Switch to ${effectiveTheme() === 'dark' ? 'light' : 'dark'} mode`}
+      title={`Switch to ${effectiveTheme() === 'dark' ? 'light' : 'dark'} mode`}
+    >
+      {#if effectiveTheme() === 'dark'}<Sun class="size-5" />{:else}<Moon class="size-5" />{/if}
+    </Button>
 
     <DropdownMenu.Root bind:open={accountMenuOpen}>
       <DropdownMenu.Trigger class="account-menu__trigger" aria-label="Open account menu">

@@ -338,7 +338,7 @@ html[data-theme="dark"] {
     justify-content: space-between;
     gap: 0.5rem;
     padding: 0.55rem 0.625rem;
-    border: 1px solid transparent;
+    border: 1px solid color-mix(in oklab, var(--border) 76%, transparent);
     border-radius: 0.625rem;
     background: transparent;
     color: var(--foreground);
@@ -398,7 +398,12 @@ html[data-theme="dark"] {
   }
 
   .app-nav__link.is-active {
-    box-shadow: 0 0 1.125rem -0.75rem color-mix(in oklab, var(--primary) 48%, transparent);
+    border: 1px solid color-mix(in oklab, var(--foreground) 13%, transparent);
+    box-shadow:
+      0 0 0 1px color-mix(in oklab, var(--foreground) 5%, transparent),
+      0 0 14px color-mix(in oklab, var(--foreground) 7%, transparent),
+      0 3px 12px color-mix(in oklab, var(--foreground) 4%, transparent),
+      inset 0 1px 0 color-mix(in oklab, var(--foreground) 6%, transparent);
   }
 
   .app-nav__icon {
@@ -550,7 +555,11 @@ html[data-theme="dark"] {
   }
 
   .mobile-nav-wrap .app-nav__link.is-active {
-    box-shadow: 0 0 1.125rem -0.75rem color-mix(in oklab, var(--primary) 48%, transparent);
+    border: 1px solid color-mix(in oklab, var(--foreground) 13%, transparent);
+    box-shadow:
+      0 -5px 16px -10px color-mix(in oklab, var(--foreground) 14%, transparent),
+      0 0 0 1px color-mix(in oklab, var(--foreground) 5%, transparent),
+      inset 0 1px 0 color-mix(in oklab, var(--foreground) 6%, transparent);
   }
 
   .app-main {
