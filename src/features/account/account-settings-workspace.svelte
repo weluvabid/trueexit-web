@@ -1,47 +1,38 @@
 <svelte:options runes={true} />
 <script lang="ts">
   import * as v from 'valibot';
-  import { ApiClientError } from '../lib/client/api-client';
-  import { parseApiBody, settingsAccountCreateSchema, settingsAccountLifecycleSchema, settingsAcknowledgementSchema, settingsAccountSchema, workspaceContextSchema } from '../lib/client/api-schemas';
-  import type { SettingsAccountContract } from '../lib/client/api-schemas';
-  import { can } from '../lib/client/permissions';
+  import { ApiClientError } from '@/lib/client/api-client';
+  import { parseApiBody, settingsAccountCreateSchema, settingsAccountLifecycleSchema, settingsAcknowledgementSchema, settingsAccountSchema } from '@/lib/client/api-schemas';
+  import type { SettingsAccountContract } from '@/lib/client/api-schemas';
   import { onMount } from 'svelte';
-  import { loadWorkspaceBootstrap, type WorkspaceContext } from '../lib/client/workspace-bootstrap';
-  import { getCachedSettingsResponse, getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '../lib/client/settings-api';
-  import { readActiveWorkspaceId, resolveAndPersistWorkspaceId } from '../lib/client/workspace-preference';
-  import { formatDateTime } from '../lib/client/date-format';
-  import WorkspaceSettingsNavigation from '../features/workspace-settings/navigation/workspace-settings-navigation.svelte';
-  import AccountSettingsNavigation from '../features/account/navigation/account-settings-navigation.svelte';
-  import SettingsDestinationManager from '../features/workspace-settings/destinations/settings-destination-manager.svelte';
-  import SettingsPeopleManager from '../features/workspace-settings/members/settings-people-manager.svelte';
-  import * as Select from './ui/select/index.js';
+  import { loadWorkspaceBootstrap, type WorkspaceContext } from '@/lib/client/workspace-bootstrap';
+  import { getCachedSettingsResponse, getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '@/lib/client/settings-api';
+  import { formatDateTime } from '@/lib/client/date-format';
+  import { readActiveWorkspaceId, resolveAndPersistWorkspaceId } from '@/lib/client/workspace-preference';
+  import * as Select from '@/components/ui/select/index.js';
+  import AccountSettingsNavigation from '@/features/account/navigation/account-settings-navigation.svelte';
 
-  let { mode = 'workspace' }: { mode?: 'workspace' | 'account' } = $props();
+
+
 
   type Account = SettingsAccountContract;
   let workspaces = $state<WorkspaceContext[]>([]);
   let selectedWorkspaceId = $state('');
 
   let accounts = $state<Account[]>([]);
-  let peopleRefreshKey = $state(0);
   let loading = $state(true);
   let error = $state('');
   let notice = $state('');
-  let section = $state<'workspace' | 'people' | 'destinations' | 'profile' | 'preferences' | 'account' | 'billing'>('workspace');
+  let section = $state<'profile' | 'preferences' | 'account' | 'billing'>('profile');
   let busyKey = $state('');
   // Form state is grouped by workflow so unrelated fields do not share one flat namespace.
-  let workspaceForm = $state({ name: '', newName: '', accountId: '' });
   let accountForm = $state({ newOwnerUserId: '', closureConfirm: false, createAccountName: '' });
-  let settingsUi = $state({
-    appearancePreference: 'system',
-    showCreateWorkspace: false,
-    showCreateAccount: false,
-  });
+  let settingsUi = $state({ appearancePreference: 'system', showCreateAccount: false });
   let loadGeneration = 0;
 
   const selectedWorkspace = $derived(workspaces.find((item) => item.id === selectedWorkspaceId) ?? null);
-  const canManageWorkspace = $derived(can(selectedWorkspace, 'workspace.manage'));
   const selectedAccount = $derived(accounts.find((item) => item.account_id === selectedWorkspace?.account_id) ?? null);
+
 
   async function request(path: string, init: RequestInit = {}): Promise<{ response: Response; body: unknown }> {
     return requestSettingsApi(path, init);
@@ -109,7 +100,6 @@
         try { accounts = listSettingsData(settingsAccountSchema, accountsResult.body); }
         catch (caught) { error = caught instanceof ApiClientError ? settingsErrorMessage(caught.status, caught.code) : settingsErrorMessage(200, 'invalid_response'); }
       } else if (accountsResult.response.status !== 404) error = settingsErrorMessage(accountsResult.response.status, getSettingsErrorCode(accountsResult.body));
-      peopleRefreshKey += 1;
     } catch (caught) {
       if (generation === loadGeneration) error = caught instanceof ApiClientError
         ? settingsErrorMessage(caught.status, caught.code)
@@ -118,41 +108,6 @@
       if (generation === loadGeneration) loading = false;
     }
   }
-
-  async function renameWorkspace(event: SubmitEvent) {
-    event.preventDefault();
-    const name = workspaceForm.name.trim();
-    if (!selectedWorkspace || !name || name.length > 120 || !canManageWorkspace) return;
-    const result = await perform('rename', `/workspaces/${encodeURIComponent(selectedWorkspace.id)}`, workspaceContextSchema, {
-      method: 'PATCH', body: JSON.stringify({ name }),
-    });
-    if (result) {
-      workspaces = workspaces.map((item) => item.id === result.id ? result : item);
-      workspaceForm.name = result.name;
-      notice = 'Workspace name updated.';
-    }
-  }
-
-  async function createWorkspace(event: SubmitEvent) {
-    event.preventDefault();
-    const name = workspaceForm.newName.trim();
-    if (!name || name.length > 120) return;
-    const payload: Record<string, string> = { name };
-    if (workspaceForm.accountId) payload.account_id = workspaceForm.accountId;
-    const result = await perform('create-workspace', '/workspaces', workspaceContextSchema, {
-      method: 'POST', body: JSON.stringify(payload),
-    });
-    if (result) {
-      workspaces = [...workspaces, result];
-      selectedWorkspaceId = result.id;
-      workspaceForm.name = result.name;
-      settingsUi.showCreateWorkspace = false;
-      workspaceForm.newName = '';
-      peopleRefreshKey += 1;
-      notice = 'Workspace created.';
-    }
-  }
-
 
   async function createAccount(event: SubmitEvent) {
     event.preventDefault();
@@ -168,7 +123,6 @@
         selectedWorkspaceId = result.workspace.id;
       }
       accountForm.createAccountName = ''; settingsUi.showCreateAccount = false;
-      peopleRefreshKey += 1;
       notice = 'Account and team workspace created.';
     }
   }
@@ -243,19 +197,25 @@
     if (mode === 'account') section = 'profile';
     void loadAll();
   });
+
+  onMount(() => {
+    settingsUi.appearancePreference = document.documentElement.dataset.themePreference || 'system';
+    section = 'profile';
+    void loadAll();
+  });
 </script>
 
 <svelte:head>
-  <title>Settings · TrueExit</title>
-  <meta name="description" content="Manage TrueExit workspaces, access, notification destinations, and account lifecycle." />
+  <title>Account Settings · TrueExit</title>
+  <meta name="description" content="Manage your TrueExit profile, preferences, account lifecycle, and billing." />
 </svelte:head>
 
 <section class="settings-workspace">
   <header class="settings-intro">
     <div>
-      <p class="eyebrow"><span class="eyebrow__dash"></span>{mode === 'account' ? 'YOUR ACCOUNT' : 'WORKSPACE CONTROL'}</p>
-      <h1>{mode === 'account' ? 'Your account,' : 'Everything in'} <span>{mode === 'account' ? 'your terms.' : 'its place.'}</span></h1>
-      <p class="settings-intro__copy">{mode === 'account' ? 'Manage your personal preferences and account-level actions. Workspace access stays with Workspace Settings.' : 'Manage workspace details, people, and notification destinations in one place.'}</p>
+      <p class="eyebrow"><span class="eyebrow__dash"></span>YOUR ACCOUNT</p>
+      <h1>Your account, <span>your terms.</span></h1>
+      <p class="settings-intro__copy">Manage your personal preferences and account-level actions. Workspace access stays with Workspace Settings.</p>
     </div>
   </header>
 
@@ -263,22 +223,17 @@
   {#if notice}<div class="settings-alert settings-alert--success" role="status">{notice}</div>{/if}
 
   {#if loading}
-    <div class="settings-loading" aria-live="polite"><span class="settings-spinner" aria-hidden="true"></span>{mode === 'account' ? 'Loading account settings…' : 'Loading workspace settings…'}</div>
+    <div class="settings-loading" aria-live="polite"><span class="settings-spinner" aria-hidden="true"></span>Loading account settings…</div>
   {:else}
     <div class="settings-layout">
-      {#if mode === 'account'}
-        <AccountSettingsNavigation bind:section />
-      {:else}
-        <WorkspaceSettingsNavigation bind:section />
-      {/if}
-
+      <AccountSettingsNavigation bind:section />
       <div class="settings-content">
-        {#if mode === 'account' && section === 'profile'}
+        {#if section === 'profile'}
           <section class="settings-card">
             <div class="settings-card__heading"><div><p class="settings-kicker">PROFILE</p><h2>Your identity, without duplicate records.</h2><p>TrueExit uses your signed-in identity for account access. Profile editing is not exposed by the current account API, so this page does not offer fields that cannot be saved.</p></div><span class="settings-card__symbol">◎</span></div>
             <div class="settings-profile-row"><span class="settings-profile-avatar">TE</span><div><strong>Signed-in identity</strong><p>Managed by your authentication provider</p></div><span class="settings-readonly-pill">READ ONLY</span></div>
           </section>
-        {:else if mode === 'account' && section === 'preferences'}
+        {:else if section === 'preferences'}
           <section class="settings-card">
             <div class="settings-card__heading"><div><p class="settings-kicker">PREFERENCES</p><h2>Make TrueExit feel right.</h2><p>Choose how the interface appears on this device. Your preference is stored locally and does not change workspace data.</p></div><span class="settings-card__symbol">◐</span></div>
             <div class="settings-field settings-preference-field">
@@ -295,38 +250,13 @@
               </Select.Root>
               <small>Applies immediately, including the application shell.</small>
             </div>
+            <div class="settings-security-note"><strong>Timezone preference outstanding</strong><p>Timezone selection will be added here. Preference persistence and consistent timestamp display are tracked for the backend completion pass.</p></div>
           </section>
-        {:else if mode === 'account' && section === 'billing'}
+        {:else if section === 'billing'}
           <section class="settings-card">
             <div class="settings-card__heading"><div><p class="settings-kicker">BILLING</p><h2>Billing belongs here.</h2><p>Subscription and payment management will be connected here as the billing integration is completed.</p></div><span class="settings-card__symbol">⌁</span></div>
             <div class="settings-security-note"><strong>Billing integration outstanding</strong><p>The billing section is intentionally visible while subscription, payment, and invoice integrations are completed.</p></div>
           </section>
-        {:else if section === 'workspace'}
-          <section class="settings-card">
-            <div class="settings-card__heading"><div><p class="settings-kicker">WORKSPACE IDENTITY</p><h2>Give this space a name.</h2><p>Make it easy for your team to recognise the environment they’re working in.</p></div><span class="settings-card__symbol">⌘</span></div>
-            <form class="settings-form" onsubmit={renameWorkspace}>
-              <label class="settings-field"><span>Workspace name</span><input bind:value={workspaceForm.name} maxlength="120" required disabled={!canManageWorkspace} /></label>
-              <div class="settings-form__footer"><span>{canManageWorkspace ? 'Changes apply to this workspace.' : 'Only workspace owners and admins can rename this space.'}</span><button class="settings-button settings-button--primary" type="submit" disabled={!canManageWorkspace || !!busyKey || workspaceForm.name.trim() === selectedWorkspace?.name}>{busyKey === 'rename' ? 'Saving…' : 'Save workspace'}</button></div>
-            </form>
-          </section>
-
-          <section class="settings-card">
-            <div class="settings-card__heading"><div><p class="settings-kicker">WORKSPACE DIRECTORY</p><h2>Keep work separated.</h2><p>Create a workspace inside an account you own, without leaving settings.</p></div><span class="settings-card__symbol">＋</span></div>
-            {#if !settingsUi.showCreateWorkspace}
-              <button class="settings-button settings-button--quiet" type="button" onclick={() => settingsUi.showCreateWorkspace = true} disabled={!accounts.length}>＋ Create workspace</button>
-              {#if !accounts.length}<p class="settings-note">Creating a team workspace requires an account you own. Use Account Settings to create or manage an account.</p>{/if}
-            {:else}
-              <form class="settings-form" onsubmit={createWorkspace}>
-                <label class="settings-field"><span>Workspace name</span><input bind:value={workspaceForm.newName} maxlength="120" required placeholder="Production operations" /></label>
-                {#if accounts.length > 1}<label class="settings-field"><span>Account</span><select bind:value={workspaceForm.accountId} required><option value="">Choose an account</option>{#each accounts as account (account.account_id)}<option value={account.account_id}>{account.account_id.slice(0, 8)} · {account.lifecycle_status}</option>{/each}</select></label>{:else if accounts.length === 1}<p class="settings-note">This workspace will be created under your owned account.</p>{/if}
-                <div class="settings-form__footer"><span>Account Owner permission required.</span><div><button class="settings-button settings-button--quiet" type="button" onclick={() => settingsUi.showCreateWorkspace = false}>Cancel</button><button class="settings-button settings-button--primary" type="submit" disabled={!!busyKey}>{busyKey === 'create-workspace' ? 'Creating…' : 'Create workspace'}</button></div></div>
-              </form>
-            {/if}
-          </section>
-        {:else if section === 'people'}
-          <SettingsPeopleManager workspaceId={selectedWorkspaceId} {canManageWorkspace} refreshKey={peopleRefreshKey} />
-        {:else if section === 'destinations'}
-          <SettingsDestinationManager workspaceId={selectedWorkspaceId} {canManageWorkspace} />
         {:else if section === 'account'}
           <section class="settings-card">
             <div class="settings-card__heading"><div><p class="settings-kicker">ACCOUNT STATUS</p><h2>Know where your account stands.</h2><p>Account actions are restricted to the account owner and may require recent identity verification.</p></div><span class="settings-card__symbol">◈</span></div>

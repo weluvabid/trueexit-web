@@ -1,8 +1,8 @@
 ---
 import AppShell from '../layouts/AppShell.astro';
-import SettingsWorkspace from '../components/SettingsWorkspace.svelte';
+import AccountSettingsWorkspace from '../features/account/account-settings-workspace.svelte';
 ---
 
-<AppShell title="Account Settings" description="Manage your TrueExit account preferences, security information, and account lifecycle.">
-  <SettingsWorkspace client:load mode="account" />
+<AppShell title="Account Settings" description="Manage your TrueExit profile, preferences, account lifecycle, and billing.">
+  <AccountSettingsWorkspace client:load />
 </AppShell>
