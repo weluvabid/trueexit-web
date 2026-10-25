@@ -6,7 +6,7 @@
   import MonitorInventory from '@/features/monitors/inventory/monitor-inventory.svelte';
   import MonitorFieldConfiguration from '@/features/monitors/configuration/monitor-field-configuration.svelte';
   import MonitorTagManager from '@/features/monitors/tags/monitor-tag-manager.svelte';
-  import MonitorCadenceConfiguration from '@/features/monitors/configuration/monitor-cadence-configuration.svelte';
+  import MonitorDetailsFields from '@/features/monitors/configuration/monitor-details-fields.svelte';
   import MonitorDestinationConfiguration from '@/features/monitors/configuration/monitor-destination-configuration.svelte';
   import type { Monitor, MonitorDetail, MonitorStatus } from '@/lib/client/monitor-types';
   import { addMonitorTagDraft, removeMonitorTagDraft, getCadenceDraftFromSeconds } from '@/lib/client/monitor-editor-model';
@@ -722,14 +722,7 @@
           <div class="monitor-form-loading" role="status"><span class="monitor-loader" aria-hidden="true"></span><div><strong>Loading monitor configuration</strong><p>Fetching the current fields and destinations before enabling edits.</p></div></div>
         {:else}
         <form class="monitor-create-form" onsubmit={createMonitor}>
-          <div class="monitor-create-section">
-            <div class="monitor-create-section__heading"><span>01</span><div><h3>Monitor details</h3><p>Make it recognisable to your team.</p></div></div>
-            <div class="monitor-form-grid">
-              <label class="monitor-form-field monitor-form-field--wide"><span>Name <b>*</b></span><input bind:value={editorDraft.name} maxlength="200" required placeholder="e.g. Payments pipeline" autocomplete="off" /></label>
-              <label class="monitor-form-field monitor-form-field--wide"><span>Description <small>Optional</small></span><textarea bind:value={editorDraft.description} maxlength="2000" rows="2" placeholder="What should this check tell you?"></textarea></label>
-              <MonitorCadenceConfiguration bind:draft={editorDraft} bind:cadenceError bind:cadencePreview />
-            </div>
-          </div>
+          <MonitorDetailsFields bind:draft={editorDraft} bind:cadenceError bind:cadencePreview />
 
           <MonitorFieldConfiguration
             bind:this={fieldConfiguration}
