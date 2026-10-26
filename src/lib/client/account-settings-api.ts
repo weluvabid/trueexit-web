@@ -157,3 +157,115 @@ export function updateAppearancePreferenceMutationOptions(queryClient: QueryClie
     },
   };
 }
+
+export const accountSessionQueryKeys = {
+  sessions: ['account-settings', 'sessions'] as const,
+};
+
+const nullableSessionString = v.nullable(v.string());
+export const accountSessionSchema = v.object({
+  id: v.string(),
+  status: nullableSessionString,
+  auth_method: nullableSessionString,
+  ip_address: nullableSessionString,
+  user_agent: nullableSessionString,
+  created_at: nullableSessionString,
+  updated_at: nullableSessionString,
+  expires_at: nullableSessionString,
+});
+export const accountSessionsResponseSchema = v.object({ data: v.array(accountSessionSchema) });
+export const passwordResetResponseSchema = v.object({ requested: v.boolean() });
+export const sessionRevocationResponseSchema = v.object({ revoked: v.boolean() });
+export const revokeAllSessionsResponseSchema = v.object({ revoked_count: v.pipe(v.number(), v.integer(), v.minValue(0)) });
+
+export type AccountSession = v.InferOutput<typeof accountSessionSchema>;
+export type AccountSessionsResponse = v.InferOutput<typeof accountSessionsResponseSchema>;
+export type RevokeAllSessionsResponse = v.InferOutput<typeof revokeAllSessionsResponseSchema>;
+
+export function accountSessionQueryOptions() {
+  return {
+    queryKey: accountSessionQueryKeys.sessions,
+    staleTime: 30_000,
+    retry: false,
+    queryFn: async ({ signal }: { signal: AbortSignal }): Promise<AccountSessionsResponse> => {
+      const { response, body, code, requestId } = await requestApi('/api/backend/me/sessions', { signal });
+      if (!response.ok) {
+        throw new ApiClientError('http', `Session request failed with status ${response.status}.`, response.status, code, requestId);
+      }
+      return parseApiBody(accountSessionsResponseSchema, body, { status: response.status, requestId });
+    },
+  };
+}
+
+export async function requestPasswordReset(): Promise<{ requested: boolean }> {
+  const { response, body, code, requestId } = await requestApi('/api/backend/me/password-reset', {
+    method: 'POST',
+    headers: idempotencyHeaders(),
+  });
+  if (!response.ok) {
+    throw new ApiClientError('http', `Password reset request failed with status ${response.status}.`, response.status, code, requestId);
+  }
+  return parseApiBody(passwordResetResponseSchema, body, { status: response.status, requestId });
+}
+
+export async function revokeAccountSession(sessionId: string): Promise<{ revoked: boolean }> {
+  const { response, body, code, requestId } = await requestApi(`/api/backend/me/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'DELETE',
+    headers: idempotencyHeaders(),
+  });
+  if (!response.ok) {
+    throw new ApiClientError('http', `Session revocation failed with status ${response.status}.`, response.status, code, requestId);
+  }
+  return parseApiBody(sessionRevocationResponseSchema, body, { status: response.status, requestId });
+}
+
+export async function revokeAllAccountSessions(): Promise<RevokeAllSessionsResponse> {
+  const { response, body, code, requestId } = await requestApi('/api/backend/me/sessions/revoke-all', {
+    method: 'POST',
+    headers: idempotencyHeaders(),
+  });
+  if (!response.ok) {
+    throw new ApiClientError('http', `Session revocation failed with status ${response.status}.`, response.status, code, requestId);
+  }
+  return parseApiBody(revokeAllSessionsResponseSchema, body, { status: response.status, requestId });
+}
+
+export function accountSessionErrorMessage(error: unknown, fallback: string): string {
+  if (!(error instanceof ApiClientError)) return fallback;
+  if (error.status === 401) return 'Your session needs attention. Sign in again to continue.';
+  if (error.status === 403 && error.code === 'recent_authentication_required') return 'For security, verify your identity again, then retry this action.';
+  if (error.status === 403) return 'You do not have permission to perform this action.';
+  if (error.status === 404) return 'This session is no longer active. The session list will be refreshed.';
+  if (error.status === 0) return 'Could not reach TrueExit. Check your connection and try again.';
+  if (error.status >= 500) return 'TrueExit could not complete this request right now. Try again shortly.';
+  return fallback;
+}
+
+export function requestPasswordResetMutationOptions() {
+  return { mutationFn: requestPasswordReset };
+}
+
+export function revokeAccountSessionMutationOptions(queryClient: QueryClient) {
+  return {
+    mutationFn: revokeAccountSession,
+    onSuccess: (_result: { revoked: boolean }, sessionId: string) => {
+      queryClient.setQueryData<AccountSessionsResponse>(accountSessionQueryKeys.sessions, (current) =>
+        current ? { ...current, data: current.data.filter((session) => session.id !== sessionId) } : current,
+      );
+    },
+    // Revocation can race with an expired session or an external sign-out. Refresh
+    // after both success and failure instead of assuming the cache is authoritative.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: accountSessionQueryKeys.sessions }),
+  };
+}
+
+export function revokeAllAccountSessionsMutationOptions(queryClient: QueryClient) {
+  return {
+    mutationFn: revokeAllAccountSessions,
+    onSuccess: () => {
+      queryClient.setQueryData<AccountSessionsResponse>(accountSessionQueryKeys.sessions, { data: [] });
+    },
+    // The backend revokes sessions sequentially; a failure may follow partial progress.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: accountSessionQueryKeys.sessions }),
+  };
+}
