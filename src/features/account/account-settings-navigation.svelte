@@ -1,14 +1,14 @@
 <svelte:options runes={true} />
 <script lang="ts">
-  import * as Tabs from '../../../components/ui/tabs/index.js';
+  import * as Tabs from '@/components/ui/tabs/index.js';
 
-  let { section = $bindable() }: { section: 'workspace' | 'people' | 'destinations' | 'profile' | 'preferences' | 'account' | 'billing' } = $props();
+  type Section = 'profile' | 'account' | 'billing';
+  let { section = $bindable() }: { section: Section } = $props();
 
   const sections = [
     { value: 'profile', number: '01', label: 'Profile' },
-    { value: 'preferences', number: '02', label: 'Preferences' },
-    { value: 'account', number: '03', label: 'Account' },
-    { value: 'billing', number: '04', label: 'Billing' },
+    { value: 'account', number: '02', label: 'Account' },
+    { value: 'billing', number: '03', label: 'Billing' },
   ] as const;
 </script>
 
