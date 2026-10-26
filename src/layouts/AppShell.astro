@@ -3,6 +3,7 @@ import BrandMark from '../components/shared/brand-mark/brand-mark.astro';
 import AppNavigation from '../components/shared/navigation/app-navigation.astro';
 import AppShellControls from '../components/shared/app-shell-controls/app-shell-controls.svelte';
 import '../styles/global.css';
+import { loadInitialAppearancePreference } from '../lib/server/appearance-preference';
 
 interface Props {
   title: string;
@@ -14,10 +15,11 @@ const { title, description = 'Clear signals, fewer surprises.', layout = 'comfor
 const { auth } = Astro.locals;
 const email = auth.user?.email ?? 'Signed in';
 const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'TE';
+const initialAppearancePreference = await loadInitialAppearancePreference(auth.accessToken);
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang="en" data-initial-theme-preference={initialAppearancePreference ?? undefined}>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -26,7 +28,7 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
     <script is:inline>
       (() => {
         try {
-          const preference = localStorage.getItem('trueexit.appearance') || 'system';
+          const preference = document.documentElement.dataset.initialThemePreference || localStorage.getItem('trueexit.appearance') || 'system';
           const resolved = preference === 'system' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : preference;
           document.documentElement.dataset.theme = resolved;
           document.documentElement.dataset.themePreference = preference;
@@ -47,7 +49,7 @@ const initials = email === 'Signed in' ? 'TE' : email.split('@')[0].split(/[._-]
     <div class="app-frame">
       <header class="app-header" data-app-header>
         <div class="app-header__inner">
-          <AppShellControls client:load email={email} initials={initials} />
+          <AppShellControls client:load email={email} initials={initials} initialAppearancePreference={initialAppearancePreference} />
           <div class="app-header__navigation"><AppNavigation /></div>
         </div>
       </header>

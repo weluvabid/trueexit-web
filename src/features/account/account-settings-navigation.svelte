@@ -6,17 +6,16 @@
   let { section = $bindable() }: { section: Section } = $props();
 
   const sections = [
-    { value: 'profile', number: '01', label: 'Profile' },
-    { value: 'account', number: '02', label: 'Account' },
-    { value: 'billing', number: '03', label: 'Billing' },
+    { value: 'profile', label: 'Profile' },
+    { value: 'account', label: 'Account' },
+    { value: 'billing', label: 'Billing' },
   ] as const;
 </script>
 
 <Tabs.Root bind:value={section} class="w-full">
-  <Tabs.List class="h-auto w-full flex-wrap justify-start gap-1 bg-muted/60 p-1">
+  <Tabs.List class="flex h-auto w-full max-w-full flex-nowrap items-center justify-start gap-1 overflow-x-auto overflow-y-hidden bg-transparent p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
     {#each sections as item (item.value)}
-      <Tabs.Trigger value={item.value} class="gap-2 px-3 py-2 text-sm">
-        <span class="text-xs text-muted-foreground">{item.number}</span>
+      <Tabs.Trigger value={item.value}>
         {item.label}
       </Tabs.Trigger>
     {/each}

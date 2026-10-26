@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { createMutation, createQuery } from '@tanstack/svelte-query';
   import { Button } from '../../ui/button/index.js';
   import { Search } from '@lucide/svelte';
   import WorkspaceSwitcher from './workspace-switcher.svelte';
@@ -10,6 +11,7 @@
   import { createWorkspaceSwitchUrl } from './workspace-selection';
   import { assertApiSuccess, ApiClientError, requestApi } from '../../../lib/client/api-client';
   import { getSharedQueryClient } from '../../../lib/client/query-client';
+  import { appearancePreferenceQueryOptions, updateAppearancePreferenceMutationOptions } from '../../../lib/client/account-settings-api';
   import { readActiveWorkspaceId, writeActiveWorkspaceId } from '../../../lib/client/workspace-preference';
   import { parseApiBody, workspaceSearchResponseSchema } from '../../../lib/client/api-schemas';
   import type { WorkspaceContext } from '../../../lib/client/workspace-bootstrap';
@@ -24,8 +26,9 @@
 
   let {
     email = 'Signed in',
-    initials = 'TE'
-  }: { email?: string; initials?: string } = $props();
+    initials = 'TE',
+    initialAppearancePreference = null,
+  }: { email?: string; initials?: string; initialAppearancePreference?: AppearancePreference | null } = $props();
 
   let workspaces: WorkspaceContext[] = $state([]);
   let activeWorkspaceId = $state('');
@@ -39,6 +42,9 @@
   let searchStatus = $state('');
   let searchLoading = $state(false);
   let appearance = $state<AppearancePreference>('system');
+  const queryClient = getSharedQueryClient();
+  const appearanceQuery = createQuery(() => appearancePreferenceQueryOptions(initialAppearancePreference), () => queryClient);
+  const appearanceMutation = createMutation(() => updateAppearancePreferenceMutationOptions(queryClient), () => queryClient);
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let searchSequence = 0;
 
@@ -50,14 +56,22 @@
   }
 
   function toggleAppearance() {
+    if (appearanceMutation.isPending) return;
     const next = effectiveTheme() === 'dark' ? 'light' : 'dark';
-    applyAppearance(next);
+    appearanceMutation.mutate(next);
   }
 
   function applyAppearance(preference: AppearancePreference, persist = true) {
     applyAppearancePreference(preference, persist);
     appearance = preference;
   }
+
+  // The local preference is applied immediately; the shared query reconciles it
+  // with the account-level preference returned by the backend.
+  $effect(() => {
+    const savedPreference = appearanceQuery.data?.theme;
+    if (savedPreference) applyAppearance(savedPreference, false);
+  });
 
   function chooseWorkspace(id: string) {
     const next = workspaces.find((workspace) => workspace.id === id);
@@ -144,7 +158,7 @@
   }
 
   onMount(() => {
-    applyAppearance(readAppearancePreference(), false);
+    applyAppearance(initialAppearancePreference ?? readAppearancePreference(), false);
 
     const onSystemThemeChange = () => {
       if (appearance === 'system') applyAppearance('system', false);

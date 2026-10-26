@@ -47,17 +47,11 @@
 </svelte:head>
 
 <section class="settings-workspace mx-auto w-full max-w-[60rem] px-4 sm:px-6">
-  <header class="settings-intro">
-    <div>
-      <p class="eyebrow"><span class="eyebrow__dash"></span>YOUR ACCOUNT</p>
-      <h1>Your account, <span>your terms.</span></h1>
-      <p class="settings-intro__copy">Manage your personal profile and account-level actions. Workspace access stays with Workspace Settings.</p>
-    </div>
-  </header>
-
   <div class="settings-layout">
-    <AccountSettingsNavigation bind:section />
-    <div class="settings-content">
+    <div class="sticky top-20 z-40 rounded-xl border border-border/60 bg-background/80 shadow-sm shadow-foreground/5 backdrop-blur-md">
+      <AccountSettingsNavigation bind:section />
+    </div>
+    <div class="settings-content mt-6">
       {#if section === 'profile'}
         <ProfileSection />
       {:else if section === 'account'}
