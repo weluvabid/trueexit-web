@@ -7,7 +7,7 @@
   import * as AlertDialog from '@/components/ui/alert-dialog';
   import { Button } from '@/components/ui/button';
   import { ApiClientError } from '@/lib/client/api-client';
-    import { getSharedQueryClient } from '@/lib/client/query-client';
+  import { getSharedQueryClient } from '@/lib/client/query-client';
   import {
     accountSessionErrorMessage,
     accountSessionQueryOptions,
@@ -18,8 +18,8 @@
   import type { SettingsAccountContract } from '@/lib/client/api-schemas';
   import { loadWorkspaceBootstrap, type WorkspaceContext } from '@/lib/client/workspace-bootstrap';
   import { getCachedSettingsResponse, getSettingsErrorCode, listSettingsData, requestSettingsApi, settingsErrorMessage } from '@/lib/client/settings-api';
-  import { formatDateTime } from '@/lib/client/date-format';
   import { readActiveWorkspaceId, resolveAndPersistWorkspaceId } from '@/lib/client/workspace-preference';
+  import { formatAccountDateTime, formatAccountStatus, formatSessionDeviceLabel } from '@/lib/client/account-settings-format';
 
   type Account = SettingsAccountContract;
   type ConfirmationAction = 'transfer' | 'closure' | 'cancel-closure' | 'revoke-all' | null;
@@ -244,31 +244,6 @@
     }
   }
 
-  function formatDate(value: string | null | undefined): string {
-    return value ? formatDateTime(value, 'Date unavailable') : 'Not scheduled';
-  }
-
-  function formatStatus(value: string | null | undefined): string {
-    if (!value) return 'Not reported';
-    return value.replaceAll('_', ' ').replace(/\b\w/g, (character) => character.toUpperCase());
-  }
-
-  function sessionDeviceLabel(userAgent: string | null): string {
-    if (!userAgent) return 'Device details unavailable';
-    const browser = userAgent.includes('Edg/') ? 'Microsoft Edge'
-      : userAgent.includes('Firefox/') ? 'Firefox'
-      : userAgent.includes('Chrome/') && !userAgent.includes('Edg/') ? 'Chrome'
-      : userAgent.includes('Safari/') && !userAgent.includes('Chrome/') ? 'Safari'
-      : userAgent.includes('OPR/') ? 'Opera'
-      : 'Browser';
-    const platform = /iPhone|iPad/.test(userAgent) ? 'iOS'
-      : /Android/.test(userAgent) ? 'Android'
-      : /Mac OS/.test(userAgent) ? 'macOS'
-      : /Windows/.test(userAgent) ? 'Windows'
-      : /Linux/.test(userAgent) ? 'Linux'
-      : 'device';
-    return `${browser} on ${platform}`;
-  }
 
   onMount(() => {
     void loadAccountData();
@@ -315,15 +290,15 @@
           {#each sessions as session (session.id)}
             <article class="rounded-xl border border-border bg-background/60 p-4 sm:p-5">
               <div class="flex flex-wrap items-start justify-between gap-3">
-                <div class="min-w-0"><p class="font-medium">{sessionDeviceLabel(session.user_agent)}</p><p class="mt-1 text-xs text-muted-foreground">{session.auth_method ? formatStatus(session.auth_method) : 'Authentication method unavailable'}</p></div>
-                <span class="inline-flex shrink-0 items-center rounded-full border border-status-neutral-border/40 bg-muted/50 px-2.5 py-1 text-xs font-medium">{formatStatus(session.status ?? 'active')}</span>
+                <div class="min-w-0"><p class="font-medium">{formatSessionDeviceLabel(session.user_agent)}</p><p class="mt-1 text-xs text-muted-foreground">{session.auth_method ? formatAccountStatus(session.auth_method) : 'Authentication method unavailable'}</p></div>
+                <span class="inline-flex shrink-0 items-center rounded-full border border-status-neutral-border/40 bg-muted/50 px-2.5 py-1 text-xs font-medium">{formatAccountStatus(session.status ?? 'active')}</span>
               </div>
               <dl class="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
                 <div class="min-w-0"><dt class="text-xs text-muted-foreground">IP address</dt><dd class="mt-1 break-all">{session.ip_address ?? 'Unavailable'}</dd></div>
                 <div class="min-w-0"><dt class="text-xs text-muted-foreground">Device / browser details</dt><dd class="mt-1 break-words text-muted-foreground">{session.user_agent ?? 'Unavailable'}</dd></div>
-                <div><dt class="text-xs text-muted-foreground">Created</dt><dd class="mt-1">{formatDate(session.created_at)}</dd></div>
-                <div><dt class="text-xs text-muted-foreground">Last updated</dt><dd class="mt-1">{formatDate(session.updated_at)}</dd></div>
-                <div><dt class="text-xs text-muted-foreground">Expires</dt><dd class="mt-1">{formatDate(session.expires_at)}</dd></div>
+                <div><dt class="text-xs text-muted-foreground">Created</dt><dd class="mt-1">{formatAccountDateTime(session.created_at, 'Unavailable')}</dd></div>
+                <div><dt class="text-xs text-muted-foreground">Last updated</dt><dd class="mt-1">{formatAccountDateTime(session.updated_at, 'Unavailable')}</dd></div>
+                <div><dt class="text-xs text-muted-foreground">Expires</dt><dd class="mt-1">{formatAccountDateTime(session.expires_at, 'Unavailable')}</dd></div>
               </dl>
             </article>
           {/each}
@@ -346,9 +321,9 @@
       <div class="flex items-start gap-3 sm:gap-4"><div class="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-muted/60"><ShieldCheck class="size-5 text-muted-foreground" aria-hidden="true" /></div><div class="min-w-0 flex-1"><p class="text-xs font-semibold tracking-[0.16em] text-muted-foreground">ACCOUNT STATUS</p><h2 class="mt-2 text-lg font-semibold tracking-tight">Know where your account stands</h2><p class="mt-1 text-sm leading-6 text-muted-foreground">Account actions are restricted to the account owner and may require recent identity verification.</p></div></div>
       {#if selectedAccount}
         <dl class="mt-5 grid gap-3 sm:grid-cols-3">
-          <div class="rounded-xl border border-border bg-background/60 p-4"><dt class="text-xs text-muted-foreground">Lifecycle status</dt><dd class="mt-2 font-medium">{formatStatus(selectedAccount.lifecycle_status)}</dd></div>
-          <div class="rounded-xl border border-border bg-background/60 p-4"><dt class="text-xs text-muted-foreground">Scheduled deletion</dt><dd class="mt-2 font-medium">{formatDate(selectedAccount.scheduled_deletion_at)}</dd></div>
-          <div class="rounded-xl border border-border bg-background/60 p-4"><dt class="text-xs text-muted-foreground">Billing cancellation</dt><dd class="mt-2 font-medium">{formatStatus(selectedAccount.billing_cancellation_status)}</dd></div>
+          <div class="rounded-xl border border-border bg-background/60 p-4"><dt class="text-xs text-muted-foreground">Lifecycle status</dt><dd class="mt-2 font-medium">{formatAccountStatus(selectedAccount.lifecycle_status)}</dd></div>
+          <div class="rounded-xl border border-border bg-background/60 p-4"><dt class="text-xs text-muted-foreground">Scheduled deletion</dt><dd class="mt-2 font-medium">{formatAccountDateTime(selectedAccount.scheduled_deletion_at)}</dd></div>
+          <div class="rounded-xl border border-border bg-background/60 p-4"><dt class="text-xs text-muted-foreground">Billing cancellation</dt><dd class="mt-2 font-medium">{formatAccountStatus(selectedAccount.billing_cancellation_status)}</dd></div>
         </dl>
         {#if selectedWorkspace?.account_owner}
           {#if selectedAccount.scheduled_deletion_at || selectedAccount.lifecycle_status.includes('closure')}
